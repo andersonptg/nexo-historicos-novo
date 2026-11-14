@@ -18,3 +18,8 @@
 .stone.black .circle{background:linear-gradient(145deg,#343d4d,#0a111b)}
 .stone.white .circle{background:linear-gradient(145deg,#fff,#bcc8d2)}
 @media(max-width:600px){.stone .circle{width:49px;height:49px;border-radius:10px}}
+
+/* V4: menu de 3 pontinhos do proprio site (nao o menu do navegador) */
+.site-menu-wrap{position:relative;flex:none}.site-menu{display:grid;place-items:center;width:40px;height:40px;border:1px solid #3f6d61;background:#15382f;border-radius:11px;color:#c9ffe6;font-size:28px;font-weight:800;line-height:1}.site-menu:focus-visible{outline:2px solid #6bffd2}.site-menu-options{position:absolute;right:0;top:48px;z-index:50;min-width:210px;background:#102623;border:1px solid #3e7c65;border-radius:13px;padding:7px;box-shadow:0 15px 45px #000b}.site-menu-options[hidden]{display:none}.site-menu-options a{display:block;padding:13px 12px;border-radius:8px;font-size:13px;color:#e1ffef;font-weight:700}.site-menu-options a:hover,.site-menu-options a:focus{background:#176846}.nav .adm-nav-link{color:#79f3ae;border:1px solid #22704f;background:#0e2d24;margin-bottom:10px}@media(max-width:600px){.site-menu{width:36px;height:36px}.top-right{gap:7px}.status-pill{max-width:155px;overflow:hidden;text-overflow:ellipsis}}
+/* V4: pedras quadradas com cantos arredondados, consistentes com o editor */
+.balls .stone .circle{border-radius:12px;box-shadow:0 3px 0 #0008,inset 0 3px 12px #ffffff1b,0 8px 12px #0004}
