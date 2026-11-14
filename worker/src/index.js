@@ -73,7 +73,7 @@ export default {
     await jsonPut(env.R2,latestKey,{game_id:game.id,items:latest,updated_at:now()});
     await jsonPut(env.R2,b+'status.json',{game_id:game.id,last_ingest:now(),last_heartbeat:now(),last_result:latest[0]?.minute_epoch||null,received:rows.length,motor:'termux',source:game.source});
     // Rules are isolated: any V3 error must not reject an already committed history batch.
-    try{await processNewRounds(env,game,rows)}catch(e){console.error('V3 rule error:',String(e.message||e).slice(0,120))}
+    if(payload.catchup!==true){try{await processNewRounds(env,game,rows)}catch(e){console.error('V3 rule error:',String(e.message||e).slice(0,120))}}
     return out({ok:true,accepted:rows.length,game_id:game.id});
    }
    if(path==='/api/heartbeat'&&request.method==='POST'){

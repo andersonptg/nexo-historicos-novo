@@ -50,14 +50,16 @@ def sync(db):
     for game in get_games():
         if not game['enabled']:continue
         sent=0
-        for _ in range(30):
-            data=db.execute('SELECT id,minute_epoch,number,color,seq FROM rounds WHERE game_id=? AND synced=0 ORDER BY minute_epoch ASC,seq ASC LIMIT 180',(game['id'],)).fetchall()
+        for _ in range(4):
+            pending_count=db.execute('SELECT COUNT(*) FROM rounds WHERE game_id=? AND synced=0',(game['id'],)).fetchone()[0]
+            data=db.execute('SELECT id,minute_epoch,number,color,seq FROM rounds WHERE game_id=? AND synced=0 ORDER BY minute_epoch DESC,seq DESC LIMIT 80',(game['id'],)).fetchall()
             if not data:break
             entries=[dict(x) for x in data]
-            raw=json.dumps({'game_id':game['id'],'items':entries},separators=(',',':')).encode()
+            is_catchup=pending_count>80 or max(x['minute_epoch'] for x in entries)<int(time.time())-180
+            raw=json.dumps({'game_id':game['id'],'items':entries,'catchup':is_catchup},separators=(',',':')).encode()
             req=Request(base+'/api/ingest',data=raw,method='POST',headers={'Content-Type':'application/json','Authorization':'Bearer '+token,'User-Agent':'NEXO-V1-Termux'})
             try:
-                with urlopen(req,timeout=25) as resp:
+                with urlopen(req,timeout=12) as resp:
                     answer=json.load(resp)
                     if resp.status!=200 or answer.get('ok')!=True or answer.get('accepted')!=len(entries):
                         return {'ok':False,'error':'Resposta remota inesperada'}

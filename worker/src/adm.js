@@ -327,7 +327,8 @@ export async function routeAdmin(req,env,url){
   }
   if(path==='/api/adm/strategies'&&req.method==='POST'){
    const b=await req.json();const all=await strategies();if(all.filter(x=>!x.archived).length>=30)return err('Limite de 30 estrategias.',400);
-   const s=validateStrategy({...b,enabled:false},null);all.push(s);await putDoc(env,K.strategies,all);
+   if(b&&typeof b==='object'&&!String(b.name||'').trim()){let n=1;const existing=new Set(all.filter(x=>!x.archived).map(x=>x.name));while(existing.has('Estratégia '+n)&&n<=1000)n++;b.name='Estratégia '+n;}
+    const s=validateStrategy({...b,enabled:false},null);all.push(s);await putDoc(env,K.strategies,all);
    const latest=await recentR2(env,s.gameId);const max=Math.max(0,...(latest.items||[]).map(x=>Number(x.seq)||0));
    await putDoc(env,runtimeKey(s.id),{lastSeq:max,recent:[],active:null});await resetScore(env,s.id);
    return json({ok:true,strategy:s});
