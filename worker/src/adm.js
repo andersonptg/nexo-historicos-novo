@@ -108,12 +108,14 @@ async function tg(env,method,body){return tgUsing(await botToken(env),method,bod
 
 async function botAdmin(env,chatId){try{const me=await tg(env,'getMe',{});const item=await tg(env,'getChatMember',{chat_id:chatId,user_id:me.id});return ['administrator','creator'].includes(item.status)&&item.can_post_messages!==false}catch{return false}}
 const normChat=c=>c&&String(c.id).match(/^-?\d{1,20}$/)&&['group','supergroup','channel'].includes(c.type);
-async function discoverChat(env,chat){
- if(!normChat(chat))return false;
- const permitted=await botAdmin(env,chat.id);
- const d=await getDoc(env,K.groups,[]);const id=String(chat.id),old=d.find(x=>x.id===id);
- const row={id,name:String(chat.title||old?.name||'Grupo sem nome').slice(0,120),type:chat.type,admin:permitted,selected:permitted&&(old?.selected||false),updatedAt:now()};
- await putDoc(env,K.groups,[...d.filter(x=>x.id!==id),row].slice(-100));return permitted;
+async function discoverChat(env,chat,{force=false}={}){
+  if(!normChat(chat))return false;
+  const d=await getDoc(env,K.groups,[]),id=String(chat.id),old=d.find(x=>x.id===id);
+  // Atualizacoes frequentes nao devem sobrecarregar a API do Telegram e o R2.
+  if(!force&&old&&old.type===chat.type&&old.name===String(chat.title||old.name).slice(0,120)&&now()-old.updatedAt<300)return old.admin;
+  const permitted=await botAdmin(env,chat.id);
+  const row={id,name:String(chat.title||old?.name||'Grupo sem nome').slice(0,120),type:chat.type,admin:permitted,selected:permitted&&(old?.selected||false),updatedAt:now()};
+  await putDoc(env,K.groups,[...d.filter(x=>x.id!==id),row].slice(-100));return permitted;
 }
 async function sendOwnerConfirmation(env,chatId,username){
  await tg(env,'sendMessage',{chat_id:chatId,text:'🟢 ROBÔ CADASTRADO COM SUCESSO!\n\n✅ '+(username?'@'+username:'Seu bot')+' conectado ao NEXO HISTÓRICOS.\n🔐 Cadastro protegido.\n📥 Envie stickers ou GIFs aqui para aparecerem na biblioteca do painel.\n\n⚙️ Os sinais permanecem DESLIGADOS até você ativá-los no ADM.'});
@@ -126,13 +128,13 @@ async function saveReceivedMedia(env,msg){
  if(all.some(x=>x.fileUniqueId===unique&&x.kind===kind))return false;
  if(all.length>=200)throw Error('Biblioteca cheia (200 itens).');
  const filename=kind==='sticker'?'STICKER '+String(sticker.emoji||'').slice(0,12):'GIF TELEGRAM';
- const meta={id:crypto.randomUUID().replaceAll('-',''),name:filename+' · '+new Date(now()*1000).toLocaleDateString('pt-BR'),kind,mime:sticker?'image/webp':'image/gif',size:Number(media.file_size)||0,createdAt:now(),origin:'telegram',fileId:media.file_id,fileUniqueId:unique,previewFileId:media.thumbnail?.file_id||media.file_id};
+ const meta={id:crypto.randomUUID().replaceAll('-',''),name:filename+' · '+new Date(now()*1000).toLocaleDateString('pt-BR'),kind,mime:sticker?'image/webp':String(media.mime_type||'video/mp4'),size:Number(media.file_size)||0,createdAt:now(),origin:'telegram',fileId:media.file_id,fileUniqueId:unique,previewFileId:media.thumbnail?.file_id||media.file_id};
  await putDoc(env,K.media,[...all,meta]);return true;
 }
 async function handlePrivateMessage(env,msg){
  const from=String(msg.from?.id||''),chatId=String(msg.chat?.id||'');if(!from||from!==chatId)return;
  const owner=await getDoc(env,K.owner,null),text=String(msg.text||'').trim();
- const pairing=/^\/vincular(?:@\w+)?\s+([A-Za-z0-9_-]{8,32})$/i.exec(text);
+ const pairing=/^\/vincular(?:@\w+)?\s+([A-Za-z0-9_-]{8,32})$/i.exec(text)||/^\/start(?:@\w+)?\s+vincular_([A-Za-z0-9_-]{8,32})$/i.exec(text);
  if(pairing){
    const data=await getDoc(env,K.pair,null),expected=data?.hash||'';
    const digest=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',UTF.encode(pairing[1].toUpperCase())))).map(x=>x.toString(16).padStart(2,'0')).join('');
@@ -153,9 +155,10 @@ async function telegramWebhook(request,env){
  if(!await hasBot(env))return err('Bot nao configurado',503);
  if(Number(request.headers.get('content-length')||0)>100000)return err('Atualizacao grande demais',413);
  let b;try{b=await request.json()}catch{return err('JSON invalido')}
- const c=b.my_chat_member?.chat||b.message?.chat;
- if(c&&(b.my_chat_member||(/^\/nexo_grupo(?:@\w+)?(?:\s|$)/i.test(b.message?.text||'')))){
-  try{await discoverChat(env,c)}catch(e){console.warn('ADM webhook group',String(e.message||e).slice(0,80))}
+ const c=b.my_chat_member?.chat||b.message?.chat||b.channel_post?.chat;
+ // Reconhece grupos por eventos normais, nao exige comando /nexo_grupo.
+ if(normChat(c)){
+   try{await discoverChat(env,c,{force:!!b.my_chat_member})}catch(e){console.warn('ADM webhook group',String(e.message||e).slice(0,80))}
  }
  if(b.message?.chat?.type==='private')try{await handlePrivateMessage(env,b.message)}catch(e){console.warn('ADM webhook private:',String(e.message||e).slice(0,90))}
  return json({ok:true});
@@ -261,7 +264,7 @@ async function registerWebhook(req,env){
  const secret=await webhookSecret(env);if(!secret)return err('Configure o Secret NEXO_BOT_ENCRYPTION_KEY no Worker.',503);
  const existing=await tg(env,'getWebhookInfo',{}),desired=new URL(req.url).origin+'/api/telegram/webhook';
  if(existing.url&&existing.url!==desired)return err('Esse bot ainda usa o webhook de outro sistema. Desative o sistema anterior antes de transferir o webhook; NEXO nao ira substitui-lo.',409);
- const result=await tg(env,'setWebhook',{url:desired,secret_token:secret,allowed_updates:['my_chat_member','message'],drop_pending_updates:false});
+ const result=await tg(env,'setWebhook',{url:desired,secret_token:secret,allowed_updates:['my_chat_member','message','channel_post'],drop_pending_updates:false});
  return json({ok:!!result,webhook:desired});
 }
 async function saveBotToken(req,env){
@@ -283,7 +286,7 @@ async function saveBotToken(req,env){
  try{
   const info=await tgUsing(token,'getWebhookInfo',{}),desired=new URL(req.url).origin+'/api/telegram/webhook';
   if(info.url&&info.url!==desired)webhook='outro sistema';
-  else{await tgUsing(token,'setWebhook',{url:desired,secret_token:await webhookSecret(env),allowed_updates:['my_chat_member','message'],drop_pending_updates:false});webhook='conectado'}
+  else{await tgUsing(token,'setWebhook',{url:desired,secret_token:await webhookSecret(env),allowed_updates:['my_chat_member','message','channel_post'],drop_pending_updates:false});webhook='conectado'}
  }catch{webhook='falha ao registrar; use o botao de webhook'}
  return json({ok:true,bot:{username:row.username,id:row.botId},notified,webhook,notice:notified?'Confirmacao enviada ao chat privado vinculado.':'Para receber confirmacao no privado, vincule seu Telegram com o codigo do painel. O Telegram nao permite iniciar conversa antes disso.'});
 }
@@ -342,6 +345,18 @@ export async function routeAdmin(req,env,url){
   }
   if(path==='/api/adm/bot/save'&&req.method==='POST')return saveBotToken(req,env);
   if(path==='/api/adm/bot/pair'&&req.method==='POST')return createPairing(env);
+  if(path==='/api/adm/telegram/status'&&req.method==='GET'){
+    const stored=await botInfo(env),configured=!!stored||!!env.NEXO_TELEGRAM_BOT_TOKEN;
+    const owner=await getDoc(env,K.owner,null);
+    let webhook='inactive';
+    if(configured){
+     try{
+      const info=await tg(env,'getWebhookInfo',{}),expected=new URL(req.url).origin+'/api/telegram/webhook';
+      webhook=info.url===expected?'connected':info.url?'foreign':'inactive';
+     }catch(e){webhook='error';console.warn('ADM bot status:',String(e.message||e).slice(0,70));}
+    }
+    return json({ok:true,configured,botName:stored?.username||'',ownerPaired:!!owner?.id,webhook});
+   }
   if(path==='/api/adm/groups'&&req.method==='GET')return json({ok:true,groups:await groups()});
   if(path==='/api/adm/groups/selection'&&req.method==='PUT'){
    const b=await req.json();if(!Array.isArray(b.ids)||b.ids.length>5||b.ids.some(x=>!/^[-\d]{1,20}$/.test(String(x))))return err('Selecione ate 5 grupos validos.');
@@ -419,11 +434,12 @@ export async function routeAdmin(req,env,url){
   if(mf&&req.method==='GET'){
    const meta=(await getDoc(env,K.media,[])).find(x=>x.id===mf[1]);if(!meta)return err('Midia nao encontrada',404);
    if(meta.fileId){
-    const file=await tg(env,'getFile',{file_id:meta.previewFileId||meta.fileId});
-    if(!file.file_path||Number(file.file_size||0)>8*1024*1024)return err('Previa indisponivel',404);
+    const motion=new URL(req.url).searchParams.get('motion')==='1';const previewId=motion&&meta.kind==='gif'?meta.fileId:(meta.previewFileId||meta.fileId);
+    const file=await tg(env,'getFile',{file_id:previewId});
+    if(!file.file_path||Number(file.file_size||0)>20*1024*1024)return err('Previa indisponivel',404);
     const t=await botToken(env);const res=await fetch('https://api.telegram.org/file/bot'+t+'/'+file.file_path,{signal:AbortSignal.timeout(10000)});
     if(!res.ok)return err('Nao foi possivel carregar a previa',404);
-    const ext=(file.file_path.split('.').pop()||'').toLowerCase();const mime=ext==='png'?'image/png':ext==='webp'?'image/webp':ext==='gif'?'image/gif':ext==='jpg'||ext==='jpeg'?'image/jpeg':'application/octet-stream';
+    const ext=(file.file_path.split('.').pop()||'').toLowerCase();const mime=ext==='png'?'image/png':ext==='webp'?'image/webp':ext==='gif'?'image/gif':ext==='jpg'||ext==='jpeg'?'image/jpeg':ext==='mp4'?'video/mp4':ext==='webm'?'video/webm':'application/octet-stream';
     return new Response(res.body,{headers:{'Content-Type':mime,'Cache-Control':'private, max-age=60','X-Content-Type-Options':'nosniff'}});
    }
    const obj=await env.R2.get(ROOT+'media/files/'+meta.id);if(!obj)return err('Arquivo nao encontrado',404);
