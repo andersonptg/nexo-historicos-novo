@@ -1,4 +1,5 @@
 import catalog from '../../catalog.json' with {type:'json'};
+import {routeAdmin,processNewRounds,scheduledAdmin} from './adm.js';
 
 // V2 preserva o prefixo EXCLUSIVO nexo-v1/. Nenhum objeto V30 e alterado.
 const PREFIX='nexo-v1/games/';
@@ -41,6 +42,11 @@ export default {
  async fetch(request,env){
   const url=new URL(request.url);const path=url.pathname;
   try{
+   const adminReply=await routeAdmin(request,env,url);if(adminReply)return adminReply;
+   if(path==='/api/public/preferences'&&request.method==='GET'){
+    const p=await env.R2?.get('nexo-v3/admin/settings.json');let prefs={};if(p){try{prefs=await p.json()}catch{}}
+    return out({showNumbers:prefs.showNumbers!==false});
+   }
    if(path==='/api/health')return out({ok:true,version:'2.0.0',storage:!!env.R2,motor:'termux'});
    if(path==='/api/catalog')return out({games:catalog.games.map(({id,platform,game,kind,source,enabled,precision})=>({id,platform,game,kind,source,enabled,precision}))});
    if(path==='/api/ingest'&&request.method==='POST'){
@@ -66,6 +72,8 @@ export default {
     const latest=merge(oldLatest?.items||[],rows,200);
     await jsonPut(env.R2,latestKey,{game_id:game.id,items:latest,updated_at:now()});
     await jsonPut(env.R2,b+'status.json',{game_id:game.id,last_ingest:now(),last_heartbeat:now(),last_result:latest[0]?.minute_epoch||null,received:rows.length,motor:'termux',source:game.source});
+    // Rules are isolated: any V3 error must not reject an already committed history batch.
+    try{await processNewRounds(env,game,rows)}catch(e){console.error('V3 rule error:',String(e.message||e).slice(0,120))}
     return out({ok:true,accepted:rows.length,game_id:game.id});
    }
    if(path==='/api/heartbeat'&&request.method==='POST'){
@@ -114,5 +122,6 @@ export default {
    if(env.ASSETS)return env.ASSETS.fetch(request);
    return new Response('Assets nao configurados',{status:503});
   }catch(err){console.error('NEXO V1 erro:',String(err?.message||err).slice(0,150));return out({error:'Erro interno; consulte logs do Worker'},500)}
- }
+ },
+ async scheduled(event,env,ctx){ctx.waitUntil(scheduledAdmin(env));}
 };

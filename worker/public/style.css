@@ -11,3 +11,10 @@
 @media(max-width:600px){.archive-days{padding:15px;gap:7px}.archive-day{min-width:95px;padding:10px 11px}.archive-bar{padding:12px 15px}}
 
 .load-more{display:flex;gap:15px;align-items:center;justify-content:center;padding:0 15px 22px;flex-wrap:wrap;font-size:11px;color:var(--dim)}.load-more[hidden]{display:none}
+
+/* V3: Double stones in rounded square format. */
+.stone .circle{border-radius:12px;width:51px;height:51px}
+.stone.red .circle{background:linear-gradient(145deg,#fc4667,#b11129)}
+.stone.black .circle{background:linear-gradient(145deg,#343d4d,#0a111b)}
+.stone.white .circle{background:linear-gradient(145deg,#fff,#bcc8d2)}
+@media(max-width:600px){.stone .circle{width:49px;height:49px;border-radius:10px}}
