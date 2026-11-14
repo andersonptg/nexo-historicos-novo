@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "games": [
+    {
+      "id": "brabet-double",
+      "platform": "Brabet",
+      "game": "Double",
+      "kind": "double",
+      "source": "Historicos Blaze (publica, terceiros)",
+      "source_url": "https://historicosblaze.com/results/brabet/double",
+      "enabled": true,
+      "interval_seconds": 60,
+      "precision": "minute"
+    }
+  ]
+}

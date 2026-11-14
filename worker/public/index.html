@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#080f1d"><meta name="description" content="NEXO Históricos — plataforma independente de acompanhamento de rodadas e estatísticas.">
+<title>NEXO Históricos · Double</title><link href="/style.css" rel="stylesheet" defer>
+</head>
+<body>
+<div class="ambient a"></div><div class="ambient b"></div>
+<div class="layout">
+<aside class="rail" aria-label="Menu principal">
+ <a class="logo" href="/" aria-label="NEXO início"><span class="brandmark">N<span>.</span></span><span>NEXO<small>HISTÓRICOS</small></span></a>
+ <div class="rail-cap">PAINEL</div>
+ <nav class="nav"><a class="active" href="#inicio"><span>▦</span> Visão geral</a><a href="#resultados"><span>◉</span> Resultados</a><a href="#arquivo"><span>▤</span> Arquivo por dia</a><a class="disabled" aria-disabled="true" tabindex="-1"><span>◇</span> Estratégias <em>Em breve</em></a><a class="disabled" aria-disabled="true" tabindex="-1"><span>▧</span> Stickers <em>Em breve</em></a></nav>
+ <div class="rail-bottom"><div class="engine-status"><span class="lamp" id="side-led"></span><div><strong>Motor Termux</strong><small id="side-status">Verificando...</small></div></div><p>Registros públicos de terceiros, com precisão de minuto. Não são previsões.</p><span class="version">V2.0 · Motor Termux + arquivo diário</span></div>
+</aside>
+<main class="main" id="inicio">
+ <header class="topbar"><div class="compact-brand"><span class="brandmark">N<span>.</span></span><strong>NEXO HISTÓRICOS</strong></div><div class="breadcrumb">PLATAFORMAS <span>/</span> DOUBLE <span>/</span> <b>BRABET</b></div><div class="top-right"><span class="status-pill" id="top-status"><i></i> Verificando motor</span><span class="clock" id="clock">--:--:--</span></div></header>
+ <section class="hero"><div><p class="eyebrow">CENTRAL DE RESULTADOS <span class="eyedot"></span> VERSÃO 2.0</p><h1>O histórico, <span>do seu jeito.</span></h1><p class="hero-desc">Acompanhe resultados, números e sequências com organização. O Termux coleta e sincroniza; o site organiza os históricos por jogo e por dia.</p><div class="hero-badges"><span>◉ Brabet Double</span><span>◷ Horário de Brasília</span><span>⬡ Fonte pública</span></div></div><div class="hero-decor" aria-hidden="true"><span class="ring r1"></span><span class="ring r2"></span><span class="hero-ball">B<span>DOUBLE</span></span></div></section>
+ <section class="section-top"><div><p class="eyebrow">VISÃO GERAL</p><h2>Monitoramento <span>ao vivo</span></h2></div><div class="update-note">Verificação da tela a cada 1 s · <b id="view-updated">—</b><button type="button" id="refresh" title="Atualizar">↻ Atualizar</button></div></section>
+ <section class="metric-grid" aria-label="Resumo da amostra"><article class="metric"><div class="metric-top"><span>RESULTADOS NA TELA</span><span class="metric-icon">▦</span></div><strong id="stat-total">—</strong><small>Amostra carregada</small></article><article class="metric"><div class="metric-top"><span>VERMELHOS</span><span class="metric-icon red">●</span></div><strong id="stat-red">—</strong><small id="stat-red-pct">— da amostra</small></article><article class="metric"><div class="metric-top"><span>PRETOS</span><span class="metric-icon black">●</span></div><strong id="stat-black">—</strong><small id="stat-black-pct">— da amostra</small></article><article class="metric"><div class="metric-top"><span>BRANCOS</span><span class="metric-icon white">●</span></div><strong id="stat-white">—</strong><small id="stat-white-pct">— da amostra</small></article></section>
+ <section class="workspace" id="resultados"><div class="panel-head"><div><p class="eyebrow">HISTÓRICO ORGANIZADO</p><h2 id="result-title">Rodadas recentes</h2><p id="source-note">Sincronizando com o motor do Termux...</p></div><div class="panel-info" id="rows-badge">0 REGISTROS</div></div>
+ <div class="toolbar"><label class="filter"><span>JOGO</span><select id="game"><option value="brabet-double">Brabet · Double</option></select></label><label class="filter"><span>COR</span><select id="color"><option value="all">Todas as cores</option><option value="red">Vermelho</option><option value="black">Preto</option><option value="white">Branco</option></select></label><label class="filter"><span>NÚMERO</span><select id="number"><option value="all">Todos</option></select></label><label class="filter"><span>DATA</span><input type="date" id="day" aria-label="Filtrar dia"></label><button type="button" class="clear" id="clear">Limpar filtros</button></div>
+ <div class="results-head"><span>RESULTADOS MAIS RECENTES</span><span id="filter-count">—</span></div><div class="balls" id="balls" aria-live="polite"><div class="empty">Aguardando a primeira coleta do motor...</div></div>
+ <div class="load-more" id="load-more-box" hidden><button type="button" class="clear" id="load-more">Carregar mais 500 rodadas do dia</button><span id="load-more-hint"></span></div>
+ <div class="panel-footer"><div class="legend"><span><i class="legend-dot red"></i> 1–7 Vermelho</span><span><i class="legend-dot black"></i> 8–14 Preto</span><span><i class="legend-dot white"></i> 0 Branco</span></div><span class="small-note">Tela consulta a cada 1 s; a fonte publica apenas hora e minuto, sem tempo real garantido</span></div></section>
+ <section class="workspace archive-workspace" id="arquivo">
+   <div class="panel-head"><div><p class="eyebrow">ARQUIVO PERMANENTE POR DIA</p><h2>Históricos separados por data</h2><p>Os resultados são arquivados conforme a data da rodada, no fuso de Brasília. O R2 guarda os dias anteriores independentemente do Termux.</p></div><span class="panel-info">R2 · ARQUIVO</span></div>
+   <div class="archive-bar"><button id="archive-today" class="clear" type="button">◉ Mostrar recentes</button><span id="archive-status">Consultando os dias disponíveis...</span></div>
+   <div id="archive-days" class="archive-days"><span class="empty">Nenhuma data armazenada ainda.</span></div>
+   <div class="archive-foot">O arquivo é atualizado a cada envio confirmado. Se a fonte atrasar ou o celular estiver desligado, o histórico poderá ter lacunas.</div>
+ </section>
+ <section class="bottom-grid"><article class="mini-panel"><div class="mini-icon">⚡</div><div><strong>Motor de coleta</strong><p id="engine-note">Aguardando o Termux executar a primeira coleta.</p></div></article><article class="mini-panel"><div class="mini-icon">◈</div><div><strong>Pronto para novos jogos</strong><p>Cada jogo terá histórico próprio, configurado no catálogo. Estratégias e Telegram serão módulos separados.</p></div></article></section>
+ <footer><span>© NEXO HISTÓRICOS · Projeto independente</span><span>Não afiliado às plataformas monitoradas. Histórico não prevê resultados futuros.</span></footer>
+</main></div><script src="/app.js" defer></script>
+</body></html>

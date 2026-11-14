@@ -1,0 +1,7 @@
+{
+  "name": "nexo-historicos-novo",
+  "main": "worker/src/index.js",
+  "compatibility_date": "2026-11-01",
+  "assets": { "directory": "./worker/public", "binding": "ASSETS" },
+  "r2_buckets": [{ "binding": "R2", "bucket_name": "nexo-historicos-v30" }]
+}
