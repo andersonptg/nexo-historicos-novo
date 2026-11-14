@@ -42,7 +42,7 @@ function bind(){
  $('pattern-number').onchange=e=>{if(e.target.value)addPatternStone('n:'+e.target.value);e.target.value=''};
  $('undo-pattern').onclick=()=>{const x=parsePattern();x.pop();$('st-pattern').value=x.join(', ');renderPattern()};
  $('st-pattern').oninput=renderPattern;
- $('login-form').onsubmit=e=>{e.preventDefault();call(async()=>{await api('login',payload('POST',{password:$('password').value}));$('password').value='';await reload();showMain()})};
+ $('login-form').onsubmit=e=>{e.preventDefault();(async()=>{const error=$('login-error');error.textContent='';try{await api('login',payload('POST',{password:$('password').value}));$('password').value='';await reload();showMain()}catch(ex){error.textContent=ex?.message||String(ex)}})()};
  $('logout').onclick=()=>call(async()=>{await api('logout',{method:'POST'});model=null;showLogin()});
  $('menu').onclick=()=>{$('sidebar').classList.toggle('open')};
  document.querySelectorAll('#nav button').forEach(b=>b.onclick=()=>page(b.dataset.page));

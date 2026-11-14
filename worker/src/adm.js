@@ -51,8 +51,9 @@ async function login(req,env){
  const bucket=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',UTF.encode('nexo:'+ip+':'+env.NEXO_ADM_PASSWORD)))).slice(0,12).map(x=>x.toString(16).padStart(2,'0')).join('');
  const key=ROOT+'security/logins/'+bucket+'.json';
  const state=await getDoc(env,key,{fails:0,until:0,window:0});
- if(state.until>now())return err('Muitas tentativas. Tente novamente mais tarde.',429);
+ // Senha correta desbloqueia o proprio dono; tentativas invalidas seguem limitadas.
  const valid=typeof body.password==='string'&&await eqHash(body.password,env.NEXO_ADM_PASSWORD);
+ if(state.until>now()&&!valid)return err('Muitas tentativas. Tente novamente mais tarde.',429);
  if(!valid){const recent=now()-state.window<900;state.fails=recent?state.fails+1:1;state.window=recent?state.window:now();state.until=state.fails>=5?now()+900:0;await putDoc(env,key,state);return err('Senha incorreta.',401)}
  await putDoc(env,key,{fails:0,until:0,window:now()});
  const exp=String(now()+7200),sig=await sign(exp,env);
