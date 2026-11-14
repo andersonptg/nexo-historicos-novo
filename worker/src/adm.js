@@ -13,6 +13,8 @@ const putDoc=async(env,key,value)=>env.R2.put(key,JSON.stringify(value),{httpMet
 const settingsDefault={botEnabled:false,showNumbers:true,jokerWhite:false,resetMidnight:true,updatedAt:0};
 // V7: mensagens globais isoladas; sem migrar/apagar estratégias antigas.
 const GLOBAL_KEY=ROOT+'admin/global-signals.json';
+// V8: solicitação de ID de administrador, verificada apenas por mensagem real do Telegram.
+const OWNER_ID_KEY=ROOT+'telegram/owner-request.json';
 const GLOBAL_KEYS=['entry_black','entry_red','green','white','red','attention','bot_on','gale1','gale2'];
 const GLOBAL_MAP={entry_black:'entry_black',entry_red:'entry_red',win_black:'green',win_red:'green',win_white:'white',red:'red',attention:'attention',gale1:'gale1',gale2:'gale2',bot_on:'bot_on'};
 const emptyGlobal=()=>({version:1,registration:{enabled:false,url:'',label:'🔗 CADASTRE-SE'},templates:{},updatedAt:0});
@@ -161,6 +163,15 @@ async function saveReceivedMedia(env,msg){
 async function handlePrivateMessage(env,msg){
  const from=String(msg.from?.id||''),chatId=String(msg.chat?.id||'');if(!from||from!==chatId)return;
  const owner=await getDoc(env,K.owner,null),text=String(msg.text||'').trim();
+ // O ID isolado nunca valida uma conta: o Telegram precisa entregar mensagem
+ // privada com from.id e chat.id iguais ao ID cadastrado no ADM autenticado.
+ const requested=await getDoc(env,OWNER_ID_KEY,null);
+ if(!owner?.id&&requested?.id===chatId){
+   await putDoc(env,K.owner,{id:chatId,pairedAt:now(),method:'telegram-id-verified'});
+   const bot=await botInfo(env);await sendOwnerConfirmation(env,chatId,bot?.username||'');
+   if(msg.sticker||msg.animation||msg.document?.mime_type==='image/gif')await saveReceivedMedia(env,msg);
+   return;
+ }
  const pairing=/^\/vincular(?:@\w+)?\s+([A-Za-z0-9_-]{8,32})$/i.exec(text)||/^\/start(?:@\w+)?\s+vincular_([A-Za-z0-9_-]{8,32})$/i.exec(text);
  if(pairing){
    const data=await getDoc(env,K.pair,null),expected=data?.hash||'';
@@ -406,17 +417,54 @@ export async function routeAdmin(req,env,url){
   }
   if(path==='/api/adm/bot/save'&&req.method==='POST')return saveBotToken(req,env);
   if(path==='/api/adm/bot/pair'&&req.method==='POST')return createPairing(env);
+  if(path==='/api/adm/telegram/owner-id'&&req.method==='PUT'){
+    if(!await hasBot(env))return err('Cadastre o token do robô antes do ID.',409);
+    const b=await req.json(),id=String(b.id||'').trim();
+    if(!/^[1-9][0-9]{4,19}$/.test(id))return err('Informe o ID numérico da sua conta Telegram, de 5 a 20 dígitos.',400);
+    const owner=await getDoc(env,K.owner,null);
+    if(owner?.id&&owner.id!==id)return err('Existe outro administrador verificado. Desvincule-o primeiro pelo ADM.',409);
+    await putDoc(env,OWNER_ID_KEY,{id,requestedAt:now()});
+    return json({ok:true,id,verified:owner?.id===id,notice:'Abra o privado do bot e envie /start para confirmar o ID. Nenhum código precisa ser copiado.'});
+   }
+  if(path==='/api/adm/telegram/owner/unlink'&&req.method==='POST'){
+    const b=await req.json();if(b.confirm!==true)return err('Confirmação obrigatória.',400);
+    await env.R2.delete?.(K.owner);await env.R2.delete?.(OWNER_ID_KEY);await env.R2.delete?.(K.pair);
+    return json({ok:true,notice:'ID desvinculado. O token e os grupos continuam preservados.'});
+   }
+  if(path==='/api/adm/telegram/bot/remove'&&req.method==='POST'){
+    const b=await req.json();if(b.confirm!==true)return err('Confirme a remoção do bot.',400);
+    const st=await settings();if(st.botEnabled)return err('Desative os envios antes de remover o robô.',409);
+    const stored=await botInfo(env);if(!stored)return err('Não há bot cadastrado no ADM.',404);
+    if(env.NEXO_TELEGRAM_BOT_TOKEN)return err('Existe token adicional no Worker. Remova o Secret externo antes de descadastrar o bot.',409);
+    let info;
+    try{info=await tg(env,'getWebhookInfo',{})}catch{return err('Não foi possível verificar o webhook. Confira a chave NEXO_BOT_ENCRYPTION_KEY antes de remover.',503)}
+    const desired=new URL(req.url).origin+'/api/telegram/webhook';
+    if(info.url===desired){
+      try{await tg(env,'deleteWebhook',{drop_pending_updates:false})}catch{return err('O webhook não foi desconectado. Nada foi removido.',503)}
+    }
+    await env.R2.delete?.(K.bot);await env.R2.delete?.(K.owner);
+    await env.R2.delete?.(OWNER_ID_KEY);await env.R2.delete?.(K.pair);
+    const current=await groups();await putDoc(env,K.groups,current.map(g=>({...g,selected:false,admin:false})));
+    return json({ok:true,notice:'Bot removido; estratégias, mídias e históricos preservados. Grupos desmarcados.'});
+   }
   if(path==='/api/adm/telegram/status'&&req.method==='GET'){
     const stored=await botInfo(env),configured=!!stored||!!env.NEXO_TELEGRAM_BOT_TOKEN;
-    const owner=await getDoc(env,K.owner,null);
-    let webhook='inactive';
-    if(configured){
+    const [owner,requested,known,st]=await Promise.all([
+       getDoc(env,K.owner,null),getDoc(env,OWNER_ID_KEY,null),groups(),settings()]);
+    let webhook='inactive',keyState=stored?.ciphertext?(botKeyReady(env)?'ready':'missing'):'external';
+    let canUseToken=true;
+    if(stored?.ciphertext&&botKeyReady(env)){
+      try{await botToken(env)}catch{canUseToken=false;keyState='mismatch';webhook='error'}
+    }else if(stored?.ciphertext){canUseToken=false;webhook='error'}
+    if(configured&&canUseToken){
      try{
       const info=await tg(env,'getWebhookInfo',{}),expected=new URL(req.url).origin+'/api/telegram/webhook';
       webhook=info.url===expected?'connected':info.url?'foreign':'inactive';
      }catch(e){webhook='error';console.warn('ADM bot status:',String(e.message||e).slice(0,70));}
     }
-    return json({ok:true,configured,botName:stored?.username||'',ownerPaired:!!owner?.id,webhook});
+    return json({ok:true,configured,botName:stored?.username||'',ownerPaired:!!owner?.id,
+      ownerId:owner?.id||'',requestedId:requested?.id||'',webhook,keyState,
+      botEnabled:st.botEnabled===true,groupsDetected:known.length,groupsSelected:known.filter(g=>g.selected&&g.admin).length});
    }
   if(path==='/api/adm/groups'&&req.method==='GET')return json({ok:true,groups:await groups()});
   if(path==='/api/adm/groups/selection'&&req.method==='PUT'){
