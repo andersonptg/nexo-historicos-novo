@@ -213,8 +213,23 @@ function formatMessage(template,r,s,step){
  return String(template||'').replace(/\{(numero|cor|gale|limite_gale|estrategia|hora|data)\}/g,(_,k)=>values[k]);
 }
 function stoneText(r,withNumber){return '🎲 Pedra sorteada: '+(r.color==='red'?'🔴':r.color==='black'?'⚫':'⚪')+(withNumber?' '+r.number:'');}
+// Mensagens iniciais seguras: personalizacoes salvas continuam tendo prioridade.
+function defaultSignalText(key){
+ switch(key){
+  case 'entry_black':return '🎯 ENTRADA CONFIRMADA\nAlvo: PRETO ⚫ + BRANCO ⚪\n- - - - ATÉ GALE {limite_gale} - - - -\n🤖 NEXO DOUBLE PRO 🤖';
+  case 'entry_red':return '🎯 ENTRADA CONFIRMADA\nAlvo: VERMELHO 🔴 + BRANCO ⚪\n- - - - ATÉ GALE {limite_gale} - - - -\n🤖 NEXO DOUBLE PRO 🤖';
+  case 'gale1':return '- - - - GALE 1 - - - -';
+  case 'gale2':return '- - - - GALE 2 - - - -';
+  case 'green':return '✅ WIN NA COR!';
+  case 'white':return '✅ WIN NO BRANCO!';
+  case 'red':return '❌ RED - sequência encerrada.';
+  case 'attention':return '🚨 ATENÇÃO: possível sinal em análise.';
+  case 'bot_on':return '🤖 NEXO DOUBLE PRO 🤖\n✅ ROBÔ ATIVADO\n🔔 Avisos habilitados neste privado.\nAs estratégias só analisarão rodadas novas.';
+  default:return '';
+ }
+}
 async function transmit(env,group,evt){
- if(!await botAdmin(env,group.id))throw Error('Bot nao e administrador deste grupo');
+ if(!group.private&&!await botAdmin(env,group.id))throw Error('Bot nao e administrador deste grupo');
  if(evt.message)await tg(env,'sendMessage',{chat_id:group.id,text:evt.message,disable_web_page_preview:true});
  const m=evt.media;
  if(m?.type==='sticker'||m?.type==='gif'){
@@ -238,9 +253,14 @@ async function transmit(env,group,evt){
   await tg(env,'sendMessage',{chat_id:group.id,text:label,entities:[{type:'text_link',offset:0,length:label.length,url:evt.registration.url}],disable_web_page_preview:true});
  }
 }
-async function dispatch(env,config,evt){
+// NEXO V9 - prioridade do chat privado verificado; canais continuam opcionais.
+async function dispatch(env,config,evt,{privateOnly=false}={}){
  if(!config.botEnabled)return;
- const all=await getDoc(env,K.groups,[]);const targets=all.filter(x=>x.selected&&x.admin).slice(0,5);
+ const owner=await getDoc(env,K.owner,null);
+ const privateChat=owner?.id&&/^[1-9][0-9]{4,19}$/.test(String(owner.id))
+   ? [{id:String(owner.id),private:true}] : [];
+ const all=privateOnly?[]:await getDoc(env,K.groups,[]);
+ const targets=[...privateChat,...all.filter(x=>x.selected&&x.admin).slice(0,5)];
  for(const group of targets){const uid=evt.id+'_'+group.id.replace('-','m');
    if(await getDoc(env,sentKey(uid),null))continue;
    const key=pendingKey(uid),existing=await getDoc(env,key,null);
@@ -260,7 +280,8 @@ async function dispatch(env,config,evt){
 async function fireEvent(env,settings,strategy,r,type,step){
  const global=await globalDoc(env),key=GLOBAL_MAP[type],template=global?.templates?.[key];
  const globalSaved=template?.saved===true;
- const message=globalSaved?template.text:(strategy.messages?.[type]||'');
+ const savedText=globalSaved?template.text:(strategy.messages?.[type]||'');
+ const message=String(savedText||'').trim()?savedText:defaultSignalText(key);
  const media=globalSaved?{type:template.type,assetId:template.assetId}:(strategy.media?.[type]||{type:'text'});
  const evt={id:strategy.id+'_'+r.id+'_'+type,strategyId:strategy.id,strategyName:strategy.name,type,gameId:strategy.gameId,roundId:r.id,number:r.number,color:r.color,minute_epoch:r.minute_epoch,at:now(),message:formatMessage(message,r,strategy,step),media,showStoneBeforeMedia:strategy.showStoneBeforeMedia};
  if(globalSaved&&['win_black','win_red','win_white'].includes(type))evt.stoneAfter=stoneText(r,strategy.showNumbers);
@@ -482,23 +503,16 @@ export async function routeAdmin(req,env,url){
   if(path==='/api/adm/webhook/register'&&req.method==='POST')return registerWebhook(req,env);
   if(path==='/api/adm/telegram/activate'&&req.method==='POST'){
    const b=await req.json();if(b.confirm!==true)return err('Confirme explicitamente a ativacao.');
-   const all=await groups(),selected=all.filter(g=>g.selected&&g.admin);if(!selected.length)return err('Selecione ao menos um grupo com bot ADM.');
+   const all=await groups(),selected=all.filter(g=>g.selected&&g.admin);
+   const owner=await getDoc(env,K.owner,null);
+   const privateReady=!!(owner?.id&&/^[1-9][0-9]{4,19}$/.test(String(owner.id)));
+   if(!privateReady&&!selected.length)return err('Confirme seu ID no privado do bot enviando /start ou selecione um grupo com bot ADM.',400);
    if(!await hasBot(env))return err('Cadastre o token do bot no ADM.',503);
    const active=(await strategies()).filter(s=>s.enabled&&!s.archived);
    if(!active.length)return err('Ative ao menos uma estrategia antes de ligar os sinais.',400);
-   const global=await globalDoc(env),mediaCatalog=await getDoc(env,K.media,[]);
-   for(const s of active){
-    const required=[s.target==='red'?'entry_red':'entry_black',...(s.maxGale>=1?['gale1']:[]),...(s.maxGale>=2?['gale2']:[])];
-    for(const key of required){
-     const t=global.templates?.[GLOBAL_MAP[key]];
-     if(t?.saved===true){if(!t.text?.trim()&&t.type==='text')return err('Preencha a mensagem global '+key,400);}
-     else if(!s.messages?.[key]?.trim())return err('Preencha o padrão global '+key+' ou a mensagem da estratégia '+s.name+'.',400);
-    }
-    for(const [key,m] of Object.entries(s.media||{})){
-     if(global.templates?.[GLOBAL_MAP[key]]?.saved)continue;
-     if(m?.type!=='text'&&m?.type&&!mediaCatalog.some(a=>a.id===m.assetId&&a.kind===m.type))return err('Mídia '+key+' não encontrada na estratégia '+s.name+'.',400);
-    }
-   }
+   const global=await globalDoc(env);
+   // V9: texto vazio nao bloqueia o bot; usar modelo padrao em tempo de envio.
+   // Midias continuam opcionais, e configuracoes salvas nao sao sobrescritas.
    // Starting live delivery opens a fresh baseline: never send a WIN/RED
    // for an entry that was only observed while Telegram was disabled.
    for(const s of active){
@@ -508,12 +522,14 @@ export async function routeAdmin(req,env,url){
    }
    const current=await settings();current.botEnabled=true;current.updatedAt=now();await putDoc(env,K.settings,current);
    const ss=active[0],activation=global.templates?.bot_on;
-   // BOT ATIVADO é independente de ATENÇÃO de possível entrada.
-   if(ss&&activation?.saved===true){
-    const event={id:'bot_on_'+now()+'_'+ss.id,strategyId:ss.id,strategyName:ss.name,type:'bot_on',media:{type:activation.type,assetId:activation.assetId},message:formatMessage(activation.text,{number:0,color:'white',minute_epoch:now()},ss,0),at:now()};
-    await dispatch(env,current,event);
+   // Primeiro: confirmacao SOMENTE no privado; canais recebem apenas sinais futuros.
+   if(ss&&privateReady){
+    const message=String(activation?.text||'').trim()?activation.text:defaultSignalText('bot_on');
+    const media=activation?.saved?{type:activation.type,assetId:activation.assetId}:{type:'text',assetId:''};
+    const event={id:'bot_on_'+now()+'_'+ss.id,strategyId:ss.id,strategyName:ss.name,type:'bot_on',media,message:formatMessage(message,{number:0,color:'white',minute_epoch:now()},ss,0),at:now()};
+    await dispatch(env,current,event,{privateOnly:true});
    }
-   return json({ok:true,settings:current,attentionTriggered:false,botOnTriggered:!!(ss&&activation?.saved)});
+   return json({ok:true,settings:current,attentionTriggered:false,botOnTriggered:!!(ss&&privateReady),privateFirst:privateReady});
   }
   if(path==='/api/adm/telegram/deactivate'&&req.method==='POST'){
    const st=await settings();st.botEnabled=false;st.updatedAt=now();await putDoc(env,K.settings,st);return json({ok:true,settings:st});
@@ -584,7 +600,8 @@ export async function scheduledAdmin(env){
  for(const x of all.slice(0,20)){
   const row=await getDoc(env,x.key,null);if(!row||row.attempts>=5||row.updatedAt+60>now())continue;
   if(await getDoc(env,sentKey(row.id),null)){if(env.R2.delete)await env.R2.delete(x.key);continue;}
-  const group=gs.find(g=>g.id===row.groupId&&g.selected&&g.admin);if(!group)continue;
+  const owner=await getDoc(env,K.owner,null);
+  const group=owner?.id===row.groupId?{id:row.groupId,private:true}:gs.find(g=>g.id===row.groupId&&g.selected&&g.admin);if(!group)continue;
   try{
    await transmit(env,group,row.evt);
    await putDoc(env,sentKey(row.id),{id:row.id,sentAt:now()});

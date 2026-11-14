@@ -66,10 +66,11 @@
       await api('groups/selection',payload('PUT',{ids}));changes=false;await refresh(true);say('Destinos salvos: '+ids.length+' grupo(s).');
     })));
     list.append(bottom);shell.append(list);
-    const control=el('section','v8-card');control.append(el('h2','','3 · Controle de envio'),el('p','v8-sub','Ligue e desligue sem editar chaves. Somente os grupos salvos recebem sinais, depois da sua confirmação.'));
-    const toggle=el('div','v8-control-actions');toggle.append(btn('▶ Ligar robô','v8-btn v8-main',()=>withLock(async()=>{
-      if(!confirm('ATIVAR os sinais para os grupos selecionados? É necessário ter pelo menos uma estratégia ativa.'))return;
-      await api('telegram/activate',payload('POST',{confirm:true}));await refresh(true);say('Envios ativados.');
+    const control=el('section','v8-card');control.append(el('h2','','3 · Controle de envio'),el('p','v8-sub','Ligue e desligue sem editar chaves. Seu privado verificado recebe os sinais primeiro. Grupos salvos também recebem, depois da confirmação.'));
+    const toggle=el('div','v8-control-actions');toggle.append(btn('▶ Ligar robô + privado','v8-btn v8-main',()=>withLock(async()=>{
+      if(!state.ownerPaired){say('Primeiro confirme seu ID: abra o privado do robô e envie /start. Depois ligue os sinais.',true);return;}
+      if(!confirm('ATIVAR o robô? Primeiro ele avisará no seu privado do Telegram. Depois enviará sinais novos para seu privado e para os grupos que você selecionou. É necessário ter uma estratégia ativa.'))return;
+      const x=await api('telegram/activate',payload('POST',{confirm:true}));await refresh(true);say(x.privateFirst?'Robô ligado: confira a confirmação no seu privado do Telegram.':'Robô ligado. Vincule seu ID para receber no privado.');
     })),btn('⏸ Desligar envios','v8-btn v8-stop',()=>withLock(async()=>{
       await api('telegram/deactivate',{method:'POST'});await refresh(true);say('Envios do Telegram desligados.');
     })));
@@ -99,7 +100,7 @@
     const bot=state.configured,hook=state.webhook==='connected',owner=state.ownerPaired,sends=state.botEnabled;
     lamp('v8-bot-state',bot?'good':'bad',bot?'@'+getName():'Não cadastrado');
     lamp('v8-webhook-state',hook?'good':'bad',hook?'Webhook conectado':state.webhook==='foreign'?'Outro webhook':state.keyState==='missing'?'Segredo ausente':state.keyState==='mismatch'?'Chave incorreta':state.webhook==='error'?'Falha de conexão':'Aguardando conexão');
-    lamp('v8-owner-state',owner?'good':'wait',owner?'ID verificado':'ID não confirmado');
+    lamp('v8-owner-state',owner?'good':'wait',owner?'Privado verificado · recebe primeiro':'Privado ainda não verificado');
     lamp('v8-groups-state',groups.length?'good':'wait',`${state.groupsSelected||0} salvos • ${groups.length} detectados`);
     lamp('v8-send-state',sends?'good':'wait',sends?'ENVIOS LIGADOS':'ENVIOS DESLIGADOS');
     if(!ownerDirty)$('v8-owner-id').value=state.requestedId||state.ownerId||'';
@@ -113,7 +114,7 @@
        :state.webhook==='foreign'
        ?'Este robô já está ligado a outro webhook. O NEXO não troca automaticamente para não interromper o sistema anterior.'
        :!bot?'Cadastre o token do BotFather uma vez.':!hook?'Clique em Conectar Telegram para verificar/registrar o webhook.':!owner?'Salve seu ID numérico e envie /start no privado do bot.':
-         'Conectado! Envie stickers e GIFs no privado. Grupos chegam por eventos; selecione os destinos e salve.';
+         'Privado conectado! Ao ligar, a confirmação e os sinais novos chegam primeiro aqui. Selecione grupos apenas se quiser envios adicionais.';
   }
   function renderGroups(){
     const box=$('v8-group-list');if(!box)return;
