@@ -1,5 +1,6 @@
 import catalog from '../../catalog.json' with {type:'json'};
 import {routeAdmin,processNewRounds,resetAfterCatchup,scheduledAdmin} from './adm.js';
+import {processWhiteRounds,resetWhiteAfterCatchup,whiteHasActiveForecast,scheduledWhite} from './white.js';
 
 // V2 preserva o prefixo EXCLUSIVO nexo-v1/. Nenhum objeto V30 e alterado.
 const PREFIX='nexo-v1/games/';
@@ -77,8 +78,13 @@ async function v11Ingest(request,env,trusted=false){
  const catchup=payload.catchup===true||sourceAge>150||surge||seqGap;
  if(catchup){
   try{await resetAfterCatchup(env,game,rows)}catch(e){console.error('V12 catchup runtime:',String(e.message||e).slice(0,100));return out({error:'Historico salvo; falha ao redefinir estado de sinais'},503)}
+   try{await resetWhiteAfterCatchup(env,game,rows)}catch(e){console.warn('V13 branco: catchup falhou',String(e.message||e).slice(0,100))}
  }else{
-  try{await processNewRounds(env,game,rows)}catch(e){console.error('V12 rules:',String(e.message||e).slice(0,120));return out({error:'Historico salvo; falha ao processar regras'},503)}
+  try{
+    if(await whiteHasActiveForecast(env))await resetAfterCatchup(env,game,rows);
+    else await processNewRounds(env,game,rows);
+   }catch(e){console.error('V12 rules:',String(e.message||e).slice(0,120));return out({error:'Historico salvo; falha ao processar regras'},503)}
+   try{await processWhiteRounds(env,game,rows)}catch(e){console.warn('V13 branco: processamento falhou',String(e.message||e).slice(0,130))}
  }
  return out({ok:true,accepted:rows.length,game_id:game.id,catchup,age_seconds:sourceAge,skipped_signal_burst:surge||!!seqGap});
 
@@ -89,7 +95,7 @@ export class NexoCoordinator {
   const run=this.serial.then(async()=>{
    const path=new URL(request.url).pathname;
    if(path==='/v11/ingest')return v11Ingest(request,this.env,true);
-   if(path==='/v11/cron'){await scheduledAdmin(this.env);return out({ok:true});}
+   if(path==='/v11/cron'){await Promise.allSettled([scheduledAdmin(this.env),scheduledWhite(this.env)]);return out({ok:true});}
    return out({error:'Rota interna invalida'},404);
   });
   this.serial=run.catch(e=>{console.error('V11 Coordinator:',String(e.message||e).slice(0,120))});
@@ -166,6 +172,6 @@ export default {
  },
  async scheduled(event,env,ctx){
    if(env.NEXO_COORDINATOR){const id=env.NEXO_COORDINATOR.idFromName('nexo-brabet-double-v11');ctx.waitUntil(env.NEXO_COORDINATOR.get(id).fetch('https://nexo.internal/v11/cron',{method:'POST'}));}
-   else ctx.waitUntil(scheduledAdmin(env));
+   else ctx.waitUntil(Promise.allSettled([scheduledAdmin(env),scheduledWhite(env)]));
   }
 };

@@ -1,4 +1,6 @@
 // NEXO V3 ADM. Isolated from the V2 history archive and ingestion authentication.
+// NEXO V13 BRANCO POR MINUTO
+import {routeWhiteAdmin} from './white.js';
 const ROOT='nexo-v3/';
 const K={settings:ROOT+'admin/settings.json',strategies:ROOT+'admin/strategies.json',groups:ROOT+'telegram/groups.json',media:ROOT+'media/catalog.json',bot:ROOT+'telegram/bot-encrypted.json',owner:ROOT+'telegram/owner.json',pair:ROOT+'telegram/pair.json'};
 const E=['attention','entry_black','entry_red','gale1','gale2','win_black','win_red','win_white','red'];
@@ -624,6 +626,7 @@ export async function routeAdmin(req,env,url){
  if(path==='/api/adm/login'&&req.method==='POST')return login(req,env);
  if(path==='/api/adm/me')return json({ok:await authenticated(req,env),configured:hasPassword(env)});
  if(!await authenticated(req,env))return err('Entre com a senha de administrador.',401);
+  const whiteReply=await routeWhiteAdmin(req,env,url);if(whiteReply)return whiteReply;
  if(path==='/api/adm/logout'&&req.method==='POST')return json({ok:true},200,{'Set-Cookie':sessionCookie('',0)});
  const settings=()=>getDoc(env,K.settings,settingsDefault);
  const strategies=()=>getDoc(env,K.strategies,[]);
