@@ -3,6 +3,8 @@ const ROOT='nexo-v3/';
 const K={settings:ROOT+'admin/settings.json',strategies:ROOT+'admin/strategies.json',groups:ROOT+'telegram/groups.json',media:ROOT+'media/catalog.json',bot:ROOT+'telegram/bot-encrypted.json',owner:ROOT+'telegram/owner.json',pair:ROOT+'telegram/pair.json'};
 const E=['attention','entry_black','entry_red','gale1','gale2','win_black','win_red','win_white','red'];
 const TARGETS=['black','red'];
+// Limite técnico de segurança para o processamento e armazenamento no Worker.
+const MAX_PATTERN_STONES=256;
 const UTF=new TextEncoder();
 const now=()=>Math.floor(Date.now()/1000);
 const json=(data,status=200,headers={})=>new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff',...headers}});
@@ -47,6 +49,14 @@ const runtimeKey=id=>ROOT+'runtime/'+id+'.json';
 const eventKey=id=>ROOT+'events/'+id+'.json';
 const pendingKey=id=>ROOT+'outbox/pending/'+id+'.json';
 const sentKey=id=>ROOT+'outbox/sent/'+id+'.json';
+// Um registro por pré-aviso: só os IDs enviados pelo robô são elegíveis para exclusão.
+const ATTENTION_ROOT=ROOT+'telegram/temporary-attention/';
+const ATTENTION_MESSAGES_ROOT=ROOT+'telegram/attention-message-ids/';
+const attentionKey=(strategyId,eventId)=>ATTENTION_ROOT+strategyId+'/'+eventId+'.json';
+const attentionMessagesPrefix=(strategyId,eventId)=>ATTENTION_MESSAGES_ROOT+strategyId+'/'+eventId+'/';
+const attentionMessageKey=(strategyId,eventId,chatId,messageId)=>attentionMessagesPrefix(strategyId,eventId)+String(chatId)+'_'+String(messageId)+'.json';
+const attentionRetryKey=(strategyId,eventId)=>ROOT+'telegram/temporary-attention-retry/'+strategyId+'_'+eventId+'.json';
+const purgeTaskKey=id=>ROOT+'maintenance/purge/'+id+'.json';
 function dayBR(seconds=now()){
  const parts=new Intl.DateTimeFormat('en-CA',{timeZone:'America/Sao_Paulo',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date(seconds*1000));
  const f=k=>parts.find(p=>p.type===k).value;
@@ -96,7 +106,7 @@ function validateStrategy(input,previous){
  if(input.gameId!==undefined&&input.gameId!=='brabet-double')throw Error('Somente Brabet Double esta validado na V3.');
  x.target=TARGETS.includes(input.target)?input.target:'black';
  x.maxGale=Number(input.maxGale);if(![0,1,2].includes(x.maxGale))throw Error('Gale deve ser 0, 1 ou 2.');
- if(!Array.isArray(input.pattern)||input.pattern.length<1||input.pattern.length>8||input.pattern.some(z=>!(['red','black','white','*'].includes(z)||/^(?:n:)(?:[0-9]|1[0-4])$/.test(z))))throw Error('Padrao invalido (1 a 8 pedras).');
+ if(!Array.isArray(input.pattern)||input.pattern.length<1||input.pattern.length>MAX_PATTERN_STONES||input.pattern.some(z=>!(['red','black','white','*'].includes(z)||/^(?:n:)(?:[0-9]|1[0-4])$/.test(z))))throw Error('Padrão inválido (1 a '+MAX_PATTERN_STONES+' pedras).');
  x.pattern=[...input.pattern];
  x.showStoneBeforeMedia=input.showStoneBeforeMedia===true;x.showNumbers=input.showNumbers!==false;x.jokerWhite=input.jokerWhite===true;
  x.messages={};for(const e of E)x.messages[e]=textLimit(input.messages?.[e],1500);
@@ -213,7 +223,87 @@ function formatMessage(template,r,s,step){
  return String(template||'').replace(/\{(numero|cor|gale|limite_gale|estrategia|hora|data)\}/g,(_,k)=>values[k]);
 }
 function stoneText(r,withNumber){return '🎲 Pedra sorteada: '+(r.color==='red'?'🔴':r.color==='black'?'⚫':'⚪')+(withNumber?' '+r.number:'');}
-// Mensagens iniciais seguras: personalizacoes salvas continuam tendo prioridade.
+// V10: aviso de ATENÇÃO é temporário. Guarda SOMENTE message_id retornados pelo Telegram.
+async function beginAttention(env,evt){
+ const key=attentionKey(evt.strategyId,evt.id);
+ await putDoc(env,key,{eventId:evt.id,strategyId:evt.strategyId,active:true,createdAt:now(),messages:{},cancelledAt:0,attempts:0});
+}
+// R2 por mensagem/chat, evitando perda de IDs quando privado e grupos recebem em paralelo.
+async function rememberAttentionMessage(env,evt,chatId,messageId){
+ if(!Number.isSafeInteger(messageId)||messageId<=0)return;
+ const k=attentionMessageKey(evt.strategyId,evt.id,chatId,messageId);
+ // Guardar primeiro: se o cancelamento ocorrer durante a entrega, o ID não se perde.
+ await putDoc(env,k,{chatId:String(chatId),messageId,eventId:evt.id,strategyId:evt.strategyId});
+ const main=attentionKey(evt.strategyId,evt.id);
+ const track=await getDoc(env,main,null);
+ if(!track||!track.active){
+  await eraseAttentionMessagePart(env,k,{chatId:String(chatId),messageId});
+  // Requisição de envio começou ANTES do cancelamento: se o delete falhar,
+  // manter um registro fechado para o agendador conseguir repetir a operação.
+  const remaining=await list(env,attentionMessagesPrefix(evt.strategyId,evt.id),50);
+  if(remaining.length){
+   const closed=track||{eventId:evt.id,strategyId:evt.strategyId,active:false,createdAt:now(),attempts:0};
+   closed.active=false;
+   await putDoc(env,main,closed);
+   await putDoc(env,attentionRetryKey(evt.strategyId,evt.id),{key:main,createdAt:closed.createdAt,updatedAt:now()});
+  }
+ }
+}
+async function eraseAttentionMessagePart(env,key,row){
+ const chatId=String(row.chatId||''),messageId=Number(row.messageId);
+ if(!/^-?[0-9]{5,20}$/.test(chatId)||!Number.isSafeInteger(messageId)||messageId<=0){await env.R2.delete?.(key);return true}
+ try{await tg(env,'deleteMessage',{chat_id:chatId,message_id:messageId});await env.R2.delete?.(key);return true}
+ catch(e){
+  const why=String(e.message||e);
+  // A plataforma já apagou ou recusou definitivamente; não insistir sem fim.
+  if(/message to delete not found|message can't be deleted|message can.t be deleted|message is too old/i.test(why)){
+   await env.R2.delete?.(key);return true;
+  }
+  console.warn('NEXO atenção exclusão pendente:',why.slice(0,90));return false;
+ }
+}
+async function eraseAttentionMessages(env,key,data){
+ const prefix=attentionMessagesPrefix(data.strategyId,data.eventId);
+ const entries=await list(env,prefix,100);
+ await Promise.allSettled(entries.map(async entry=>{
+  const row=await getDoc(env,entry.key,null);
+  if(!row){await env.R2.delete?.(entry.key);return}
+  await eraseAttentionMessagePart(env,entry.key,row);
+ }));
+ const remaining=await list(env,prefix,100);
+ if(!remaining.length){
+  await env.R2.delete?.(key);
+  await env.R2.delete?.(attentionRetryKey(data.strategyId,data.eventId));
+  return true;
+ }
+ data.active=false;data.attempts=(data.attempts||0)+1;
+ await putDoc(env,key,data);
+ await putDoc(env,attentionRetryKey(data.strategyId,data.eventId),{key,createdAt:data.createdAt,updatedAt:now()});
+ return false;
+}
+async function dismissAttention(env,strategyId,eventId){
+ if(!eventId)return;
+ const key=attentionKey(strategyId,eventId),data=await getDoc(env,key,null);
+ // Cancelar tentativas que ainda estiverem na fila antes de publicar outro sinal.
+ const queued=await list(env,ROOT+'outbox/pending/'+eventId+'_',30);
+ for(const entry of queued)await env.R2.delete?.(entry.key);
+ if(!data)return;
+ data.active=false;data.cancelledAt=data.cancelledAt||now();
+ await putDoc(env,key,data); // Persistir o cancelamento antes do deleteMessage.
+ await eraseAttentionMessages(env,key,data);
+}
+async function cleanupOldAttention(env){
+ // Somente avisos que falharam ao apagar; avisos ativos nunca são removidos pelo cron.
+ const entries=await list(env,ROOT+'telegram/temporary-attention-retry/',50);
+ for(const e of entries.slice(0,12)){
+  const task=await getDoc(env,e.key,null),key=String(task?.key||'');
+  if(!key.startsWith(ATTENTION_ROOT)){await env.R2.delete?.(e.key);continue}
+  const row=await getDoc(env,key,null);
+  if(!row||row.active){await env.R2.delete?.(e.key);continue}
+  if(now()-(row.createdAt||0)>48*3600){await env.R2.delete?.(key);await env.R2.delete?.(e.key);continue}
+  await eraseAttentionMessages(env,key,row);
+ }
+}
 function defaultSignalText(key){
  switch(key){
   case 'entry_black':return '🎯 ENTRADA CONFIRMADA\nAlvo: PRETO ⚫ + BRANCO ⚪\n- - - - ATÉ GALE {limite_gale} - - - -\n🤖 NEXO DOUBLE PRO 🤖';
@@ -230,51 +320,68 @@ function defaultSignalText(key){
 }
 async function transmit(env,group,evt){
  if(!group.private&&!await botAdmin(env,group.id))throw Error('Bot nao e administrador deste grupo');
- if(evt.message)await tg(env,'sendMessage',{chat_id:group.id,text:evt.message,disable_web_page_preview:true});
+ const send=async(method,body)=>{
+  const result=await tg(env,method,body);
+  if(evt.type==='attention'&&result?.message_id)await rememberAttentionMessage(env,evt,group.id,Number(result.message_id));
+  return result;
+ };
+ if(evt.message)await send('sendMessage',{chat_id:group.id,text:evt.message,disable_web_page_preview:true});
  const m=evt.media;
  if(m?.type==='sticker'||m?.type==='gif'){
   const assets=await getDoc(env,K.media,[]),asset=assets.find(a=>a.id===m.assetId&&a.kind===m.type);
   if(!asset)throw Error('Midia nao encontrada para '+evt.type);
   const method=m.type==='gif'?'sendAnimation':'sendSticker',field=m.type==='gif'?'animation':'sticker';
-  if(asset.fileId)await tg(env,method,{chat_id:group.id,[field]:asset.fileId});
+  if(asset.fileId)await send(method,{chat_id:group.id,[field]:asset.fileId});
   else{
    const obj=await env.R2.get(ROOT+'media/files/'+asset.id);
    if(!obj)throw Error('Arquivo de midia nao encontrado');
    const form=new FormData();form.append('chat_id',group.id);
    form.append(field,new Blob([await obj.arrayBuffer()],{type:asset.mime}),asset.name);
-   await tg(env,method,form);
+   await send(method,form);
   }
  }
  // A pedra do WIN é enviada em texto somente depois da mídia, nunca embutida no sticker.
- if(evt.stoneAfter)await tg(env,'sendMessage',{chat_id:group.id,text:evt.stoneAfter,disable_web_page_preview:true});
+ if(evt.stoneAfter)await send('sendMessage',{chat_id:group.id,text:evt.stoneAfter,disable_web_page_preview:true});
  // Mensagem independente e clicável; nunca juntar o link ao texto do sinal.
  if(evt.registration?.enabled&&evt.registration.url){
   const label=evt.registration.label||'🔗 CADASTRE-SE';
-  await tg(env,'sendMessage',{chat_id:group.id,text:label,entities:[{type:'text_link',offset:0,length:label.length,url:evt.registration.url}],disable_web_page_preview:true});
+  await send('sendMessage',{chat_id:group.id,text:label,entities:[{type:'text_link',offset:0,length:label.length,url:evt.registration.url}],disable_web_page_preview:true});
  }
 }
 // NEXO V9 - prioridade do chat privado verificado; canais continuam opcionais.
+// Envio para privado + grupos em paralelo; a ordem dentro de cada chat é mantida.
 async function dispatch(env,config,evt,{privateOnly=false}={}){
  if(!config.botEnabled)return;
  const owner=await getDoc(env,K.owner,null);
  const privateChat=owner?.id&&/^[1-9][0-9]{4,19}$/.test(String(owner.id))
    ? [{id:String(owner.id),private:true}] : [];
  const all=privateOnly?[]:await getDoc(env,K.groups,[]);
- const targets=[...privateChat,...all.filter(x=>x.selected&&x.admin).slice(0,5)];
- for(const group of targets){const uid=evt.id+'_'+group.id.replace('-','m');
-   if(await getDoc(env,sentKey(uid),null))continue;
+ const candidates=[...privateChat,...all.filter(x=>x.selected&&x.admin).slice(0,5)];
+ const targets=candidates.filter((g,i)=>candidates.findIndex(x=>String(x.id)===String(g.id))===i);
+ await Promise.allSettled(targets.map(async(group)=>{
+   if(evt.type==='attention'){
+    const tracked=await getDoc(env,attentionKey(evt.strategyId,evt.id),null);
+    if(!tracked?.active)return;
+   }
+   const uid=evt.id+'_'+String(group.id).replace('-','m');
+   if(await getDoc(env,sentKey(uid),null))return;
    const key=pendingKey(uid),existing=await getDoc(env,key,null);
-   const row={id:uid,groupId:group.id,evt,status:'pending',attempts:existing?.attempts||0,createdAt:existing?.createdAt||now(),updatedAt:now(),lastError:''};
+   const row={id:uid,groupId:String(group.id),evt,status:'pending',attempts:existing?.attempts||0,createdAt:existing?.createdAt||now(),updatedAt:now(),lastError:''};
    await putDoc(env,key,row);
    try{
+     // A checagem extra diminui o risco de enviar um alerta já cancelado.
+     if(evt.type==='attention'){
+       const tracked=await getDoc(env,attentionKey(evt.strategyId,evt.id),null);
+       if(!tracked?.active){await env.R2.delete?.(key);return}
+     }
      await transmit(env,group,evt);
      await putDoc(env,sentKey(uid),{id:uid,sentAt:now()});
-     if(env.R2.delete)await env.R2.delete(key);
+     await env.R2.delete?.(key);
    }catch(e){
      row.attempts++;row.lastError=String(e.message||e).slice(0,160);row.updatedAt=now();
      console.warn('Telegram pending',row.lastError);await putDoc(env,key,row);
    }
- }
+ }));
 }
 
 async function fireEvent(env,settings,strategy,r,type,step){
@@ -288,6 +395,7 @@ async function fireEvent(env,settings,strategy,r,type,step){
  else if(strategy.showStoneBeforeMedia&&['win_black','win_red','win_white','red'].includes(type))evt.message=(evt.message?evt.message+'\n':'')+stoneText(r,strategy.showNumbers);
  if(['entry_black','entry_red'].includes(type)&&global.registration?.enabled===true)evt.registration=global.registration;
  await putDoc(env,eventKey(evt.id),evt);
+ if(type==='attention'&&settings.botEnabled)await beginAttention(env,evt);
  await dispatch(env,settings,evt);
 }
 async function simulate(s,rows){const state={recent:[],active:null};const score=scoreDefault(dayBR());const events=[];
@@ -301,7 +409,7 @@ async function simulate(s,rows){const state={recent:[],active:null};const score=
    }else if(matchPat([...state.recent,r],s.pattern,s.jokerWhite)){
      state.active={step:0};score.entries++;events.push({type:s.target==='red'?'entry_red':'entry_black',number:r.number,minute_epoch:r.minute_epoch});
    }
-   state.recent.push(r);if(state.recent.length>15)state.recent.shift();
+   state.recent.push(r);if(state.recent.length>Math.max(1,s.pattern.length-1))state.recent.shift();
  }
  return {score,events:events.slice(-30)};
 }
@@ -320,18 +428,29 @@ export async function processNewRounds(env,game,records){
    if(!unseen.length)continue;
    let score=await scoreRead(env,s.id);
    for(const r of unseen){const actions=[];
+    const history=[...(state.recent||[]),r];
+    const full=matchPat(history,s.pattern,s.jokerWhite);
+    const almost=global.templates?.attention?.saved===true&&s.pattern.length>=2
+      &&matchPat(history,s.pattern.slice(0,-1),s.jokerWhite);
+    // Assim que a sequência confirma ou muda, apaga SOMENTE o pré-aviso desta regra.
+    if(state.attentionEventId && (full||!almost||state.active||!settings.botEnabled)){
+      try{await dismissAttention(env,s.id,state.attentionEventId)}
+      catch(e){console.warn('NEXO attention cleanup',String(e.message||e).slice(0,100))}
+      state.attentionEventId=null;
+    }
     if(state.active){const a=state.active;
       if(r.color==='white'){score.white++;actions.push('win_white');state.active=null}
       else if(r.color===s.target){score.green++;actions.push(s.target==='red'?'win_red':'win_black');state.active=null}
       else if(a.step<s.maxGale){a.step++;score['gale'+a.step]++;actions.push('gale'+a.step)}
       else{score.red++;actions.push('red');state.active=null}
-    }else if(matchPat([...(state.recent||[]),r],s.pattern,s.jokerWhite)){
+    }else if(full){
       state.active={step:0};score.entries++;actions.push(s.target==='red'?'entry_red':'entry_black');
-    }else if(global.templates?.attention?.saved===true && s.pattern.length>=2 && matchPat([...(state.recent||[]),r],s.pattern.slice(0,-1),s.jokerWhite)){
-      // Possível sinal: faltou a última pedra para completar o padrão.
+    }else if(settings.botEnabled&&almost&&!state.attentionEventId){
+      // Enviar uma única ATENÇÃO por padrão parcialmente reconhecido.
+      state.attentionEventId=s.id+'_'+r.id+'_attention';
       actions.push('attention');
     }
-    state.recent=[...(state.recent||[]),r].slice(-15);state.lastSeq=r.seq;
+    state.recent=history.slice(-Math.max(1,s.pattern.length-1));state.lastSeq=r.seq;
     // Advance cursor before network activity. Event files persist even if Telegram fails.
     await putDoc(env,runtimeKey(s.id),state);score.updatedAt=now();await putDoc(env,scoreKey(s.id),score);
     for(const action of actions)await fireEvent(env,settings,s,r,action,state.active?.step||0);
@@ -418,23 +537,47 @@ export async function routeAdmin(req,env,url){
    await putDoc(env,K.settings,next);return json({ok:true,settings:next});
   }
   if(path==='/api/adm/strategies'&&req.method==='POST'){
-   const b=await req.json();const all=await strategies();if(all.filter(x=>!x.archived).length>=30)return err('Limite de 30 estrategias.',400);
-   if(b&&typeof b==='object'&&!String(b.name||'').trim()){let n=1;const existing=new Set(all.filter(x=>!x.archived).map(x=>x.name));while(existing.has('Estratégia '+n)&&n<=1000)n++;b.name='Estratégia '+n;}
+   const b=await req.json();const all=await strategies();/* V10: sem limite artificial de 30 estratégias; o armazenamento e as cotas do Worker continuam valendo. */
+   if(b&&typeof b==='object'&&!String(b.name||'').trim()){let n=1;const existing=new Set(all.filter(x=>!x.archived).map(x=>x.name));while(existing.has('Estratégia '+n))n++;b.name='Estratégia '+n;}
     const s=validateStrategy({...b,enabled:false},null);all.push(s);await putDoc(env,K.strategies,all);
    const latest=await recentR2(env,s.gameId);const max=Math.max(0,...(latest.items||[]).map(x=>Number(x.seq)||0));
    await putDoc(env,runtimeKey(s.id),{lastSeq:max,recent:[],active:null});await resetScore(env,s.id);
    return json({ok:true,strategy:s});
   }
-  const match=path.match(/^\/api\/adm\/strategies\/([a-f0-9]{32})(?:\/(simulate))?$/);
+  const match=path.match(/^\/api\/adm\/strategies\/([a-f0-9]{32})(?:\/(simulate|purge))?$/);
   if(match){const id=match[1],all=await strategies(),idx=all.findIndex(x=>x.id===id&&!x.archived);if(idx<0)return err('Estrategia nao encontrada',404);
    if(match[2]==='simulate'&&req.method==='POST'){const hist=await recentR2(env,all[idx].gameId);return json({ok:true,...await simulate(all[idx],hist.items||[])});}
-   if(req.method==='PUT'){
-    const b=await req.json();const was=all[idx].enabled;const s=validateStrategy(b,all[idx]);
-    // Do not activate on save unless explicitly opted-in by the administrator.
-    if(s.enabled&&!was){const latest=await recentR2(env,s.gameId);const max=Math.max(0,...(latest.items||[]).map(x=>Number(x.seq)||0));await putDoc(env,runtimeKey(s.id),{lastSeq:max,recent:[],active:null});}
+   if(match[2]==='purge'&&req.method==='POST'){
+    const b=await req.json(),s=all[idx];
+    if(b?.confirm!==true||b?.name!==s.name)return err('Confirme digitando o nome exato da estratégia.',400);
+    const runtime=await getDoc(env,runtimeKey(s.id),null);
+    if(runtime?.attentionEventId)await dismissAttention(env,s.id,runtime.attentionEventId);
+    // Primeiro impedir novos sinais; depois apagar somente dados da estratégia escolhida.
+    all.splice(idx,1);await putDoc(env,K.strategies,all);
+    await env.R2.delete?.(runtimeKey(s.id));await env.R2.delete?.(scoreKey(s.id));
+    // Limpeza assíncrona segura: arquivos com prefixo exclusivo do ID da estratégia.
+    await putDoc(env,purgeTaskKey(s.id),{id:s.id,startedAt:now()});
+    await purgeStrategyFiles(env,s.id,35);
+    return json({ok:true,deletedId:s.id,notice:'Estratégia apagada. Limpeza dos arquivos associados em andamento.'});
+   }
+   if(req.method==='PUT'&&!match[2]){
+    const b=await req.json();const was=all[idx].enabled;const previous=all[idx],s=validateStrategy(b,previous);
+    const changed=JSON.stringify(s.pattern)!==JSON.stringify(previous.pattern)||s.jokerWhite!==previous.jokerWhite;
+    const reset=changed||(s.enabled&&!was);
+    if(reset||!s.enabled){
+      const oldRuntime=await getDoc(env,runtimeKey(s.id),null);
+      if(oldRuntime?.attentionEventId)await dismissAttention(env,s.id,oldRuntime.attentionEventId);
+    }
+    // Não reprocessar histórico antigo quando uma regra muda ou volta a ser ativada.
+    if(reset){const latest=await recentR2(env,s.gameId);const max=Math.max(0,...(latest.items||[]).map(x=>Number(x.seq)||0));await putDoc(env,runtimeKey(s.id),{lastSeq:max,recent:[],active:null});}
     all[idx]=s;await putDoc(env,K.strategies,all);return json({ok:true,strategy:s});
    }
-   if(req.method==='DELETE'){all[idx]={...all[idx],enabled:false,archived:true,updatedAt:now()};await putDoc(env,K.strategies,all);return json({ok:true});}
+   if(req.method==='DELETE'&&!match[2]){
+    const runtime=await getDoc(env,runtimeKey(id),null);
+    if(runtime?.attentionEventId)await dismissAttention(env,id,runtime.attentionEventId);
+    all[idx]={...all[idx],enabled:false,archived:true,updatedAt:now()};await putDoc(env,K.strategies,all);
+    return json({ok:true});
+   }
   }
   if(path==='/api/adm/bot/save'&&req.method==='POST')return saveBotToken(req,env);
   if(path==='/api/adm/bot/pair'&&req.method==='POST')return createPairing(env);
@@ -532,7 +675,12 @@ export async function routeAdmin(req,env,url){
    return json({ok:true,settings:current,attentionTriggered:false,botOnTriggered:!!(ss&&privateReady),privateFirst:privateReady});
   }
   if(path==='/api/adm/telegram/deactivate'&&req.method==='POST'){
-   const st=await settings();st.botEnabled=false;st.updatedAt=now();await putDoc(env,K.settings,st);return json({ok:true,settings:st});
+   const st=await settings();st.botEnabled=false;st.updatedAt=now();await putDoc(env,K.settings,st);
+   for(const s of (await strategies()).filter(x=>x.enabled&&!x.archived)){
+     const state=await getDoc(env,runtimeKey(s.id),null);
+     if(state?.attentionEventId){await dismissAttention(env,s.id,state.attentionEventId);state.attentionEventId=null;await putDoc(env,runtimeKey(s.id),state)}
+   }
+   return json({ok:true,settings:st});
   }
   if(path==='/api/adm/telegram/test'&&req.method==='POST'){
    const b=await req.json(),g=(await groups()).find(x=>x.id===String(b.groupId)&&x.selected&&x.admin);
@@ -590,15 +738,43 @@ export async function routeAdmin(req,env,url){
   return err('Rota ADM nao encontrada',404);
  }catch(e){console.error('ADM API:',String(e.message||e).slice(0,200));return err(e.message?.startsWith('Telegram ')?'Falha ao comunicar com Telegram. Verifique token e permissoes.':String(e.message||'Falha interna').slice(0,180),400)}
 }
+// V10: limpeza gradual, sempre por ID de estratégia; não toca no histórico de jogo.
+async function purgeStrategyFiles(env,id,limit=35){
+ const prefixes=[ROOT+'outbox/pending/'+id+'_',ROOT+'outbox/sent/'+id+'_',ROOT+'events/'+id+'_',ATTENTION_ROOT+id+'/',ATTENTION_MESSAGES_ROOT+id+'/'];
+ let more=false,used=0;
+ for(const prefix of prefixes){
+  if(used>=limit){more=true;break}
+  const entries=await list(env,prefix,Math.min(35,limit-used));
+  for(const x of entries){await env.R2.delete?.(x.key);used++}
+  if(entries.length===Math.min(35,limit-used+entries.length))more=true;
+ }
+ // Uma passada extra garante que o número exatamente igual ao lote não deixa restos.
+ if(!more){await env.R2.delete?.(purgeTaskKey(id));return}
+ await putDoc(env,purgeTaskKey(id),{id,lastPass:now(),pending:true});
+}
+async function runPurgeQueue(env){
+ const pending=await list(env,ROOT+'maintenance/purge/',4);
+ for(const task of pending.slice(0,1)){
+  const id=/\/([a-f0-9]{32})\.json$/.exec(task.key)?.[1];
+  if(id)await purgeStrategyFiles(env,id,40);
+ }
+}
 export async function scheduledAdmin(env){
  if(!env.R2)return;
  const st=await getDoc(env,K.settings,settingsDefault),strategies=await getDoc(env,K.strategies,[]);
  if(st.resetMidnight){for(const s of strategies.filter(x=>!x.archived)){const score=await getDoc(env,scoreKey(s.id),scoreDefault(dayBR()));if(score.day!==dayBR())await resetScore(env,s.id);}}
+ await cleanupOldAttention(env);
+ await runPurgeQueue(env);
  if(!st.botEnabled||!await hasBot(env))return;
  const all=await list(env,ROOT+'outbox/pending/',100);
  const gs=await getDoc(env,K.groups,[]);
  for(const x of all.slice(0,20)){
   const row=await getDoc(env,x.key,null);if(!row||row.attempts>=5||row.updatedAt+60>now())continue;
+  if(row.evt?.strategyId&&!strategies.some(s=>s.id===row.evt.strategyId&&!s.archived)){await env.R2.delete?.(x.key);continue}
+  if(row.evt?.type==='attention'){
+    const track=await getDoc(env,attentionKey(row.evt.strategyId,row.evt.id),null);
+    if(!track?.active){await env.R2.delete?.(x.key);continue}
+  }
   if(await getDoc(env,sentKey(row.id),null)){if(env.R2.delete)await env.R2.delete(x.key);continue;}
   const owner=await getDoc(env,K.owner,null);
   const group=owner?.id===row.groupId?{id:row.groupId,private:true}:gs.find(g=>g.id===row.groupId&&g.selected&&g.admin);if(!group)continue;

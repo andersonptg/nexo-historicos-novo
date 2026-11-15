@@ -56,3 +56,7 @@ button.v6-stone:active{transform:translateY(3px);box-shadow:inset 0 3px 4px #000
 .v6-card-actions{display:flex;gap:8px;flex-wrap:wrap;margin:15px 0 0}
 .v6-card-actions button{flex:1;padding:11px 9px;font-size:11px}
 @media(max-width:560px){.v6-builder{padding:13px}.v6-stone{width:38px;height:38px;border-radius:9px}.v6-stone-face{font-size:16px}.v6-number-row{grid-template-columns:repeat(5,minmax(0,1fr));gap:8px}.v6-color-row{gap:6px}.v6-color-button{font-size:9px;padding:10px 2px}.v6-saved-card{padding:13px}}
+
+/* V10: ação irreversível em cada cartão, claramente distinta de Arquivar. */
+.v6-card-actions .v10-purge{flex:1 1 100%;background:#40202e;border:1px solid #c65b7b;color:#ffe4ed;font-weight:800;border-radius:10px}
+.v6-card-actions .v10-purge:focus-visible{outline:2px solid #ffb1c8;outline-offset:3px}

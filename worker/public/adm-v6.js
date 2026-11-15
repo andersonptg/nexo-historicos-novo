@@ -4,6 +4,7 @@
   const $ = id => document.getElementById(id);
   const el = (tag,cls,text) => {const x=document.createElement(tag);if(cls)x.className=cls;if(text!==undefined)x.textContent=text;return x};
   let start=false, duplicateOpposite=false;
+  const MAX_PATTERN_STONES=256;
   const COLORS={white:'Branco',red:'Vermelho',black:'Preto','*':'Coringa azul'};
   const opposite=v=>v==='red'?'black':v==='black'?'red':v;
   const codeColor=code => code==='*'?'joker':code==='white'?'white':code==='black'?'black':code==='red'?'red':/^n:(\d{1,2})$/.test(code)?(Number(code.slice(2))===0?'white':Number(code.slice(2))<=7?'red':'black'):'joker';
@@ -18,7 +19,7 @@
   };
   function tokens(){return $('st-pattern').value.split(/[\s,;]+/).map(x=>x.trim().toLowerCase()).filter(Boolean)}
   function setTokens(t){$('st-pattern').value=t.join(', ');renderPattern()}
-  function append(token){let t=tokens();if(t.length>=8){pop('Limite de 8 pedras por padrao.',true);return}t.push(token);setTokens(t)}
+  function append(token){let t=tokens();if(t.length>=MAX_PATTERN_STONES){pop('Limite técnico de '+MAX_PATTERN_STONES+' pedras para proteger o processamento.',true);return}t.push(token);setTokens(t)}
   function visibleNumbers(){return $('v6-numbers')?.checked!==false}
   function showBuilder(){
     const root=$('v6-builder');if(!root)return;
@@ -39,7 +40,7 @@
       n.onclick=()=>{const next=tokens();next.splice(i,1);setTokens(next)};
       seq.append(n);
     }
-    $('v6-length').textContent=parts.length+' / 8 pedras';
+    $('v6-length').textContent=parts.length+' / '+MAX_PATTERN_STONES+' pedras';
     const target=$('st-target').value;
     $('v6-target').replaceChildren(stoneNode(target,{mini:true}),stoneNode('white',{mini:true}));
     $('v6-target-text').textContent=target==='red'?'ENTRADA VERMELHO + BRANCO':'ENTRADA PRETO + BRANCO';
@@ -65,7 +66,7 @@
       const op=$('st-gale').querySelector(`[value="${v}"]`);if(op)op.textContent=l;
     }
     const builder=el('div','v6-builder');builder.id='v6-builder';
-    const heading=el('div','v6-builder-head');heading.append(el('div','', 'MONTE SUA SEQUÊNCIA'),el('span','v6-count','0 / 8 pedras'));heading.lastChild.id='v6-length';
+    const heading=el('div','v6-builder-head');heading.append(el('div','', 'MONTE SUA SEQUÊNCIA'),el('span','v6-count','0 / '+MAX_PATTERN_STONES+' pedras'));heading.lastChild.id='v6-length';
     const seq=el('div','v6-sequence');seq.id='v6-sequence';
     const goal=el('div','v6-goal');goal.append(el('span','v6-equal','='));
     const faces=el('span','v6-goal-stones');faces.id='v6-target';
@@ -114,7 +115,21 @@
       await reload();pop(s.enabled?'Estrategia pausada.':'Estrategia ativada para novas rodadas.');
     });
     const scores=el('button','outline','Ver placar');scores.type='button';scores.onclick=()=>page('placares');
-    controls.append(edit,enable,scores);
+    const erase=el('button','v10-purge','Apagar definitivamente');erase.type='button';
+    erase.title='Exclui somente esta estratégia; não altera histórico, robô ou grupos.';
+    erase.onclick=()=>call(async()=>{
+      const typed=prompt('Para excluir PERMANENTEMENTE "'+s.name+'", digite exatamente o nome da estratégia:');
+      if(typed===null)return;
+      if(typed!==s.name){pop('Nome diferente. Nenhuma estratégia foi apagada.',true);return}
+      if(!confirm('Última confirmação: apagar "'+s.name+'" por inteiro? O cadastro e o placar desta estratégia serão excluídos.'))return;
+      erase.disabled=true;
+      try{
+        await api('strategies/'+s.id+'/purge',payload('POST',{confirm:true,name:s.name}));
+        if(selected===s.id)selected='';
+        await reload();pop('Estratégia apagada: '+s.name+'. Outras estratégias preservadas.');
+      }finally{erase.disabled=false}
+    });
+    controls.append(edit,enable,scores,erase);
     card.append(top,pattern,meta,score,controls);return card;
   }
   function renderSavedList(){
