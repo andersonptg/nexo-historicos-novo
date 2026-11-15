@@ -19,7 +19,7 @@ const GLOBAL_KEY=ROOT+'admin/global-signals.json';
 const OWNER_ID_KEY=ROOT+'telegram/owner-request.json';
 const GLOBAL_KEYS=['entry_black','entry_red','green','white','red','attention','bot_on','gale1','gale2'];
 const GLOBAL_MAP={entry_black:'entry_black',entry_red:'entry_red',win_black:'green',win_red:'green',win_white:'white',red:'red',attention:'attention',gale1:'gale1',gale2:'gale2',bot_on:'bot_on'};
-const emptyGlobal=()=>({version:1,registration:{enabled:false,url:'',label:'🔗 CADASTRE-SE'},templates:{},updatedAt:0});
+const emptyGlobal=()=>({version:2,registration:{enabled:false,url:'',label:'🔗 CADASTRE-SE'},stone:{enabled:true,text:'🎲 Pedra sorteada: {quadrado_espaco}'},templates:{},updatedAt:0});
 const globalDoc=env=>getDoc(env,GLOBAL_KEY,emptyGlobal());
 function validRegistration(r){
  if(!r||typeof r!=='object')throw Error('Dados do link inválidos.');
@@ -39,10 +39,10 @@ function normalizeGlobalEvent(key,item,media){
  if(['gale1','gale2'].includes(key)&&type!=='text')throw Error('GALE 1 e GALE 2 aceitam somente texto.');
  const assetId=type==='text'?'':String(item.assetId||'');
  if(type!=='text'&&(!idSafe(assetId)||!media.some(a=>a.id===assetId&&a.kind===type)))throw Error('Mídia não encontrada na biblioteca do bot.');
- return {text,type,assetId,saved:true,updatedAt:now()};
+ return {text,type,assetId,sendWithMedia:item.sendWithMedia!==false,saved:true,updatedAt:now()};
 }
 
-const strategyDefault=()=>({id:crypto.randomUUID().replaceAll('-',''),name:'',gameId:'brabet-double',enabled:false,archived:false,target:'black',pattern:['red','red'],maxGale:0,showStoneBeforeMedia:false,showNumbers:true,jokerWhite:false,messages:Object.fromEntries(E.map(x=>[x,''])),media:Object.fromEntries(E.map(x=>[x,{type:'text',assetId:''}])),createdAt:now(),updatedAt:now()});
+const strategyDefault=()=>({id:crypto.randomUUID().replaceAll('-',''),name:'',gameId:'brabet-double',enabled:false,archived:false,target:'black',pattern:['red','red'],maxGale:0,showStoneBeforeMedia:false,showStoneAfter:true,showNumbers:true,jokerWhite:false,messages:Object.fromEntries(E.map(x=>[x,''])),media:Object.fromEntries(E.map(x=>[x,{type:'text',assetId:''}])),createdAt:now(),updatedAt:now()});
 const scoreDefault=(day)=>({day,entries:0,green:0,white:0,red:0,gale1:0,gale2:0,updatedAt:now()});
 const scoreKey=id=>ROOT+'scores/'+id+'.json';
 const runtimeKey=id=>ROOT+'runtime/'+id+'.json';
@@ -108,7 +108,7 @@ function validateStrategy(input,previous){
  x.maxGale=Number(input.maxGale);if(![0,1,2].includes(x.maxGale))throw Error('Gale deve ser 0, 1 ou 2.');
  if(!Array.isArray(input.pattern)||input.pattern.length<1||input.pattern.length>MAX_PATTERN_STONES||input.pattern.some(z=>!(['red','black','white','*'].includes(z)||/^(?:n:)(?:[0-9]|1[0-4])$/.test(z))))throw Error('Padrão inválido (1 a '+MAX_PATTERN_STONES+' pedras).');
  x.pattern=[...input.pattern];
- x.showStoneBeforeMedia=input.showStoneBeforeMedia===true;x.showNumbers=input.showNumbers!==false;x.jokerWhite=input.jokerWhite===true;
+ x.showStoneBeforeMedia=input.showStoneBeforeMedia===true;x.showStoneAfter=input.showStoneAfter!==false;x.showNumbers=input.showNumbers!==false;x.jokerWhite=input.jokerWhite===true;
  x.messages={};for(const e of E)x.messages[e]=textLimit(input.messages?.[e],1500);
  x.media={};for(const e of E){const m=input.media?.[e];x.media[e]={type:['text','sticker','gif'].includes(m?.type)?m.type:'text',assetId:idSafe(m?.assetId)?m.assetId:''};}
  x.enabled=input.enabled===true; x.archived=previous?.archived||false;
@@ -219,10 +219,10 @@ function matchPat(history,pattern,joker=false){
 }
 const validName=(n)=>E.includes(n);
 function formatMessage(template,r,s,step){
- const values={numero:String(r.number),cor:r.color==='red'?'VERMELHO':r.color==='black'?'PRETO':'BRANCO',gale:String(step),limite_gale:String(s.maxGale??0),estrategia:s.name,hora:isoTime(r.minute_epoch),data:dayBR(r.minute_epoch)};
- return String(template||'').replace(/\{(numero|cor|gale|limite_gale|estrategia|hora|data)\}/g,(_,k)=>values[k]);
+ const values={quadrado_espaco:(r.color==='red'?'🟥':r.color==='black'?'⬛':'⬜')+' '+String(r.number),pedra:(r.color==='red'?'🔴':r.color==='black'?'⚫':'⚪')+String(r.number),quadrado:(r.color==='red'?'🟥':r.color==='black'?'⬛':'⬜')+String(r.number),numero:String(r.number),cor:r.color==='red'?'VERMELHO':r.color==='black'?'PRETO':'BRANCO',gale:String(step),limite_gale:String(s.maxGale??0),estrategia:s.name,hora:isoTime(r.minute_epoch),data:dayBR(r.minute_epoch)};
+ return String(template||'').replace(/\{(pedra|quadrado|quadrado_espaco|numero|cor|gale|limite_gale|estrategia|hora|data)\}/g,(_,k)=>values[k]);
 }
-function stoneText(r,withNumber){return '🎲 Pedra sorteada: '+(r.color==='red'?'🔴':r.color==='black'?'⚫':'⚪')+(withNumber?' '+r.number:'');}
+function stoneText(r,withNumber){return '🎲 Pedra sorteada: '+(r.color==='red'?'🟥':r.color==='black'?'⬛':'⬜')+(withNumber?' '+r.number:'');}
 // V10: aviso de ATENÇÃO é temporário. Guarda SOMENTE message_id retornados pelo Telegram.
 async function beginAttention(env,evt){
  const key=attentionKey(evt.strategyId,evt.id);
@@ -286,7 +286,11 @@ async function dismissAttention(env,strategyId,eventId){
  const key=attentionKey(strategyId,eventId),data=await getDoc(env,key,null);
  // Cancelar tentativas que ainda estiverem na fila antes de publicar outro sinal.
  const queued=await list(env,ROOT+'outbox/pending/'+eventId+'_',30);
- for(const entry of queued)await env.R2.delete?.(entry.key);
+  for(const entry of queued){
+   const row=await getDoc(env,entry.key,null);
+   if(row?.groupId){const key=v11BlockKey(row.groupId),blocked=await getDoc(env,key,null);if(blocked?.eventId===eventId)await env.R2.delete?.(key);}
+   await env.R2.delete?.(entry.key);
+  }
  if(!data)return;
  data.active=false;data.cancelledAt=data.cancelledAt||now();
  await putDoc(env,key,data); // Persistir o cancelamento antes do deleteMessage.
@@ -310,42 +314,96 @@ function defaultSignalText(key){
   case 'entry_red':return '🎯 ENTRADA CONFIRMADA\nAlvo: VERMELHO 🔴 + BRANCO ⚪\n- - - - ATÉ GALE {limite_gale} - - - -\n🤖 NEXO DOUBLE PRO 🤖';
   case 'gale1':return '- - - - GALE 1 - - - -';
   case 'gale2':return '- - - - GALE 2 - - - -';
-  case 'green':return '✅ WIN NA COR!';
-  case 'white':return '✅ WIN NO BRANCO!';
+  case 'green':return '✅ WIN NO {pedra}';
+  case 'white':return '✅ WIN NO {pedra}';
   case 'red':return '❌ RED - sequência encerrada.';
   case 'attention':return '🚨 ATENÇÃO: possível sinal em análise.';
   case 'bot_on':return '🤖 NEXO DOUBLE PRO 🤖\n✅ ROBÔ ATIVADO\n🔔 Avisos habilitados neste privado.\nAs estratégias só analisarão rodadas novas.';
   default:return '';
  }
 }
+// V11: entrega por etapas duráveis. Nunca reenviar automaticamente uma etapa
+// cujo resultado no Telegram ficou incerto. Os grupos trabalham em paralelo.
+const V11_STAGE_ROOT=ROOT+'outbox/stages/';
+const V11_BLOCK_ROOT=ROOT+'outbox/chat-block/';
+const v11ChatTag=id=>String(id).replace(/[^\d-]/g,'').replace('-','m');
+const v11StageKey=(evt,chatId)=>V11_STAGE_ROOT+evt.id+'_'+v11ChatTag(chatId)+'.json';
+const v11BlockKey=chatId=>V11_BLOCK_ROOT+v11ChatTag(chatId)+'.json';
+const V11_ADMIN_CACHE=new Map();
+async function v11IsAdmin(env,group){
+ if(group.private)return true;
+ const id=String(group.id),old=V11_ADMIN_CACHE.get(id);
+ if(old&&old.until>now())return old.ok;
+ const ok=await botAdmin(env,id);
+ if(V11_ADMIN_CACHE.size>64)V11_ADMIN_CACHE.clear();
+ V11_ADMIN_CACHE.set(id,{ok,until:now()+(ok?180:5)});
+ return ok;
+}
 async function transmit(env,group,evt){
- if(!group.private&&!await botAdmin(env,group.id))throw Error('Bot nao e administrador deste grupo');
- const send=async(method,body)=>{
-  const result=await tg(env,method,body);
+ if(!await v11IsAdmin(env,group))throw Error('Bot nao e administrador deste grupo');
+ // Testes manuais e placares nao compartilham estado com os sinais.
+ const tracked=!!evt.id;
+ const stageKey=tracked?v11StageKey(evt,group.id):null;
+ const initial={eventId:evt.id||'',chatId:String(group.id),confirmed:{},uncertain:null,completed:false,updatedAt:now()};
+ const progress=tracked?await getDoc(env,stageKey,initial):initial;
+ const gate=tracked?await getDoc(env,v11BlockKey(group.id),null):null;
+ if(tracked&&gate&&gate.eventId!==evt.id)throw Error('Chat aguardando revisao do ciclo '+gate.eventId);
+ if(tracked&&progress.inFlight&&!progress.confirmed[progress.inFlight]){
+  progress.uncertain=progress.inFlight;progress.updatedAt=now();
+  await putDoc(env,stageKey,progress);
+  await putDoc(env,v11BlockKey(group.id),{eventId:evt.id,chatId:String(group.id),stage:progress.inFlight,updatedAt:now()});
+ }
+ if(progress.uncertain)throw Error('Envio incerto em '+progress.uncertain+'; revisar antes de retentar');
+ if(progress.completed)return;
+ const deliver=async(stage,method,body)=>{
+  if(progress.confirmed[stage])return;
+  if(tracked){
+   progress.inFlight=stage;progress.updatedAt=now();
+   await putDoc(env,stageKey,progress);
+  }
+  let result;
+  try{result=await tg(env,method,body)}
+  catch(e){
+   if(tracked){
+    progress.uncertain=stage;progress.updatedAt=now();
+    await putDoc(env,stageKey,progress);
+    await putDoc(env,v11BlockKey(group.id),{eventId:evt.id,chatId:String(group.id),stage,updatedAt:now()});
+   }
+   throw e;
+  }
+  // A mensagem passou pelo Telegram: persistir ID antes do passo seguinte.
   if(evt.type==='attention'&&result?.message_id)await rememberAttentionMessage(env,evt,group.id,Number(result.message_id));
-  return result;
+  if(tracked){
+   progress.confirmed[stage]={messageId:result?.message_id||null,at:now()};
+   progress.inFlight=null;progress.updatedAt=now();
+   await putDoc(env,stageKey,progress);
+  }
  };
- if(evt.message)await send('sendMessage',{chat_id:group.id,text:evt.message,disable_web_page_preview:true});
+ // V12: somente UMA forma de mensagem por evento: TEXTO OU STICKER OU GIF.
+ if(evt.message&&!['sticker','gif'].includes(evt.media?.type))await deliver('text','sendMessage',{chat_id:group.id,text:evt.message,disable_web_page_preview:true});
  const m=evt.media;
  if(m?.type==='sticker'||m?.type==='gif'){
   const assets=await getDoc(env,K.media,[]),asset=assets.find(a=>a.id===m.assetId&&a.kind===m.type);
   if(!asset)throw Error('Midia nao encontrada para '+evt.type);
   const method=m.type==='gif'?'sendAnimation':'sendSticker',field=m.type==='gif'?'animation':'sticker';
-  if(asset.fileId)await send(method,{chat_id:group.id,[field]:asset.fileId});
+  if(asset.fileId)await deliver('media',method,{chat_id:group.id,[field]:asset.fileId});
   else{
    const obj=await env.R2.get(ROOT+'media/files/'+asset.id);
    if(!obj)throw Error('Arquivo de midia nao encontrado');
    const form=new FormData();form.append('chat_id',group.id);
    form.append(field,new Blob([await obj.arrayBuffer()],{type:asset.mime}),asset.name);
-   await send(method,form);
+   await deliver('media',method,form);
   }
  }
- // A pedra do WIN é enviada em texto somente depois da mídia, nunca embutida no sticker.
- if(evt.stoneAfter)await send('sendMessage',{chat_id:group.id,text:evt.stoneAfter,disable_web_page_preview:true});
- // Mensagem independente e clicável; nunca juntar o link ao texto do sinal.
+ if(evt.stoneAfter)await deliver('stone','sendMessage',{chat_id:group.id,text:evt.stoneAfter,disable_web_page_preview:true});
  if(evt.registration?.enabled&&evt.registration.url){
   const label=evt.registration.label||'🔗 CADASTRE-SE';
-  await send('sendMessage',{chat_id:group.id,text:label,entities:[{type:'text_link',offset:0,length:label.length,url:evt.registration.url}],disable_web_page_preview:true});
+  await deliver('link','sendMessage',{chat_id:group.id,text:label,entities:[{type:'text_link',offset:0,length:[...label].reduce((n,c)=>n+(c.codePointAt(0)>65535?2:1),0),url:evt.registration.url}],disable_web_page_preview:true});
+ }
+ if(tracked){
+  progress.completed=true;progress.updatedAt=now();await putDoc(env,stageKey,progress);
+  const current=await getDoc(env,v11BlockKey(group.id),null);
+  if(current?.eventId===evt.id)await env.R2.delete?.(v11BlockKey(group.id));
  }
 }
 // NEXO V9 - prioridade do chat privado verificado; canais continuam opcionais.
@@ -380,6 +438,7 @@ async function dispatch(env,config,evt,{privateOnly=false}={}){
    }catch(e){
      row.attempts++;row.lastError=String(e.message||e).slice(0,160);row.updatedAt=now();
      console.warn('Telegram pending',row.lastError);await putDoc(env,key,row);
+      await putDoc(env,v11BlockKey(group.id),{eventId:evt.id,chatId:String(group.id),stage:'pending-error',updatedAt:now()});
    }
  }));
 }
@@ -390,10 +449,13 @@ async function fireEvent(env,settings,strategy,r,type,step){
  const savedText=globalSaved?template.text:(strategy.messages?.[type]||'');
  const message=String(savedText||'').trim()?savedText:defaultSignalText(key);
  const media=globalSaved?{type:template.type,assetId:template.assetId}:(strategy.media?.[type]||{type:'text'});
- const evt={id:strategy.id+'_'+r.id+'_'+type,strategyId:strategy.id,strategyName:strategy.name,type,gameId:strategy.gameId,roundId:r.id,number:r.number,color:r.color,minute_epoch:r.minute_epoch,at:now(),message:formatMessage(message,r,strategy,step),media,showStoneBeforeMedia:strategy.showStoneBeforeMedia};
- if(globalSaved&&['win_black','win_red','win_white'].includes(type))evt.stoneAfter=stoneText(r,strategy.showNumbers);
- else if(strategy.showStoneBeforeMedia&&['win_black','win_red','win_white','red'].includes(type))evt.message=(evt.message?evt.message+'\n':'')+stoneText(r,strategy.showNumbers);
- if(['entry_black','entry_red'].includes(type)&&global.registration?.enabled===true)evt.registration=global.registration;
+ const evt={id:strategy.id+'_'+r.id+'_'+type,seq:r.seq,strategyId:strategy.id,strategyName:strategy.name,type,gameId:strategy.gameId,roundId:r.id,number:r.number,color:r.color,minute_epoch:r.minute_epoch,at:now(),message:formatMessage(message,r,strategy,step),media,showStoneBeforeMedia:strategy.showStoneBeforeMedia};
+  const sc=global?.stone||{enabled:true,text:'🎲 Pedra sorteada: {quadrado_espaco}'};
+  if(['win_black','win_red','win_white','red'].includes(type)&&sc.enabled!==false&&strategy.showStoneAfter!==false){
+   const stoneTemplate=String(sc.text||'🎲 Pedra sorteada: {quadrado_espaco}').slice(0,400);
+   evt.stoneAfter=formatMessage(stoneTemplate,r,strategy,step);
+  }
+  if(['win_black','win_red','win_white','red'].includes(type)&&global.registration?.enabled===true)evt.registration=global.registration;
  await putDoc(env,eventKey(evt.id),evt);
  if(type==='attention'&&settings.botEnabled)await beginAttention(env,evt);
  await dispatch(env,settings,evt);
@@ -413,49 +475,91 @@ async function simulate(s,rows){const state={recent:[],active:null};const score=
  }
  return {score,events:events.slice(-30)};
 }
+// V11: apenas um ciclo ativo por jogo, compartilhado por todas as estrategias.
+const V11_GAME_ROOT=ROOT+'runtime/game-owner/';
+const v11GameKey=gameId=>V11_GAME_ROOT+gameId+'.json';
+export async function resetAfterCatchup(env,game,records){
+ if(!records.length)return;
+ const maxSeq=Math.max(...records.map(r=>Number(r.seq)||0));
+ if(maxSeq<=0)return;
+ const strategies=(await getDoc(env,K.strategies,[])).filter(s=>!s.archived&&s.gameId===game.id);
+ const prior=await getDoc(env,v11GameKey(game.id),null);
+ if(prior&&maxSeq<=Number(prior.lastSeq||0))return;
+ for(const s of strategies){
+  const old=await getDoc(env,runtimeKey(s.id),null);
+  if(old&&Number(old.lastSeq||0)>maxSeq)continue;
+  if(old?.attentionEventId)await dismissAttention(env,s.id,old.attentionEventId);
+  if(!old||maxSeq>Number(old.lastSeq||0)){
+   await putDoc(env,runtimeKey(s.id),{lastSeq:maxSeq,recent:[],active:null,attentionEventId:null,catchupAt:now()});
+  }
+ }
+ // Importacao historica nao abre nem continua sinais; nunca apagar rodadas.
+ await putDoc(env,v11GameKey(game.id),{ownerId:null,lastSeq:maxSeq,updatedAt:now(),reason:'catchup'});
+}
 export async function processNewRounds(env,game,records){
  if(!env.R2||!records.length)return;
  const strategies=(await getDoc(env,K.strategies,[])).filter(s=>s.enabled&&!s.archived&&s.gameId===game.id);
  if(!strategies.length)return;
  const settings=await getDoc(env,K.settings,settingsDefault);
  const ordered=[...records].filter(x=>Number.isInteger(x.seq)).sort((a,b)=>a.seq-b.seq);
+ if(!ordered.length)return;
  const global=await globalDoc(env);
+ const states=new Map(),scoreMap=new Map();
  for(const s of strategies){
-  try{
-   let state=await getDoc(env,runtimeKey(s.id),null);
-   if(!state){await putDoc(env,runtimeKey(s.id),{lastSeq:Math.max(...ordered.map(x=>x.seq)),recent:[],active:null});continue;}
-   const unseen=ordered.filter(x=>x.seq>state.lastSeq);
-   if(!unseen.length)continue;
-   let score=await scoreRead(env,s.id);
-   for(const r of unseen){const actions=[];
-    const history=[...(state.recent||[]),r];
-    const full=matchPat(history,s.pattern,s.jokerWhite);
-    const almost=global.templates?.attention?.saved===true&&s.pattern.length>=2
-      &&matchPat(history,s.pattern.slice(0,-1),s.jokerWhite);
-    // Assim que a sequência confirma ou muda, apaga SOMENTE o pré-aviso desta regra.
-    if(state.attentionEventId && (full||!almost||state.active||!settings.botEnabled)){
-      try{await dismissAttention(env,s.id,state.attentionEventId)}
-      catch(e){console.warn('NEXO attention cleanup',String(e.message||e).slice(0,100))}
-      state.attentionEventId=null;
-    }
-    if(state.active){const a=state.active;
-      if(r.color==='white'){score.white++;actions.push('win_white');state.active=null}
-      else if(r.color===s.target){score.green++;actions.push(s.target==='red'?'win_red':'win_black');state.active=null}
-      else if(a.step<s.maxGale){a.step++;score['gale'+a.step]++;actions.push('gale'+a.step)}
-      else{score.red++;actions.push('red');state.active=null}
-    }else if(full){
-      state.active={step:0};score.entries++;actions.push(s.target==='red'?'entry_red':'entry_black');
-    }else if(settings.botEnabled&&almost&&!state.attentionEventId){
-      // Enviar uma única ATENÇÃO por padrão parcialmente reconhecido.
-      state.attentionEventId=s.id+'_'+r.id+'_attention';
-      actions.push('attention');
-    }
-    state.recent=history.slice(-Math.max(1,s.pattern.length-1));state.lastSeq=r.seq;
-    // Advance cursor before network activity. Event files persist even if Telegram fails.
-    await putDoc(env,runtimeKey(s.id),state);score.updatedAt=now();await putDoc(env,scoreKey(s.id),score);
-    for(const action of actions)await fireEvent(env,settings,s,r,action,state.active?.step||0);
+  const state=await getDoc(env,runtimeKey(s.id),null);
+  // Mesma semantica da V10: estrategia nova nao dispara sobre lote antigo.
+  if(!state){await putDoc(env,runtimeKey(s.id),{lastSeq:Math.max(...ordered.map(x=>x.seq)),recent:[],active:null});continue}
+  states.set(s.id,state);scoreMap.set(s.id,await scoreRead(env,s.id));
+ }
+ const gameState=await getDoc(env,v11GameKey(game.id),{ownerId:null,lastSeq:0});
+ let ownerId=states.has(gameState.ownerId)?gameState.ownerId:null;
+ let attentionOwnerId=strategies.find(s=>states.get(s.id)?.attentionEventId)?.id||null;
+ // Compatibilidade: uma entrada ativa na V10 continua sendo dona do ciclo.
+ if(!ownerId){const oldOwner=strategies.find(s=>states.get(s.id)?.active);if(oldOwner)ownerId=oldOwner.id}
+ for(const s of strategies){
+  const st=states.get(s.id);
+  if(st?.active&&s.id!==ownerId)st.active=null;
+ }
+ for(const r of ordered){
+  let closedInThisRound=false;
+  // Se mais de uma estratégia casar na mesma rodada, priorizar a primeira da lista.
+  const preferred=!ownerId?strategies.find(s=>{const st=states.get(s.id);return st&&r.seq>Number(st.lastSeq||0)&&matchPat([...(st.recent||[]),r],s.pattern,s.jokerWhite)}):null;
+  for(const s of strategies){
+   const state=states.get(s.id);if(!state||r.seq<=Number(state.lastSeq||0))continue;
+   const score=scoreMap.get(s.id);const actions=[];
+   const history=[...(state.recent||[]),r];
+   const full=matchPat(history,s.pattern,s.jokerWhite);
+   const almost=global.templates?.attention?.saved===true&&s.pattern.length>=2&&matchPat(history,s.pattern.slice(0,-1),s.jokerWhite);
+   if(state.attentionEventId&&(full||!almost||ownerId||preferred||!settings.botEnabled)){
+    try{await dismissAttention(env,s.id,state.attentionEventId)}
+    catch(e){console.warn('V11 attention cleanup:',String(e.message||e).slice(0,100))}
+    state.attentionEventId=null;if(attentionOwnerId===s.id)attentionOwnerId=null;
    }
-  }catch(e){console.error('V3 rules isolated from history:',String(e.message||e).slice(0,140))}
+   if((ownerId&&ownerId!==s.id)||(preferred&&preferred.id!==s.id)){
+    state.active=null;
+   }else if(state.active){
+    const a=state.active;let type;
+    if(r.color==='white'){type='win_white';score.white++}
+    else if(r.color===s.target){type=s.target==='red'?'win_red':'win_black';score.green++}
+    else if(a.step<s.maxGale){a.step++;type='gale'+a.step;score[type]++}
+    else{type='red';score.red++}
+    actions.push({type,step:a.step});
+    if(['red','win_white','win_red','win_black'].includes(type)){
+     state.active=null;ownerId=null;closedInThisRound=true;
+    }
+   }else if(!ownerId&&!closedInThisRound&&full&&(!preferred||preferred.id===s.id)){
+    state.active={step:0,roundId:r.id};ownerId=s.id;score.entries++;
+    actions.push({type:s.target==='red'?'entry_red':'entry_black',step:0});
+   }else if(!ownerId&&!preferred&&!closedInThisRound&&!attentionOwnerId&&settings.botEnabled&&almost&&!state.attentionEventId){
+    state.attentionEventId=s.id+'_'+r.id+'_attention';
+    actions.push({type:'attention',step:0});attentionOwnerId=s.id;
+   }
+   state.recent=history.slice(-Math.max(1,s.pattern.length-1));state.lastSeq=r.seq;
+   await putDoc(env,runtimeKey(s.id),state);
+   score.updatedAt=now();await putDoc(env,scoreKey(s.id),score);
+   for(const action of actions)await fireEvent(env,settings,s,r,action.type,action.step);
+  }
+  await putDoc(env,v11GameKey(game.id),{ownerId,lastSeq:r.seq,updatedAt:now()});
  }
 }
 async function registerWebhook(req,env){
@@ -524,6 +628,12 @@ export async function routeAdmin(req,env,url){
    const b=await req.json();if(!b||typeof b!=='object')return err('Configuração inválida');
    const current=await globalDoc(env),next={...emptyGlobal(),...current,templates:{...(current.templates||{})}};
    if(b.mode==='link')next.registration=validRegistration(b.registration);
+   else if(b.mode==='stone'){
+     if(!b.stone||typeof b.stone!=='object'||typeof b.stone.text!=='string'||b.stone.text.length>400)return err('Configuração da pedra inválida. Máximo 400 caracteres.',400);
+     const stText=b.stone.text.trim();
+     if(b.stone.enabled!==false&&!stText)return err('Informe o texto da pedra sorteada.',400);
+     next.stone={enabled:b.stone.enabled!==false,text:stText};
+    }
    else if(b.mode==='event'){
     const catalog=await getDoc(env,K.media,[]);
     next.templates[b.key]=normalizeGlobalEvent(b.key,b.template,catalog);
@@ -557,7 +667,7 @@ export async function routeAdmin(req,env,url){
     await env.R2.delete?.(runtimeKey(s.id));await env.R2.delete?.(scoreKey(s.id));
     // Limpeza assíncrona segura: arquivos com prefixo exclusivo do ID da estratégia.
     await putDoc(env,purgeTaskKey(s.id),{id:s.id,startedAt:now()});
-    await purgeStrategyFiles(env,s.id,35);
+     await v11DropStrategyBlocks(env,s.id);await purgeStrategyFiles(env,s.id,35);
     return json({ok:true,deletedId:s.id,notice:'Estratégia apagada. Limpeza dos arquivos associados em andamento.'});
    }
    if(req.method==='PUT'&&!match[2]){
@@ -570,12 +680,12 @@ export async function routeAdmin(req,env,url){
     }
     // Não reprocessar histórico antigo quando uma regra muda ou volta a ser ativada.
     if(reset){const latest=await recentR2(env,s.gameId);const max=Math.max(0,...(latest.items||[]).map(x=>Number(x.seq)||0));await putDoc(env,runtimeKey(s.id),{lastSeq:max,recent:[],active:null});}
-    all[idx]=s;await putDoc(env,K.strategies,all);return json({ok:true,strategy:s});
+    all[idx]=s;await putDoc(env,K.strategies,all);if(was&&!s.enabled)await v11DropStrategyBlocks(env,s.id);return json({ok:true,strategy:s});
    }
    if(req.method==='DELETE'&&!match[2]){
     const runtime=await getDoc(env,runtimeKey(id),null);
     if(runtime?.attentionEventId)await dismissAttention(env,id,runtime.attentionEventId);
-    all[idx]={...all[idx],enabled:false,archived:true,updatedAt:now()};await putDoc(env,K.strategies,all);
+    all[idx]={...all[idx],enabled:false,archived:true,updatedAt:now()};await putDoc(env,K.strategies,all);await v11DropStrategyBlocks(env,id);
     return json({ok:true});
    }
   }
@@ -730,6 +840,56 @@ export async function routeAdmin(req,env,url){
    const obj=await env.R2.get(ROOT+'media/files/'+meta.id);if(!obj)return err('Arquivo nao encontrado',404);
    return new Response(obj.body,{headers:{'Content-Type':meta.mime,'Cache-Control':'private, max-age=60','X-Content-Type-Options':'nosniff'}});
   }
+
+   if(path==='/api/adm/v11/status'&&req.method==='GET'){
+    const waiting=await list(env,ROOT+'outbox/pending/',100);
+    const blocked=await list(env,V11_BLOCK_ROOT,100);
+    const recent=[];
+    for(const entry of blocked.slice(0,12)){
+      const data=await getDoc(env,entry.key,null);
+      if(data)recent.push({id:entry.key.slice(V11_BLOCK_ROOT.length).replace(/\.json$/,''),type:'ENTREGA INCERTA',stage:data.stage||'—',chatMasked:'••'+String(data.chatId||'').slice(-4),at:new Date((data.updatedAt||now())*1000).toISOString()});
+    }
+    const cycle=await getDoc(env,v11GameKey('brabet-double'),{ownerId:null});
+    return json({ok:true,pending:waiting.length,uncertain:blocked.length,recent,cycle});
+   }
+   if(path==='/api/adm/v11/discard-delivery'&&req.method==='POST'){
+    const body=await req.json();
+    const tag=String(body?.chatTag||'');
+    if(body?.confirm!==true||!/^m?[0-9]{5,20}$/.test(tag))return err('Confirme um destino válido.',400);
+    const key=V11_BLOCK_ROOT+tag+'.json',blocked=await getDoc(env,key,null);
+    if(!blocked)return err('Não há envio incerto neste destino.',404);
+    const pending=await list(env,ROOT+'outbox/pending/'+blocked.eventId+'_',30);
+    let discarded=0;
+    for(const x of pending){const row=await getDoc(env,x.key,null);
+      if(row?.groupId!==blocked.chatId)continue;
+      await putDoc(env,ROOT+'outbox/cancelled/'+row.id+'.json',{...row,cancelledAt:now(),reason:'manual-v11-discard'});
+      await env.R2.delete?.(x.key);discarded++;
+    }
+    const stageKey=v11StageKey({id:blocked.eventId},blocked.chatId);
+    const stage=await getDoc(env,stageKey,null);
+    if(stage){stage.cancelledAt=now();stage.completed=true;stage.uncertain=null;await putDoc(env,stageKey,stage)}
+    await env.R2.delete?.(key);
+    return json({ok:true,discarded,notice:'Evento do destino descartado; nenhuma mensagem foi reenviada.'});
+   }
+   if(path==='/api/adm/v11/reset-cycles'&&req.method==='POST'){
+    const body=await req.json();if(body?.confirm!==true)return err('Confirme o reset de ciclos.',400);
+    const st=await settings();if(st.botEnabled)return err('Desligue o robô antes de reinicializar ciclos.',409);
+    const latest=await recentR2(env,'brabet-double');const rows=latest.items||[];
+    if(!rows.length)return err('Histórico remoto vazio; não há cursor confirmado.',409);
+    await resetAfterCatchup(env,{id:'brabet-double'},rows);
+    // Arquivar apenas pendências de sinais desta aplicação; nunca tocar no histórico R2.
+    const old=await list(env,ROOT+'outbox/pending/',100);
+    for(const entry of old){const task=await getDoc(env,entry.key,null);if(!task)continue;
+     await putDoc(env,ROOT+'outbox/cancelled/'+task.id+'.json',{...task,cancelledAt:now(),reason:'manual-v11-reset'});
+     await env.R2.delete?.(entry.key);
+    }
+    const gates=await list(env,V11_BLOCK_ROOT,100);
+    for(const entry of gates){const gate=await getDoc(env,entry.key,null);
+     if(gate)await putDoc(env,ROOT+'outbox/cancelled/block_'+entry.key.slice(V11_BLOCK_ROOT.length),{...gate,cancelledAt:now(),reason:'manual-v11-reset'});
+     await env.R2.delete?.(entry.key);
+    }
+    return json({ok:true,reset:true,items:rows.length,cancelled:old.length,clearedBlocks:gates.length});
+   }
   if(path==='/api/adm/events'&&req.method==='GET'){
    const all=await list(env,ROOT+'events/',250);const recent=all.sort((a,b)=>String(b.key).localeCompare(String(a.key))).slice(0,60);
    const events=await Promise.all(recent.map(x=>getDoc(env,x.key,null)));
@@ -738,9 +898,19 @@ export async function routeAdmin(req,env,url){
   return err('Rota ADM nao encontrada',404);
  }catch(e){console.error('ADM API:',String(e.message||e).slice(0,200));return err(e.message?.startsWith('Telegram ')?'Falha ao comunicar com Telegram. Verifique token e permissoes.':String(e.message||'Falha interna').slice(0,180),400)}
 }
-// V10: limpeza gradual, sempre por ID de estratégia; não toca no histórico de jogo.
+
+ // Desarquivamento seguro: descarta apenas bloqueios originados pela estratégia excluída.
+ async function v11DropStrategyBlocks(env,strategyId){
+  const entries=await list(env,V11_BLOCK_ROOT,100);
+  for(const x of entries){const gate=await getDoc(env,x.key,null);
+   if(!gate?.eventId?.startsWith(strategyId+'_'))continue;
+   await putDoc(env,ROOT+'outbox/cancelled/block_'+x.key.slice(V11_BLOCK_ROOT.length),{...gate,cancelledAt:now(),reason:'strategy-disabled'});
+   await env.R2.delete?.(x.key);
+  }
+ }
+ // V10: limpeza gradual, sempre por ID de estratégia; não toca no histórico de jogo.
 async function purgeStrategyFiles(env,id,limit=35){
- const prefixes=[ROOT+'outbox/pending/'+id+'_',ROOT+'outbox/sent/'+id+'_',ROOT+'events/'+id+'_',ATTENTION_ROOT+id+'/',ATTENTION_MESSAGES_ROOT+id+'/'];
+ const prefixes=[ROOT+'outbox/pending/'+id+'_',ROOT+'outbox/sent/'+id+'_',ROOT+'outbox/stages/'+id+'_',ROOT+'events/'+id+'_',ATTENTION_ROOT+id+'/',ATTENTION_MESSAGES_ROOT+id+'/'];
  let more=false,used=0;
  for(const prefix of prefixes){
   if(used>=limit){more=true;break}
@@ -768,7 +938,7 @@ export async function scheduledAdmin(env){
  if(!st.botEnabled||!await hasBot(env))return;
  const all=await list(env,ROOT+'outbox/pending/',100);
  const gs=await getDoc(env,K.groups,[]);
- for(const x of all.slice(0,20)){
+ let v11Attempts=0;for(const x of all){
   const row=await getDoc(env,x.key,null);if(!row||row.attempts>=5||row.updatedAt+60>now())continue;
   if(row.evt?.strategyId&&!strategies.some(s=>s.id===row.evt.strategyId&&!s.archived)){await env.R2.delete?.(x.key);continue}
   if(row.evt?.type==='attention'){
@@ -778,10 +948,11 @@ export async function scheduledAdmin(env){
   if(await getDoc(env,sentKey(row.id),null)){if(env.R2.delete)await env.R2.delete(x.key);continue;}
   const owner=await getDoc(env,K.owner,null);
   const group=owner?.id===row.groupId?{id:row.groupId,private:true}:gs.find(g=>g.id===row.groupId&&g.selected&&g.admin);if(!group)continue;
+  if(v11Attempts++>=20)break;
   try{
    await transmit(env,group,row.evt);
    await putDoc(env,sentKey(row.id),{id:row.id,sentAt:now()});
    if(env.R2.delete)await env.R2.delete(x.key);
-  }catch(e){row.attempts++;row.lastError=String(e.message||e).slice(0,140);row.updatedAt=now();await putDoc(env,x.key,row);}
+  }catch(e){row.attempts++;row.lastError=String(e.message||e).slice(0,140);row.updatedAt=now();await putDoc(env,x.key,row);await putDoc(env,v11BlockKey(group.id),{eventId:row.evt.id,chatId:String(group.id),stage:'cron-pending',updatedAt:now()});}
  }
 }

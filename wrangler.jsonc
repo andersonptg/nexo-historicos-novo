@@ -2,7 +2,35 @@
   "name": "nexo-historicos-novo",
   "main": "worker/src/index.js",
   "compatibility_date": "2026-11-01",
-  "triggers": {"crons": ["* * * * *"]},
-  "assets": { "directory": "./worker/public", "binding": "ASSETS" },
-  "r2_buckets": [{ "binding": "R2", "bucket_name": "nexo-historicos-v30" }]
+  "triggers": {
+    "crons": [
+      "* * * * *"
+    ]
+  },
+  "assets": {
+    "directory": "./worker/public",
+    "binding": "ASSETS"
+  },
+  "r2_buckets": [
+    {
+      "binding": "R2",
+      "bucket_name": "nexo-historicos-v30"
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "NEXO_COORDINATOR",
+        "class_name": "NexoCoordinator"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "nexo_v11_coordinator_sqlite",
+      "new_sqlite_classes": [
+        "NexoCoordinator"
+      ]
+    }
+  ]
 }

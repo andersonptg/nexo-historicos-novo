@@ -1,0 +1,36 @@
+name: Validar NEXO V12 sem publicar
+
+on:
+  push:
+    branches:
+      - nexo-v12-validacao
+  workflow_dispatch:
+
+jobs:
+  validar:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Instalar dependencias
+        run: npm install --no-audit --no-fund
+
+      - name: Testar motor Python
+        run: python nexo.py testar
+
+      - name: Testar NEXO
+        run: npm test
+
+      - name: Simular publicacao sem deploy
+        run: npx wrangler deploy --dry-run --outdir dist-dry-run

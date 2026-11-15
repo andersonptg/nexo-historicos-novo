@@ -1,0 +1,28 @@
+/* NEXO V12 • interface leve, navegação por módulos; nenhuma imagem pesada */
+.v11-control{display:none!important} /* V11 permitia dois formatos ao mesmo tempo */
+.v12-stone-settings,.v12-showcase,.v12-scoreboard,.v12-inspector{background:linear-gradient(145deg,#0d252a,#0b1824);border:1px solid #33555a;border-radius:18px;padding:16px;margin:14px 0 20px;color:#e4f1f2}
+.v12-stone-settings h2,.v12-showcase h2,.v12-scoreboard h2{margin:0 0 6px;color:#fff;font-size:1.05rem}
+.v12-sub{font-size:.81rem;opacity:.78;line-height:1.55;margin:2px 0 12px}
+.v12-toggle{display:flex;align-items:center;gap:9px;margin:12px 0;color:#e6f6f3;font-weight:600}
+.v12-toggle input{width:19px;height:19px;accent-color:#35d9ac}
+.v12-stone-settings textarea{display:block;min-height:86px;width:100%;box-sizing:border-box;margin:7px 0 12px;border:1px solid #486469;border-radius:12px;background:#091d23;color:#e8faff;font-size:.94rem;padding:12px;resize:vertical}
+.v12-row{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.v12-status{color:#98e9d3;font-size:.85rem}
+.v12-strategy-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:15px 0}
+.v12-strategy-card{background:#112934;border:1px solid #35515c;border-radius:13px;padding:13px;min-width:0;display:grid;gap:10px}
+.v12-strategy-card strong{display:block;font-weight:800;font-size:1rem;color:#f5fcff;overflow-wrap:anywhere}
+.v12-chips{display:flex;align-items:center;flex-wrap:wrap;gap:5px;margin:7px 0}
+.v12-ball{display:inline-grid;place-items:center;width:30px;height:30px;border-radius:50%;color:#fff;background:#27394a;border:2px solid #637588;font-weight:900;font-size:.8rem}
+.v12-ball.red{background:linear-gradient(135deg,#ff6377,#a50e2b);border-color:#ff9aa4}.v12-ball.black{background:linear-gradient(135deg,#47566b,#090f18)}.v12-ball.white{background:#f0f4ff;color:#101923;border-color:#fff}.v12-ball.joker{background:#244cbd;border-color:#8cbeff}
+.v12-strategy-meta{color:#abcbd0;font-size:.79rem;line-height:1.55}
+.v12-strategy-card button,.v12-inspector button,.v12-stone-settings button{cursor:pointer;border-radius:10px;padding:9px 12px;border:1px solid #388a80;background:#1b6e68;color:#fff;font-weight:700}
+.v12-strategy-card button:hover,.v12-inspector button:hover{filter:brightness(1.15)}
+.v12-score-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin:12px 0}
+.v12-score-stat{display:grid;gap:3px;border:1px solid #32525b;border-radius:13px;background:#112e37;padding:12px}.v12-score-stat strong{font-size:1.55rem;color:#f6fbff}.v12-score-stat small{color:#aac4cb}
+.v12-score-line{border-radius:10px;background:#192d39;padding:10px 12px;margin:9px 0;display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px}.v12-score-line b{color:#73e7c0}
+.v12-progress{height:7px;border-radius:8px;background:#35444b;overflow:hidden;margin:8px 0}.v12-progress>span{display:block;height:100%;background:linear-gradient(90deg,#21ad88,#a3f5c4)}
+.v12-inspector[hidden]{display:none}.v12-inspector .v12-chips{margin:14px 0}
+#v7-chat .v7-chat-bubble.stone{border-radius:12px;padding:10px;background:#263b42}
+@media(max-width:580px){.v12-stone-settings,.v12-showcase,.v12-scoreboard{padding:12px}.v12-strategy-list{grid-template-columns:1fr}}
+
+#strategy-form .checks label[hidden]{display:none!important}

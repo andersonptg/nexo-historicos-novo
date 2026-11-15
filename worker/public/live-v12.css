@@ -1,0 +1,16 @@
+/* Bolinhas realmente redondas mesmo com o CSS V6 carregado */
+.balls .stone .circle{border-radius:50%!important;aspect-ratio:1/1;box-shadow:inset 0 4px 8px #ffffff32,inset 0 -7px 10px #0005,0 5px 13px #0006!important;border-width:3px!important;transition:transform .15s ease}
+.balls .stone:first-child .circle{outline:2px solid #6de7d0;outline-offset:3px}
+@media(hover:hover){.balls .stone:hover .circle{transform:scale(1.07)}}
+#nexo-v11-now{position:relative;overflow:hidden;isolation:isolate}
+#nexo-v11-now .v11-stone{border-radius:50%;flex:0 0 auto;width:72px;height:72px;transition:filter .3s,transform .3s}
+#nexo-v11-now.v12-result-arriving{box-shadow:0 0 0 2px #79debb,0 0 34px #18d8a03d}
+#nexo-v11-now.v12-result-arriving .v11-stone{filter:brightness(1.4);transform:scale(1.08)}
+#nexo-v11-now .v12-result-phase{font-size:.72rem;letter-spacing:.11em;font-weight:800;color:#92ebd0;margin-top:5px}
+#nexo-v11-now canvas.v12-fireworks{position:absolute;z-index:2;inset:0;width:100%;height:100%;pointer-events:none}
+#nexo-v11-now.v12-white-celebrate{border-color:#fff6bf;box-shadow:0 0 18px #ffd85c55,0 0 45px #fff9c455}
+#nexo-v11-now.v12-white-celebrate .v11-stone.white{filter:drop-shadow(0 0 12px #fff)}
+@media(prefers-reduced-motion:reduce){#nexo-v11-now .v11-stone,.balls .stone .circle{transition:none!important}}
+
+#nexo-v11-now .v11-now-body{flex-wrap:wrap}
+#nexo-v11-now .v12-result-phase{flex:1 1 100%;width:100%}

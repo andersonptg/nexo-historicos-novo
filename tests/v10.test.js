@@ -95,14 +95,14 @@ test('V10: padrão de 25 pedras funciona; ATENÇÃO não duplica com prefixo con
  }finally{h.restore()}
 });
 
-test('V10: sticker e texto do aviso são apagados, mas WIN e entrada continuam',async()=>{
+test('V12: aviso somente em sticker é apagado; WIN e entrada continuam',async()=>{
  const h=harness();try{
   const sid='d'.repeat(32);h.start([makeStrategy(sid)],{text:'🚨 ATENÇÃO com sticker',type:'sticker',assetId:'sticker001',saved:true});
   h.put('nexo-v3/media/catalog.json',[{id:'sticker001',kind:'sticker',fileId:'telegram_file',name:'Aviso'}]);
   await h.push(1,1,'red');await h.push(2,8,'black');
   assert.equal(h.sent.filter(x=>x.method==='sendSticker').length,2);
   const before=h.sent.filter(x=>x.method==='sendSticker'||x.text.includes('ATENÇÃO'));
-  assert.equal(before.length,4);
+  assert.equal(before.length,2);
   await h.push(3,3,'red');
   assert.deepEqual(new Set(h.deleted.map(x=>x.messageId)),new Set(before.map(x=>x.message_id)));
  }finally{h.restore()}

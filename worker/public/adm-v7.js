@@ -14,7 +14,7 @@
   const defaultTemplates = {
     entry_black:{text:'🎯 ENTRAR PRETO ⚫ E BRANCO ⚪\n- - - - ATÉ GALE {limite_gale} - - - -\n🤖 NEXO DOUBLE PRO 🤖',type:'text',assetId:''},
     entry_red:{text:'🎯 ENTRAR VERMELHO 🔴 E BRANCO ⚪\n- - - - ATÉ GALE {limite_gale} - - - -\n🤖 NEXO DOUBLE PRO 🤖',type:'text',assetId:''},
-    green:{text:'✅ WIN — {cor} {numero}',type:'text',assetId:''},
+    green:{text:'✅ WIN NO {pedra}',type:'text',assetId:''},
     white:{text:'✅ WIN NO BRANCO — ⚪ {numero}',type:'text',assetId:''},
     red:{text:'❌ RED — não bateu até o Gale {limite_gale}',type:'text',assetId:''},
     attention:{text:'🚨 ATENÇÃO — possível sinal\n🤖 NEXO DOUBLE PRO',type:'text',assetId:''},
@@ -33,7 +33,7 @@
   function previewText(template) {
     const s=model?.strategies?.find(x=>x.id===selected)||model?.strategies?.[0];
     const gale=String(s?.maxGale??2);
-    return String(template||'').replace(/\{(numero|cor|gale|limite_gale|estrategia|hora|data)\}/g,(_,k)=>({numero:'11',cor:'PRETO',gale:'1',limite_gale:gale,estrategia:s?.name||'Estratégia 1',hora:'18:30',data:'14/11/2026'})[k]);
+    return String(template||'').replace(/\{(pedra|quadrado|quadrado_espaco|numero|cor|gale|limite_gale|estrategia|hora|data)\}/g,(_,k)=>({pedra:'⚫8',quadrado:'⬛8',quadrado_espaco:'⬛ 8',numero:'11',cor:'PRETO',gale:'1',limite_gale:gale,estrategia:s?.name||'Estratégia 1',hora:'18:30',data:'14/11/2026'})[k]);
   }
   function makeImg(asset,cls='') {
     if(!asset)return el('div','v7-empty-preview','Nenhuma mídia selecionada');
@@ -59,7 +59,7 @@
     const linkgrid=el('div','v7-link-grid');
     const urlfield=el('label');urlfield.textContent='Endereço HTTPS';const url=el('input');url.type='url';url.id='v7-link-url';url.placeholder='https://seusite.com/cadastro';url.autocomplete='url';urlfield.append(url);
     const namefield=el('label');namefield.textContent='Texto do botão';const name=el('input');name.id='v7-link-label';name.placeholder='🔗 CADASTRE-SE';name.maxLength=80;namefield.append(name);
-    const enabled=el('label','v7-toggle');const on=el('input');on.type='checkbox';on.id='v7-link-enabled';enabled.append(on,el('span','','Enviar abaixo de cada ENTRADA, em mensagem independente (nunca dentro do texto).'));
+    const enabled=el('label','v7-toggle');const on=el('input');on.type='checkbox';on.id='v7-link-enabled';enabled.append(on,el('span','','Enviar após WIN/RED, em mensagem separada e nunca no texto da entrada.'));
     const saveLink=button('Salvar link global','v7-action v7-primary',()=>void saveRegistration());saveLink.id='v7-link-save';
     linkgrid.append(urlfield,namefield,enabled,saveLink);link.append(linkgrid);container.append(link);
     const nav=panel('Configuração individual por evento','section','v7-section-nav');
@@ -94,7 +94,7 @@
     for(const [type,label] of [['sticker','Sticker'],['text','Texto'],['gif','GIF']]){
       selector.append(button(label,'v7-type',()=>{stateFor(key).type=type;if(type==='text')stateFor(key).assetId='';else{const selectedAsset=model?.media?.find(x=>x.id===stateFor(key).assetId);if(selectedAsset?.kind!==type)stateFor(key).assetId='';}paintCard(key);setDirty(key);renderPreview();}));
     }
-    left.append(el('label','v7-label','Tipo de envio'),selector);
+    left.append(el('label','v7-label','Formato exclusivo de envio'),selector);
     const textlabel=el('label','v7-label','Mensagem personalizada • editável');const txt=el('textarea');txt.id='v7-text-'+key;txt.rows=3;txt.maxLength=1500;txt.placeholder='Texto que será enviado no Telegram';
     txt.addEventListener('input',()=>{stateFor(key).text=txt.value;setDirty(key);renderPreview()});left.append(textlabel,txt);
     const right=el('div','v7-media-picker');
@@ -102,7 +102,8 @@
     const show=el('div','v7-media-selected');show.id='v7-selected-'+key;right.append(show);
     const selectorBtn=button('Escolher na biblioteca','v7-action v7-secondary',()=>openPicker(key));selectorBtn.id='v7-choose-'+key;right.append(selectorBtn);
     const removeBtn=button('Retirar mídia','v7-action v7-subtle',()=>{stateFor(key).assetId='';paintCard(key);setDirty(key);renderPreview()});removeBtn.id='v7-remove-'+key;right.append(removeBtn);
-    row.append(left,right);card.append(row);
+     const attach=el('label','v11-control');const toggle=el('input');toggle.type='checkbox';toggle.id='v11-attach-'+key;toggle.checked=true;toggle.addEventListener('change',()=>{stateFor(key).sendWithMedia=toggle.checked;setDirty(key);renderPreview()});attach.append(toggle,el('span','','Enviar sticker/GIF junto com esta mensagem'));left.append(attach);
+     row.append(left,right);card.append(row);
     const save=button('Salvar '+labelFor(key),'v7-action v7-primary v7-save',()=>void saveEvent(key));save.id='v7-save-'+key;card.append(save);
     return card;
   }
@@ -110,7 +111,8 @@
     const val=stateFor(key);const text=$('v7-text-'+key);if(text&&text.value!==val.text)text.value=val.text||'';
     document.querySelectorAll('#v7-types-'+key+' .v7-type').forEach((b,i)=>b.classList.toggle('active',['sticker','text','gif'][i]===val.type));
     const visual=$('v7-selected-'+key);if(visual){visual.replaceChildren();const asset=model?.media?.find(x=>x.id===val.assetId&&x.kind===val.type);visual.append(makeImg(asset));}
-    const choose=$('v7-choose-'+key);if(choose)choose.disabled=val.type==='text';
+     const opt=$('v11-attach-'+key);if(opt){opt.checked=val.sendWithMedia!==false;opt.disabled=val.type==='text';}
+     const choose=$('v7-choose-'+key);if(choose)choose.disabled=val.type==='text';
     const remove=$('v7-remove-'+key);if(remove)remove.disabled=!val.assetId;
     const badge=$('v7-badge-'+key);if(badge){badge.textContent=saved[key]?'✓ Salvo globalmente':'Não salvo';badge.classList.toggle('v7-saved',!!saved[key])}
   }
@@ -122,20 +124,32 @@
     if(key==='gale1'||key==='gale2')draft[key].type='text';
   }draw();}
   function bubble(host,text,cls=''){if(!text)return;host.append(el('div','v7-chat-bubble '+cls,text))}
-  function renderPreview(){const host=$('v7-chat');if(!host||!doc)return;host.replaceChildren();
-    const entry=stateFor('entry_black');bubble(host,previewText(entry.text),'entry');
-    const a=model?.media?.find(x=>x.id===entry.assetId);if(entry.type!=='text'&&a)host.append(makeImg(a,'v7-chat-sticker'));
-    if($('v7-link-enabled').checked&&$('v7-link-url').value){
-      try{const u=new URL($('v7-link-url').value);if(u.protocol==='https:'){
-        const link=el('a','v7-chat-link',$('v7-link-label').value||'🔗 CADASTRE-SE');
-        link.href=u.href;link.target='_blank';link.rel='noopener noreferrer';host.append(link);
-      }}catch{}
-    }
-    bubble(host,previewText(stateFor('gale1').text),'gale');bubble(host,previewText(stateFor('gale2').text),'gale');
-    const white=stateFor('white');bubble(host,previewText(white.text),'win');const w=model?.media?.find(x=>x.id===white.assetId);if(white.type!=='text'&&w)host.append(makeImg(w,'v7-chat-sticker'));
-    bubble(host,'🎲 Pedra sorteada: ⚪ 0','stone');
-    host.append(el('small','v7-preview-disclaimer','Prévia ilustrativa; o resultado real dependerá das próximas rodadas.'));
+  function renderPreview(){
+   const host=$('v7-chat');if(!host||!doc)return;host.replaceChildren();
+   const s=model?.strategies?.find(x=>x.id===selected)||model?.strategies?.[0];
+   const tone=s?.target==='red'?'🔴':'⚫';
+   const step=(key)=>{
+    const item=stateFor(key),asset=model?.media?.find(x=>x.id===item.assetId&&x.kind===item.type);
+    if(item.type==='text')bubble(host,previewText(item.text),key.startsWith('entry')?'entry':key==='red'?'loss':'win');
+    else if(asset)host.append(makeImg(asset,'v7-chat-sticker'));
+    else bubble(host,'Selecione o '+(item.type==='gif'?'GIF':'sticker')+' para o evento.','attention');
+   };
+   step('attention');step('entry_'+(s?.target==='red'?'red':'black'));
+   step('gale1');step('gale2');step('green');
+   const enabled=$('v12-stone-enabled');
+   if(!enabled||enabled.checked){
+    const text=$('v12-stone-text')?.value||'🎲 Pedra sorteada: {quadrado_espaco}';
+    const rendered=previewText(text).replace(/\{quadrado_espaco\}/g,'⬛ 8').replace(/\{quadrado\}/g,'⬛8').replace(/\{pedra\}/g,'⚫8');
+    bubble(host,rendered,'stone');
+   }
+   if($('v7-link-enabled')?.checked&&$('v7-link-url')?.value){
+    try{const u=new URL($('v7-link-url').value);if(u.protocol==='https:'){
+      const link=el('a','v7-chat-link',$('v7-link-label').value||'🔗 CADASTRE-SE');link.href=u.href;link.target='_blank';link.rel='noopener noreferrer';host.append(link);
+    }}catch{}
+   }
+   host.append(el('small','v7-preview-disclaimer','Prévia: cada evento utiliza TEXTO OU STICKER OU GIF. GALE 1/2 só aparece quando necessário.'));
   }
+  window.NEXO_V12_PREVIEW=renderPreview;
   function openPicker(key){
     if($('v7-picker'))$('v7-picker').remove();
     const template=stateFor(key);if(template.type==='text')return;
@@ -168,7 +182,7 @@
     if(item.type!=='text'&&!model?.media?.some(a=>a.id===item.assetId&&a.kind===item.type)){status('Escolha um '+item.type+' válido na biblioteca antes de salvar.',true);return;}
     busy=true;
     try{
-      const data=await api('global-signals',payload('PUT',{mode:'event',key,template:{text:item.text||'',type:item.type,assetId:item.assetId||''}}));
+      const data=await api('global-signals',payload('PUT',{mode:'event',key,template:{text:item.text||'',type:item.type,assetId:item.assetId||'',sendWithMedia:item.sendWithMedia!==false}}));
       doc=schema(data.config);saved[key]=true;draft[key]={...item};paintCard(key);setDirty(key,false);status(labelFor(key)+' salvo para todas as estratégias.');
     }catch(e){status('Falha ao salvar '+labelFor(key)+': '+e.message,true)}finally{busy=false;}
   }
@@ -176,7 +190,7 @@
     const url=$('v7-link-url').value.trim(),label=$('v7-link-label').value.trim()||'🔗 CADASTRE-SE',enabled=$('v7-link-enabled').checked;
     if(enabled&&!/^https:\/\/\S+$/i.test(url)){status('O link precisa começar com https://',true);return;}
     busy=true;
-    try{const x=await api('global-signals',payload('PUT',{mode:'link',registration:{url,label,enabled}}));doc=schema(x.config);status('Link salvo; será enviado em mensagem separada após a entrada.');renderPreview();}
+    try{const x=await api('global-signals',payload('PUT',{mode:'link',registration:{url,label,enabled}}));doc=schema(x.config);status('Link salvo; será enviado em mensagem separada após o resultado.');renderPreview();}
     catch(e){status('Erro ao salvar link: '+e.message,true)}finally{busy=false;}
   }
   function initialize(){if($('v7-global-messages')||!$('page-mensagens'))return;

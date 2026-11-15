@@ -1,5 +1,5 @@
 import catalog from '../../catalog.json' with {type:'json'};
-import {routeAdmin,processNewRounds,scheduledAdmin} from './adm.js';
+import {routeAdmin,processNewRounds,resetAfterCatchup,scheduledAdmin} from './adm.js';
 
 // V2 preserva o prefixo EXCLUSIVO nexo-v1/. Nenhum objeto V30 e alterado.
 const PREFIX='nexo-v1/games/';
@@ -38,6 +38,64 @@ function tokenOK(request,env){
  // A chave precisa ser exclusiva do projeto novo e nao aparece no cliente web.
  return typeof key==='string'&&key.length>=32&&value===`Bearer ${key}`;
 }
+// V11 - chamadas internas serializadas pelo Durable Object SQLite (plano Free compatível).
+// A autenticação pública continua no Worker; o DO recebe somente requisições internas.
+async function v11Ingest(request,env,trusted=false){
+ if(!trusted&&!tokenOK(request,env))return out({error:'Credencial ausente ou invalida'},401);
+ if(!env.R2)return out({error:'Binding R2 indisponivel'},503);
+ let textBody;
+ try{textBody=await request.text()}catch{return out({error:'Corpo indisponivel'},400)}
+ if(textBody.length>130000)return out({error:'Lote acima do limite'},413);
+ let payload;try{payload=JSON.parse(textBody)}catch{return out({error:'JSON invalido'},400)}
+ const game=gameById(payload?.game_id),items=payload?.items;
+ if(!game||game.kind!=='double')return out({error:'Jogo desconhecido ou nao suportado'},400);
+ if(!Array.isArray(items)||items.length<1||items.length>200||items.some(x=>!validRecord(x)))return out({error:'Resultados invalidos (1 a 200)'},400);
+ const rows=normalize(items),groups=new Map();
+ for(const r of rows){const day=dayOf(r.minute_epoch);if(!groups.has(day))groups.set(day,[]);groups.get(day).push(r)}
+ if(groups.size>5)return out({error:'Lote atravessa mais de cinco dias'},400);
+ const b=base(game.id);
+ for(const [day,adds] of groups){
+  const key=b+`days/${day}.json`;
+  const old=await jsonGet(env.R2,key);
+  const combined=merge(old?.items||[],adds);
+  await jsonPut(env.R2,key,{game_id:game.id,day,items:combined,updated_at:now()});
+ }
+ const latestKey=b+'latest.json';
+ const oldLatest=await jsonGet(env.R2,latestKey);
+ const latest=merge(oldLatest?.items||[],rows,200);
+ await jsonPut(env.R2,latestKey,{game_id:game.id,items:latest,updated_at:now()});
+ await jsonPut(env.R2,b+'status.json',{game_id:game.id,last_ingest:now(),last_heartbeat:now(),last_result:latest[0]?.minute_epoch||null,received:rows.length,motor:'termux',source:game.source});
+ // Por seguranca, um lote antigo nao dispara sinais mesmo sem flag catchup.
+ // V12: nunca transformar reconexao/atraso em uma enxurrada de sinais.
+ // O horario da fonte tem precisao de MINUTO: aqui so validamos frescor,
+ // nao fingimos saber quando o giro fisico terminou.
+ const sourceAge=now()-Math.max(...rows.map(r=>r.minute_epoch));
+ const ownerCursor=await jsonGet(env.R2,'nexo-v3/runtime/game-owner/'+game.id+'.json');
+ const observed=rows.filter(r=>Number.isInteger(r.seq)&&r.seq>Number(ownerCursor?.lastSeq||0));
+ const seqGap=ownerCursor?.lastSeq>0&&observed.length&&Math.max(...observed.map(r=>r.seq))-Number(ownerCursor.lastSeq)>3;
+ const surge=observed.length>3;
+ const catchup=payload.catchup===true||sourceAge>150||surge||seqGap;
+ if(catchup){
+  try{await resetAfterCatchup(env,game,rows)}catch(e){console.error('V12 catchup runtime:',String(e.message||e).slice(0,100));return out({error:'Historico salvo; falha ao redefinir estado de sinais'},503)}
+ }else{
+  try{await processNewRounds(env,game,rows)}catch(e){console.error('V12 rules:',String(e.message||e).slice(0,120));return out({error:'Historico salvo; falha ao processar regras'},503)}
+ }
+ return out({ok:true,accepted:rows.length,game_id:game.id,catchup,age_seconds:sourceAge,skipped_signal_burst:surge||!!seqGap});
+
+}
+export class NexoCoordinator {
+ constructor(state,env){this.state=state;this.env=env;this.serial=Promise.resolve()}
+ fetch(request){
+  const run=this.serial.then(async()=>{
+   const path=new URL(request.url).pathname;
+   if(path==='/v11/ingest')return v11Ingest(request,this.env,true);
+   if(path==='/v11/cron'){await scheduledAdmin(this.env);return out({ok:true});}
+   return out({error:'Rota interna invalida'},404);
+  });
+  this.serial=run.catch(e=>{console.error('V11 Coordinator:',String(e.message||e).slice(0,120))});
+  return run;
+ }
+}
 export default {
  async fetch(request,env){
   const url=new URL(request.url);const path=url.pathname;
@@ -49,33 +107,16 @@ export default {
    }
    if(path==='/api/health')return out({ok:true,version:'2.0.0',storage:!!env.R2,motor:'termux'});
    if(path==='/api/catalog')return out({games:catalog.games.map(({id,platform,game,kind,source,enabled,precision})=>({id,platform,game,kind,source,enabled,precision}))});
-   if(path==='/api/ingest'&&request.method==='POST'){
-    if(!tokenOK(request,env))return out({error:'Credencial ausente ou invalida'},401);
-    if(!env.R2)return out({error:'Binding R2 indisponivel'},503);
-    if(Number(request.headers.get('content-length')||0)>130000)return out({error:'Lote acima do limite'},413);
-    let payload;try{payload=await request.json()}catch{return out({error:'JSON invalido'},400)}
-    const game=gameById(payload?.game_id),items=payload?.items;
-    if(!game||game.kind!=='double')return out({error:'Jogo desconhecido ou nao suportado'},400);
-    if(!Array.isArray(items)||items.length<1||items.length>200||items.some(x=>!validRecord(x)))return out({error:'Resultados invalidos (1 a 200)'},400);
-    const rows=normalize(items),groups=new Map();
-    for(const r of rows){const day=dayOf(r.minute_epoch);if(!groups.has(day))groups.set(day,[]);groups.get(day).push(r)}
-    if(groups.size>5)return out({error:'Lote atravessa mais de cinco dias'},400);
-    const b=base(game.id);
-    for(const [day,adds] of groups){
-      const key=b+`days/${day}.json`;
-      const old=await jsonGet(env.R2,key);
-      const combined=merge(old?.items||[],adds);
-      await jsonPut(env.R2,key,{game_id:game.id,day,items:combined,updated_at:now()});
+    if(path==='/api/ingest'&&request.method==='POST'){
+     if(!tokenOK(request,env))return out({error:'Credencial ausente ou invalida'},401);
+     if(env.NEXO_COORDINATOR){
+      const id=env.NEXO_COORDINATOR.idFromName('nexo-brabet-double-v11');
+      const stub=env.NEXO_COORDINATOR.get(id);
+      return stub.fetch('https://nexo.internal/v11/ingest',{method:'POST',body:await request.text()});
+     }
+     // Fallback para testes unitarios e previas; no deploy V11 o binding e obrigatorio.
+     return v11Ingest(request,env,true);
     }
-    const latestKey=b+'latest.json';
-    const oldLatest=await jsonGet(env.R2,latestKey);
-    const latest=merge(oldLatest?.items||[],rows,200);
-    await jsonPut(env.R2,latestKey,{game_id:game.id,items:latest,updated_at:now()});
-    await jsonPut(env.R2,b+'status.json',{game_id:game.id,last_ingest:now(),last_heartbeat:now(),last_result:latest[0]?.minute_epoch||null,received:rows.length,motor:'termux',source:game.source});
-    // Rules are isolated: any V3 error must not reject an already committed history batch.
-    if(payload.catchup!==true){try{await processNewRounds(env,game,rows)}catch(e){console.error('V3 rule error:',String(e.message||e).slice(0,120))}}
-    return out({ok:true,accepted:rows.length,game_id:game.id});
-   }
    if(path==='/api/heartbeat'&&request.method==='POST'){
      if(!tokenOK(request,env))return out({error:'Nao autorizado'},401);
      if(!env.R2)return out({error:'R2 indisponivel'},503);
@@ -123,5 +164,8 @@ export default {
    return new Response('Assets nao configurados',{status:503});
   }catch(err){console.error('NEXO V1 erro:',String(err?.message||err).slice(0,150));return out({error:'Erro interno; consulte logs do Worker'},500)}
  },
- async scheduled(event,env,ctx){ctx.waitUntil(scheduledAdmin(env));}
+ async scheduled(event,env,ctx){
+   if(env.NEXO_COORDINATOR){const id=env.NEXO_COORDINATOR.idFromName('nexo-brabet-double-v11');ctx.waitUntil(env.NEXO_COORDINATOR.get(id).fetch('https://nexo.internal/v11/cron',{method:'POST'}));}
+   else ctx.waitUntil(scheduledAdmin(env));
+  }
 };
