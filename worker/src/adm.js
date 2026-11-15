@@ -19,7 +19,8 @@ const GLOBAL_KEY=ROOT+'admin/global-signals.json';
 const OWNER_ID_KEY=ROOT+'telegram/owner-request.json';
 const GLOBAL_KEYS=['entry_black','entry_red','green','white','red','attention','bot_on','gale1','gale2'];
 const GLOBAL_MAP={entry_black:'entry_black',entry_red:'entry_red',win_black:'green',win_red:'green',win_white:'white',red:'red',attention:'attention',gale1:'gale1',gale2:'gale2',bot_on:'bot_on'};
-const emptyGlobal=()=>({version:2,registration:{enabled:false,url:'',label:'🔗 CADASTRE-SE'},stone:{enabled:true,text:'🎲 Pedra sorteada: {quadrado_espaco}'},templates:{},updatedAt:0});
+const V12_2_AFTER_PATTERN_DEFAULT='🎲 Após pedra: {pedra}';
+const emptyGlobal=()=>({version:3,registration:{enabled:false,url:'',label:'🔗 CADASTRE-SE'},afterPattern:{enabled:true,text:V12_2_AFTER_PATTERN_DEFAULT},stone:{enabled:true,text:'🎲 Pedra sorteada: {pedra}'},templates:{},updatedAt:0});
 const globalDoc=env=>getDoc(env,GLOBAL_KEY,emptyGlobal());
 function validRegistration(r){
  if(!r||typeof r!=='object')throw Error('Dados do link inválidos.');
@@ -42,7 +43,7 @@ function normalizeGlobalEvent(key,item,media){
  return {text,type,assetId,sendWithMedia:item.sendWithMedia!==false,saved:true,updatedAt:now()};
 }
 
-const strategyDefault=()=>({id:crypto.randomUUID().replaceAll('-',''),name:'',gameId:'brabet-double',enabled:false,archived:false,target:'black',pattern:['red','red'],maxGale:0,showStoneBeforeMedia:false,showStoneAfter:true,showNumbers:true,jokerWhite:false,messages:Object.fromEntries(E.map(x=>[x,''])),media:Object.fromEntries(E.map(x=>[x,{type:'text',assetId:''}])),createdAt:now(),updatedAt:now()});
+const strategyDefault=()=>({id:crypto.randomUUID().replaceAll('-',''),name:'',gameId:'brabet-double',enabled:false,archived:false,target:'black',pattern:['red','red'],maxGale:0,showStoneBeforeMedia:false,showStoneAfter:true,showAfterPattern:true,showNumbers:true,jokerWhite:false,messages:Object.fromEntries(E.map(x=>[x,''])),media:Object.fromEntries(E.map(x=>[x,{type:'text',assetId:''}])),createdAt:now(),updatedAt:now()});
 const scoreDefault=(day)=>({day,entries:0,green:0,white:0,red:0,gale1:0,gale2:0,updatedAt:now()});
 const scoreKey=id=>ROOT+'scores/'+id+'.json';
 const runtimeKey=id=>ROOT+'runtime/'+id+'.json';
@@ -108,7 +109,7 @@ function validateStrategy(input,previous){
  x.maxGale=Number(input.maxGale);if(![0,1,2].includes(x.maxGale))throw Error('Gale deve ser 0, 1 ou 2.');
  if(!Array.isArray(input.pattern)||input.pattern.length<1||input.pattern.length>MAX_PATTERN_STONES||input.pattern.some(z=>!(['red','black','white','*'].includes(z)||/^(?:n:)(?:[0-9]|1[0-4])$/.test(z))))throw Error('Padrão inválido (1 a '+MAX_PATTERN_STONES+' pedras).');
  x.pattern=[...input.pattern];
- x.showStoneBeforeMedia=input.showStoneBeforeMedia===true;x.showStoneAfter=input.showStoneAfter!==false;x.showNumbers=input.showNumbers!==false;x.jokerWhite=input.jokerWhite===true;
+ x.showStoneBeforeMedia=input.showStoneBeforeMedia===true;x.showStoneAfter=input.showStoneAfter!==false;x.showAfterPattern=input.showAfterPattern!==false;x.showNumbers=input.showNumbers!==false;x.jokerWhite=input.jokerWhite===true;
  x.messages={};for(const e of E)x.messages[e]=textLimit(input.messages?.[e],1500);
  x.media={};for(const e of E){const m=input.media?.[e];x.media[e]={type:['text','sticker','gif'].includes(m?.type)?m.type:'text',assetId:idSafe(m?.assetId)?m.assetId:''};}
  x.enabled=input.enabled===true; x.archived=previous?.archived||false;
@@ -346,6 +347,8 @@ async function transmit(env,group,evt){
  const stageKey=tracked?v11StageKey(evt,group.id):null;
  const initial={eventId:evt.id||'',chatId:String(group.id),confirmed:{},uncertain:null,completed:false,updatedAt:now()};
  const progress=tracked?await getDoc(env,stageKey,initial):initial;
+ // V12.2: resolver o token uma única vez por evento, não em cada balão.
+ const deliveryToken=await botToken(env);
  const gate=tracked?await getDoc(env,v11BlockKey(group.id),null):null;
  if(tracked&&gate&&gate.eventId!==evt.id)throw Error('Chat aguardando revisao do ciclo '+gate.eventId);
  if(tracked&&progress.inFlight&&!progress.confirmed[progress.inFlight]){
@@ -362,7 +365,7 @@ async function transmit(env,group,evt){
    await putDoc(env,stageKey,progress);
   }
   let result;
-  try{result=await tg(env,method,body)}
+  try{result=await tgUsing(deliveryToken,method,body)}
   catch(e){
    if(tracked){
     progress.uncertain=stage;progress.updatedAt=now();
@@ -395,11 +398,13 @@ async function transmit(env,group,evt){
    await deliver('media',method,form);
   }
  }
- if(evt.stoneAfter)await deliver('stone','sendMessage',{chat_id:group.id,text:evt.stoneAfter,disable_web_page_preview:true});
- if(evt.registration?.enabled&&evt.registration.url){
+ // V12.2: ENTRADA -> CADASTRE-SE -> APÓS PEDRA, balões independentes.
+ if(['entry_black','entry_red'].includes(evt.type)&&evt.registration?.enabled&&evt.registration.url){
   const label=evt.registration.label||'🔗 CADASTRE-SE';
   await deliver('link','sendMessage',{chat_id:group.id,text:label,entities:[{type:'text_link',offset:0,length:[...label].reduce((n,c)=>n+(c.codePointAt(0)>65535?2:1),0),url:evt.registration.url}],disable_web_page_preview:true});
- }
+  }
+ if(['entry_black','entry_red'].includes(evt.type)&&evt.afterPattern)await deliver('after-pattern','sendMessage',{chat_id:group.id,text:evt.afterPattern,disable_web_page_preview:true});
+ if(['win_black','win_red','win_white'].includes(evt.type)&&evt.stoneAfter)await deliver('stone','sendMessage',{chat_id:group.id,text:evt.stoneAfter,disable_web_page_preview:true});
  if(tracked){
   progress.completed=true;progress.updatedAt=now();await putDoc(env,stageKey,progress);
   const current=await getDoc(env,v11BlockKey(group.id),null);
@@ -450,12 +455,20 @@ async function fireEvent(env,settings,strategy,r,type,step){
  const message=String(savedText||'').trim()?savedText:defaultSignalText(key);
  const media=globalSaved?{type:template.type,assetId:template.assetId}:(strategy.media?.[type]||{type:'text'});
  const evt={id:strategy.id+'_'+r.id+'_'+type,seq:r.seq,strategyId:strategy.id,strategyName:strategy.name,type,gameId:strategy.gameId,roundId:r.id,number:r.number,color:r.color,minute_epoch:r.minute_epoch,at:now(),message:formatMessage(message,r,strategy,step),media,showStoneBeforeMedia:strategy.showStoneBeforeMedia};
-  const sc=global?.stone||{enabled:true,text:'🎲 Pedra sorteada: {quadrado_espaco}'};
-  if(['win_black','win_red','win_white','red'].includes(type)&&sc.enabled!==false&&strategy.showStoneAfter!==false){
-   const stoneTemplate=String(sc.text||'🎲 Pedra sorteada: {quadrado_espaco}').slice(0,400);
+  if(type==='entry_black'||type==='entry_red'){
+   if(global.registration?.enabled===true)evt.registration=global.registration;
+   const after=global?.afterPattern||{enabled:true,text:V12_2_AFTER_PATTERN_DEFAULT};
+   if(after.enabled!==false&&strategy.showAfterPattern!==false){
+    const afterTemplate=String(after.text||V12_2_AFTER_PATTERN_DEFAULT).slice(0,400);
+    evt.afterPattern=formatMessage(afterTemplate,r,strategy,step);
+   }
+  }
+  // RED não gera mensagem de pedra sorteada.
+  const sc=global?.stone||{enabled:true,text:'🎲 Pedra sorteada: {pedra}'};
+  if(['win_black','win_red','win_white'].includes(type)&&sc.enabled!==false&&strategy.showStoneAfter!==false){
+   const stoneTemplate=String(sc.text||'🎲 Pedra sorteada: {pedra}').slice(0,400).replace(/\{quadrado(?:_espaco)?\}/g,'{pedra}');
    evt.stoneAfter=formatMessage(stoneTemplate,r,strategy,step);
   }
-  if(['win_black','win_red','win_white','red'].includes(type)&&global.registration?.enabled===true)evt.registration=global.registration;
  await putDoc(env,eventKey(evt.id),evt);
  if(type==='attention'&&settings.botEnabled)await beginAttention(env,evt);
  await dispatch(env,settings,evt);
@@ -628,6 +641,12 @@ export async function routeAdmin(req,env,url){
    const b=await req.json();if(!b||typeof b!=='object')return err('Configuração inválida');
    const current=await globalDoc(env),next={...emptyGlobal(),...current,templates:{...(current.templates||{})}};
    if(b.mode==='link')next.registration=validRegistration(b.registration);
+   else if(b.mode==='afterPattern'){
+      if(!b.afterPattern||typeof b.afterPattern!=='object'||typeof b.afterPattern.text!=='string'||b.afterPattern.text.length>400)return err('Mensagem Após pedra inválida. Limite: 400 caracteres.',400);
+      const afterText=b.afterPattern.text.trim();
+      if(b.afterPattern.enabled!==false&&!afterText)return err('Informe a mensagem Após pedra.',400);
+      next.afterPattern={enabled:b.afterPattern.enabled!==false,text:afterText};
+    }
    else if(b.mode==='stone'){
      if(!b.stone||typeof b.stone!=='object'||typeof b.stone.text!=='string'||b.stone.text.length>400)return err('Configuração da pedra inválida. Máximo 400 caracteres.',400);
      const stText=b.stone.text.trim();
@@ -659,7 +678,7 @@ export async function routeAdmin(req,env,url){
    if(match[2]==='simulate'&&req.method==='POST'){const hist=await recentR2(env,all[idx].gameId);return json({ok:true,...await simulate(all[idx],hist.items||[])});}
    if(match[2]==='purge'&&req.method==='POST'){
     const b=await req.json(),s=all[idx];
-    if(b?.confirm!==true||b?.name!==s.name)return err('Confirme digitando o nome exato da estratégia.',400);
+    if(b?.confirm!==true||(b?.id!==s.id&&b?.name!==s.name))return err('Confirme a exclusão da estratégia selecionada pelo ID.',400);
     const runtime=await getDoc(env,runtimeKey(s.id),null);
     if(runtime?.attentionEventId)await dismissAttention(env,s.id,runtime.attentionEventId);
     // Primeiro impedir novos sinais; depois apagar somente dados da estratégia escolhida.
@@ -667,7 +686,7 @@ export async function routeAdmin(req,env,url){
     await env.R2.delete?.(runtimeKey(s.id));await env.R2.delete?.(scoreKey(s.id));
     // Limpeza assíncrona segura: arquivos com prefixo exclusivo do ID da estratégia.
     await putDoc(env,purgeTaskKey(s.id),{id:s.id,startedAt:now()});
-     await v11DropStrategyBlocks(env,s.id);await purgeStrategyFiles(env,s.id,35);
+     const owner=await getDoc(env,v11GameKey(s.gameId),null);if(owner?.ownerId===s.id)await putDoc(env,v11GameKey(s.gameId),{...owner,ownerId:null,updatedAt:now(),reason:'strategy-purged'});await v11DropStrategyBlocks(env,s.id);await purgeStrategyFiles(env,s.id,35);
     return json({ok:true,deletedId:s.id,notice:'Estratégia apagada. Limpeza dos arquivos associados em andamento.'});
    }
    if(req.method==='PUT'&&!match[2]){

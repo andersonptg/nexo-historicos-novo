@@ -86,9 +86,9 @@ test('V3 discovers only group where the bot is ADM, and Telegram sends only afte
   async function ingest(seq,color,n){const r={id:seq.toString(16).padStart(32,'a'),minute_epoch:stamp+seq*60,color,number:n,seq};return worker.fetch(req('/api/ingest',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+env.NEXO_V1_INGEST_TOKEN},body:JSON.stringify({game_id:'brabet-double',items:[r]})}),env)}
   await ingest(1,'black',9);assert.equal(outbound.filter(x=>x.method==='sendMessage').length,0);
   const on=await worker.fetch(reqBody('/api/adm/telegram/activate','POST',{confirm:true},cookie),env);assert.equal(on.status,200);
-  await ingest(2,'red',4);assert.equal(outbound.filter(x=>x.method==='sendMessage').length,1);
+  await ingest(2,'red',4);assert.equal(outbound.filter(x=>x.method==='sendMessage').length,2);
   assert.equal(outbound.find(x=>x.method==='sendMessage').args.text,'PRETO + BRANCO');
   await worker.fetch(req('/api/adm/telegram/deactivate',{method:'POST',headers:{Cookie:cookie}}),env);
-  await ingest(3,'black',9);assert.equal(outbound.filter(x=>x.method==='sendMessage').length,1);
+  await ingest(3,'black',9);assert.equal(outbound.filter(x=>x.method==='sendMessage').length,2);
  }finally{globalThis.fetch=old}
 });

@@ -11,9 +11,9 @@
  function stoneControls(){
   const root=$('v7-global-messages');if(!root||$('v12-stone-settings'))return;
   const section=el('section','v12-stone-settings');section.id='v12-stone-settings';
-  section.append(el('h2','','🎲 Pedra sorteada — campo independente'),el('p','v12-sub','Marque para enviar a pedra após WIN ou RED. Desmarque para não enviar esse resultado separado. Use {quadrado_espaco}, {quadrado}, {pedra}, {numero}, {cor}, {hora} e {estrategia}.'));
-  const label=el('label','v12-toggle'),check=el('input');check.type='checkbox';check.id='v12-stone-enabled';label.append(check,el('span','','Enviar resultado da pedra sorteada após o encerramento'));section.append(label);
-  const text=el('textarea');text.id='v12-stone-text';text.maxLength=400;text.rows=3;text.placeholder='🎲 Pedra sorteada: {quadrado}';text.setAttribute('aria-label','Mensagem da pedra sorteada');section.append(text);
+  section.append(el('h2','','🎲 Pedra sorteada — campo independente'),el('p','v12-sub','Marque para enviar a pedra sorteada somente após GREEN ou BRANCO. No RED, nunca envia. Use {quadrado_espaco}, {quadrado}, {pedra}, {numero}, {cor}, {hora} e {estrategia}.'));
+  const label=el('label','v12-toggle'),check=el('input');check.type='checkbox';check.id='v12-stone-enabled';label.append(check,el('span','','Enviar pedra sorteada apenas no GREEN ou BRANCO'));section.append(label);
+  const text=el('textarea');text.id='v12-stone-text';text.maxLength=400;text.rows=3;text.placeholder='🎲 Pedra sorteada: {pedra}';text.setAttribute('aria-label','Mensagem da pedra sorteada');section.append(text);
   const actions=el('div','v12-row'),state=el('span','v12-status','Carregando configurações…');state.id='v12-stone-status';const button=mkbtn('💾 Salvar campo da pedra',saveStone);actions.append(button,state);section.append(actions);
   for(const input of [check,text])input.addEventListener('input',()=>{stoneDirty=true;state.textContent='Alterações não salvas';window.NEXO_V12_PREVIEW?.();});
   root.insertBefore(section,root.querySelector('.v7-link')||root.firstChild);
@@ -24,7 +24,7 @@
   try{
    const data=await api('global-signals'),stone=data.config?.stone||{};
    $('v12-stone-enabled').checked=stone.enabled!==false;
-   $('v12-stone-text').value=stone.text||'🎲 Pedra sorteada: {quadrado_espaco}';
+   $('v12-stone-text').value=stone.text||'🎲 Pedra sorteada: {pedra}';
    $('v12-stone-status').textContent='Configuração atual carregada';stoneDirty=false;stoneInit=true;window.NEXO_V12_PREVIEW?.();
   }catch(e){$('v12-stone-status').textContent='Erro ao carregar: '+e.message;}finally{refreshing=false;}
  }
@@ -47,7 +47,7 @@
   const checks=$('strategy-form')?.querySelector('.checks');
   if(checks&&!$('v12-stone-strategy')){
    const label=el('label','v12-toggle'),check=el('input');check.type='checkbox';check.id='v12-stone-strategy';check.checked=true;
-   label.append(check,el('span','','Permitir pedra sorteada no WIN/RED desta estratégia (respeita a configuração global)'));checks.append(label);
+   label.append(check,el('span','','Permitir pedra sorteada somente no WIN/BRANCO desta estratégia'));checks.append(label);
   }
   paintStrategies();
  }
@@ -59,15 +59,29 @@
    const meta=el('div','v12-strategy-meta',(s.enabled?'● ATIVA':'○ PAUSADA')+' · '+(s.target==='red'?'🔴 Vermelho':'⚫ Preto')+' + Branco · '+(s.maxGale||0)+' Gale(s)');card.append(meta);
    const chips=el('div','v12-chips');for(const token of (s.pattern||[]).slice(0,32))chips.append(ball(token));if((s.pattern||[]).length>32)chips.append(el('small','','+'+(s.pattern.length-32)));
    card.append(chips);
-   const actions=el('div','v12-row');actions.append(mkbtn('👁 Visualizar',()=>inspectStrategy(s)),mkbtn('✎ Editar',()=>{selected=s.id;renderStrategies();renderMessage();$('st-name')?.scrollIntoView({behavior:'smooth',block:'center'});}));card.append(actions);host.append(card);
+   const actions=el('div','v12-2-action-grid');actions.append(mkbtn('👁 Visualizar',()=>inspectStrategy(s)),mkbtn('✎ Editar',()=>{selected=s.id;renderStrategies();renderMessage();$('st-name')?.scrollIntoView({behavior:'smooth',block:'center'});}));const toggle=mkbtn(s.enabled?'⏸ Pausar':'▶ Ativar',()=>toggleSavedStrategy(s));toggle.classList.add(s.enabled?'v12-2-pause':'v12-2-activate');actions.append(toggle,mkbtn('📊 Placar',()=>page('placares')));const erase=mkbtn('🗑 Excluir estratégia',()=>removeSavedStrategy(s,erase));erase.classList.add('v12-2-danger');actions.append(erase);card.append(actions);host.append(card);
   }
  }
+  async function toggleSavedStrategy(s){
+   if(!s.enabled&&!confirm('Ativar esta estratégia somente para novas rodadas?'))return;
+   try{await api('strategies/'+s.id,payload('PUT',{...s,enabled:!s.enabled}));await reload();pop(s.enabled?'Estratégia pausada.':'Estratégia ativada.');}
+   catch(e){pop('Não foi possível alterar a estratégia: '+e.message,true)}
+  }
+  async function removeSavedStrategy(s,button){
+   if(!confirm('Apagar definitivamente “'+s.name+'”? Apenas esta estratégia e seu placar serão removidos.'))return;
+   button.disabled=true;
+   try{
+    await api('strategies/'+s.id+'/purge',payload('POST',{confirm:true,id:s.id}));
+    if(selected===s.id)selected='';
+    await reload();pop('Estratégia excluída. Outras regras e histórico preservados.');
+   }catch(e){pop('Falha na exclusão: '+String(e.message||e),true)}finally{button.disabled=false}
+  }
  function inspectStrategy(s){
   const pane=$('v12-inspector');pane.replaceChildren();pane.hidden=false;
   const head=el('div','v12-row');head.append(el('h3','','Visualização · '+s.name),mkbtn('✕ Fechar',()=>{pane.hidden=true}));pane.append(head);
   pane.append(el('p','v12-strategy-meta','Alvo '+(s.target==='red'?'VERMELHO':'PRETO')+' + BRANCO · Gale máximo '+s.maxGale+' · '+(s.enabled?'ATIVA':'PAUSADA')));
   const chips=el('div','v12-chips');for(const p of s.pattern||[])chips.append(ball(p));pane.append(chips);
-  pane.append(el('p','v12-sub','Pedra após resultado: '+(s.showStoneAfter===false?'DESLIGADA':'PERMITIDA')+' (também depende da configuração global). A visualização não envia sinais nem modifica regras.'));
+  pane.append(el('p','v12-sub','Pedra após WIN/BRANCO: '+(s.showStoneAfter===false?'DESLIGADA':'PERMITIDA')+' (também depende da configuração global). A visualização não envia sinais nem modifica regras.'));
   pane.scrollIntoView({behavior:'smooth',block:'nearest'});
  }
  function scoreboard(){

@@ -11,7 +11,7 @@
   ['result','✅ WIN / ❌ RED','Encerra o ciclo antes do próximo.'],
   ['media','🎞 STICKER / GIF','Opcional e vinculado ao evento.'],
   ['stone','🎲 PEDRA SORTEADA','Quadradinho com cor e número reais.'],
-  ['link','🔗 CADASTRE-SE','Separado depois do resultado final.']
+  ['link','🔗 CADASTRE-SE','Enviado logo após a entrada, em balão separado.']
  ];
  let previousTop='',busy=false;
  function build(){

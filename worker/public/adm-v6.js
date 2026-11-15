@@ -118,13 +118,10 @@
     const erase=el('button','v10-purge','Apagar definitivamente');erase.type='button';
     erase.title='Exclui somente esta estratégia; não altera histórico, robô ou grupos.';
     erase.onclick=()=>call(async()=>{
-      const typed=prompt('Para excluir PERMANENTEMENTE "'+s.name+'", digite exatamente o nome da estratégia:');
-      if(typed===null)return;
-      if(typed!==s.name){pop('Nome diferente. Nenhuma estratégia foi apagada.',true);return}
-      if(!confirm('Última confirmação: apagar "'+s.name+'" por inteiro? O cadastro e o placar desta estratégia serão excluídos.'))return;
+      if(!confirm('Excluir definitivamente a estratégia "'+s.name+'"? Apenas esta regra e seu placar serão apagados.'))return;
       erase.disabled=true;
       try{
-        await api('strategies/'+s.id+'/purge',payload('POST',{confirm:true,name:s.name}));
+        await api('strategies/'+s.id+'/purge',payload('POST',{confirm:true,id:s.id}));
         if(selected===s.id)selected='';
         await reload();pop('Estratégia apagada: '+s.name+'. Outras estratégias preservadas.');
       }finally{erase.disabled=false}

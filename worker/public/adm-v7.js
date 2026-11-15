@@ -59,7 +59,7 @@
     const linkgrid=el('div','v7-link-grid');
     const urlfield=el('label');urlfield.textContent='Endereço HTTPS';const url=el('input');url.type='url';url.id='v7-link-url';url.placeholder='https://seusite.com/cadastro';url.autocomplete='url';urlfield.append(url);
     const namefield=el('label');namefield.textContent='Texto do botão';const name=el('input');name.id='v7-link-label';name.placeholder='🔗 CADASTRE-SE';name.maxLength=80;namefield.append(name);
-    const enabled=el('label','v7-toggle');const on=el('input');on.type='checkbox';on.id='v7-link-enabled';enabled.append(on,el('span','','Enviar após WIN/RED, em mensagem separada e nunca no texto da entrada.'));
+    const enabled=el('label','v7-toggle');const on=el('input');on.type='checkbox';on.id='v7-link-enabled';enabled.append(on,el('span','','Enviar imediatamente após a ENTRADA, em mensagem separada.'));
     const saveLink=button('Salvar link global','v7-action v7-primary',()=>void saveRegistration());saveLink.id='v7-link-save';
     linkgrid.append(urlfield,namefield,enabled,saveLink);link.append(linkgrid);container.append(link);
     const nav=panel('Configuração individual por evento','section','v7-section-nav');
@@ -127,7 +127,6 @@
   function renderPreview(){
    const host=$('v7-chat');if(!host||!doc)return;host.replaceChildren();
    const s=model?.strategies?.find(x=>x.id===selected)||model?.strategies?.[0];
-   const tone=s?.target==='red'?'🔴':'⚫';
    const step=(key)=>{
     const item=stateFor(key),asset=model?.media?.find(x=>x.id===item.assetId&&x.kind===item.type);
     if(item.type==='text')bubble(host,previewText(item.text),key.startsWith('entry')?'entry':key==='red'?'loss':'win');
@@ -135,19 +134,21 @@
     else bubble(host,'Selecione o '+(item.type==='gif'?'GIF':'sticker')+' para o evento.','attention');
    };
    step('attention');step('entry_'+(s?.target==='red'?'red':'black'));
-   step('gale1');step('gale2');step('green');
-   const enabled=$('v12-stone-enabled');
-   if(!enabled||enabled.checked){
-    const text=$('v12-stone-text')?.value||'🎲 Pedra sorteada: {quadrado_espaco}';
-    const rendered=previewText(text).replace(/\{quadrado_espaco\}/g,'⬛ 8').replace(/\{quadrado\}/g,'⬛8').replace(/\{pedra\}/g,'⚫8');
-    bubble(host,rendered,'stone');
-   }
    if($('v7-link-enabled')?.checked&&$('v7-link-url')?.value){
     try{const u=new URL($('v7-link-url').value);if(u.protocol==='https:'){
-      const link=el('a','v7-chat-link',$('v7-link-label').value||'🔗 CADASTRE-SE');link.href=u.href;link.target='_blank';link.rel='noopener noreferrer';host.append(link);
+     const link=el('a','v7-chat-link',$('v7-link-label').value||'🔗 CADASTRE-SE');link.href=u.href;link.target='_blank';link.rel='noopener noreferrer';host.append(link);
     }}catch{}
    }
-   host.append(el('small','v7-preview-disclaimer','Prévia: cada evento utiliza TEXTO OU STICKER OU GIF. GALE 1/2 só aparece quando necessário.'));
+   if($('v12-2-after-enabled')?.checked!==false&&s?.showAfterPattern!==false){
+    const after=($('v12-2-after-text')?.value||'🎲 Após pedra: {pedra}').replace(/\{quadrado(?:_espaco)?\}/g,'{pedra}');
+    bubble(host,previewText(after),'after-pattern');
+   }
+   step('gale1');step('gale2');step('green');
+   if($('v12-stone-enabled')?.checked!==false&&s?.showStoneAfter!==false){
+    const stone=($('v12-stone-text')?.value||'🎲 Pedra sorteada: {pedra}').replace(/\{quadrado(?:_espaco)?\}/g,'{pedra}');
+    bubble(host,previewText(stone),'stone');
+   }
+   host.append(el('small','v7-preview-disclaimer','Prévia ilustrativa: entrada, cadastro e Após pedra são balões separados. Pedra sorteada só no GREEN/BRANCO, nunca no RED.'));
   }
   window.NEXO_V12_PREVIEW=renderPreview;
   function openPicker(key){
@@ -190,7 +191,7 @@
     const url=$('v7-link-url').value.trim(),label=$('v7-link-label').value.trim()||'🔗 CADASTRE-SE',enabled=$('v7-link-enabled').checked;
     if(enabled&&!/^https:\/\/\S+$/i.test(url)){status('O link precisa começar com https://',true);return;}
     busy=true;
-    try{const x=await api('global-signals',payload('PUT',{mode:'link',registration:{url,label,enabled}}));doc=schema(x.config);status('Link salvo; será enviado em mensagem separada após o resultado.');renderPreview();}
+    try{const x=await api('global-signals',payload('PUT',{mode:'link',registration:{url,label,enabled}}));doc=schema(x.config);status('Link salvo; será enviado separadamente após a ENTRADA.');renderPreview();}
     catch(e){status('Erro ao salvar link: '+e.message,true)}finally{busy=false;}
   }
   function initialize(){if($('v7-global-messages')||!$('page-mensagens'))return;

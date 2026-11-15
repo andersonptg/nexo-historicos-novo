@@ -51,7 +51,7 @@ test('V12: modelo editavel da pedra usa quadradinho, e estrategia pode omitir s�
  for(const r of [h.row(1,2,'red'),h.row(2,3,'red'),h.row(3,8,'black')])await processNewRounds(h.env,{id:'brabet-double'},[r]);
  const win=h.events().find(x=>x.type==='win_black');
  assert.equal(win.message,'✅ WIN NO ⚫8');
- assert.equal(win.stoneAfter,'🎲 Resultado: ⬛8 / PRETO');
+ assert.equal(win.stoneAfter,'🎲 Resultado: ⚫8 / PRETO');
  const g=harness();g.setup();g.put('nexo-v3/admin/settings.json',{botEnabled:false});g.strategy.showStoneAfter=false;g.put('nexo-v3/admin/strategies.json',[g.strategy]);
  for(const r of [g.row(1,2,'red'),g.row(2,3,'red'),g.row(3,8,'black')])await processNewRounds(g.env,{id:'brabet-double'},[r]);
  assert.equal(g.events().find(x=>x.type==='win_black').stoneAfter,undefined);
