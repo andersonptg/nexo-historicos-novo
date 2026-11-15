@@ -1,6 +1,6 @@
 import catalog from '../../catalog.json' with {type:'json'};
 import {routeAdmin,processNewRounds,resetAfterCatchup,scheduledAdmin} from './adm.js';
-import {processWhiteRounds,resetWhiteAfterCatchup,whiteHasActiveForecast,scheduledWhite} from './white.js';
+import {processWhiteRounds,resetWhiteAfterCatchup,whiteHasActiveForecast,whiteShouldBlockLegacy,scheduledWhite} from './white.js';
 
 // V2 preserva o prefixo EXCLUSIVO nexo-v1/. Nenhum objeto V30 e alterado.
 const PREFIX='nexo-v1/games/';
@@ -81,7 +81,7 @@ async function v11Ingest(request,env,trusted=false){
    try{await resetWhiteAfterCatchup(env,game,rows)}catch(e){console.warn('V13 branco: catchup falhou',String(e.message||e).slice(0,100))}
  }else{
   try{
-    if(await whiteHasActiveForecast(env))await resetAfterCatchup(env,game,rows);
+    if(await whiteShouldBlockLegacy(env))await resetAfterCatchup(env,game,rows);
     else await processNewRounds(env,game,rows);
    }catch(e){console.error('V12 rules:',String(e.message||e).slice(0,120));return out({error:'Historico salvo; falha ao processar regras'},503)}
    try{await processWhiteRounds(env,game,rows)}catch(e){console.warn('V13 branco: processamento falhou',String(e.message||e).slice(0,130))}

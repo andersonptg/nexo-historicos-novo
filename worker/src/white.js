@@ -10,12 +10,13 @@ const fail=(error,status=400)=>response({ok:false,error},status);
 const doc=async(env,key,fallback)=>{const x=await env.R2.get(key);if(!x)return structuredClone(fallback);try{return await x.json()}catch{throw Error('Registro inválido: '+key)}};
 const save=(env,key,x)=>env.R2.put(key,enc(x),{httpMetadata:{contentType:'application/json'}});
 const idOK=x=>typeof x==='string'&&/^[a-f0-9]{32}$/.test(x);
+// NEXO V14 PRESETS FIXOS
 const colorOK=x=>['red','black'].includes(x);
 const zone=new Intl.DateTimeFormat('pt-BR',{timeZone:'America/Sao_Paulo',hour:'2-digit',minute:'2-digit',hour12:false});
 const hm=t=>zone.format(new Date(t*1000));
 const timeMinute=t=>Number(zone.formatToParts(new Date(t*1000)).find(x=>x.type==='minute').value);
 const iconColor=x=>x==='red'?'🔴':x==='black'?'⚫':'⚪';
-const defaults=()=>({botEnabled:false,chats:[],templates:{signal:{type:'text',text:'🎯 SINAL LOCALIZADO — BRABET\n{hora1} ▫️\n{hora2} ▫️\n⚠️ Tendência: 1 minuto antes ou depois de cada horário.'},attention:{type:'text',text:'⚠️ ATENTOS — POSSÍVEL BRANCO\n{hora1} ▫️ / {hora2} ▫️'},win:{type:'text',text:'✅ WIN NO BRANCO — {resultado}'},loss:{type:'text',text:'🚫 LOSS — janelas encerradas sem branco'}}});
+const defaults=()=>({botEnabled:false,chats:[],templates:{signal:{type:'text',text:'🤍 BRANCO BRABET PRO\n▫️ {hora1} ▫️\n▫️ {hora2} ▫️ · Proteção (+4 min)\n🎯 {casa} (estimada)\n⚠️ Tendência ±1 minuto.'},attention:{type:'text',text:'⚠️ ATENTOS — PADRÃO BRANCO IDENTIFICADO\n{sequencia}\nEm breve: horários calculados.'},win:{type:'text',text:'✅✅✅✅ WIN — {resultado}'},loss:{type:'text',text:'🚫 LOSS — janelas encerradas sem branco confirmado'}}});
 const emptyRun=()=>({lastSeq:0,recent:[],active:null,lastSourceMinute:0,lastReceivedAt:0});
 const emptyScore=()=>({signals:0,wins:0,losses:0,cancelled:0,updatedAt:0});
 const scoreKey=id=>ROOT+'scores/'+id+'.json';
@@ -26,7 +27,7 @@ const blockKey=chatId=>ROOT+'blocked/'+chatTag(chatId)+'.json';
 const digits=x=>/^-?[0-9]{5,20}$/.test(String(x));
 const botReady=env=>/^\d{5,15}:[A-Za-z0-9_-]{20,}$/.test(String(env.NEXO_WHITE_BOT_TOKEN||''));
 const valuesFrom=(active,result)=>({hora1:hm(active.target1),hora2:hm(active.target2),soma:String(active.sum),sequencia:active.sequence,resultado:result?hm(result.minute_epoch):'',pedra:result?iconColor(result.color)+result.number:'',estrategia:active.name});
-const render=(template,active,result)=>String(template||'').replace(/\{(hora1|hora2|soma|sequencia|resultado|pedra|estrategia)\}/g,(_,k)=>valuesFrom(active,result)[k]);
+const render=(template,active,result)=>String(template||'').replace(/\{(hora1|hora2|soma|sequencia|resultado|pedra|estrategia|casa)\}/g,(_,k)=>k==='casa'?(active.house==='first'?'primeira casa':active.house==='second'?'segunda casa':'casa não confirmada'):valuesFrom(active,result)[k]);
 
 // O usuário define a soma como MINUTO ALVO, não como duração após o branco.
 // Se o horário alvo já passou quando a sequência se completou, avançar de hora.
@@ -39,6 +40,29 @@ export function calculateWhiteWindows(first,white,last,increment=4){
  while(target1<=last.minute_epoch)target1+=3600;
  const target2=target1+increment*60;
  return {sum,target1,target2,label1:hm(target1),label2:hm(target2)};
+}
+
+
+// V14: modelos fixos pré-montados apenas quando o módulo nunca teve regras salvas.
+// Se rules.json existe (inclusive []), não recriar regras excluídas e não alterar edições.
+const fixedPresets=()=>[
+ {id:'f'.repeat(32),name:'FIXA 01 · 🔴4 → ⚪0 · mesmo minuto',before:{color:'red',number:4},after:{color:'none',number:null},mode:'relative',offset:10,house:'auto',increment:4,tolerance:1,alertDelaySeconds:30,enabled:true,updatedAt:now()},
+ {id:'e'.repeat(32),name:'FIXA 02 · 🟦 Coringa → ⚪0 → ⚫11',before:{color:'any',number:null},after:{color:'black',number:11},mode:'relative',offset:10,house:'first',increment:4,tolerance:1,alertDelaySeconds:30,enabled:true,updatedAt:now()}
+];
+async function ensureWhitePresets(env){
+ const existing=await env.R2.get(KEY.rules);
+ if(existing)return doc(env,KEY.rules,[]);
+ const presets=fixedPresets();await save(env,KEY.rules,presets);return presets;
+}
+const matchColor=(color,actual)=>color==='any'?['red','black'].includes(actual):color===actual;
+const iconRule=c=>c==='any'?'🟦':c==='none'?'':' '+iconColor(c);
+// Modo relativo: calcular +10min contados do branco, nunca confundir com somar números.
+export function calculateRelativeWhiteWindows(white,last,offset=10,increment=4){
+ if(!white||white.color!=='white'||!Number.isSafeInteger(white.minute_epoch)||!last||!Number.isSafeInteger(last.minute_epoch)||!Number.isInteger(offset)||offset<1||offset>120||!Number.isInteger(increment)||increment<3||increment>30)throw Error('Horários relativos inválidos');
+ const target1=white.minute_epoch+offset*60;
+ if(target1<=last.minute_epoch)return null; // Padrão chegou tarde: não inventar sinal vencido.
+ const target2=target1+increment*60;
+ return {sum:0,target1,target2,label1:hm(target1),label2:hm(target2)};
 }
 
 async function telegram(env,method,body){
@@ -76,10 +100,21 @@ async function sendEvent(env,type,active,result=null){
   }
  }));
 }
-const matches=(rows,rule)=>{
- if(rows.length<3)return false;
- const [a,b,c]=rows.slice(-3);
- return a.color===rule.before.color&&(rule.before.number===null||a.number===rule.before.number)&&b.color==='white'&&b.number===0&&c.color===rule.after.color&&(rule.after.number===null||c.number===rule.after.number);
+const matchRule=(rows,rule)=>{
+ const testBefore=a=>a&&matchColor(rule.before.color,a.color)&&(rule.before.number==null||a.number===rule.before.number);
+ if(rule.after.color==='none'){
+  if(rows.length<2)return null;
+  const [first,white]=rows.slice(-2);
+  if(!testBefore(first)||white.color!=='white'||white.number!==0||!([0,60].includes(white.minute_epoch-first.minute_epoch))||white.seq!==first.seq+1)return null;
+  return {first,white,last:white};
+ }
+ if(rows.length<3)return null;
+ const [first,white,last]=rows.slice(-3);
+ if(!testBefore(first)||white.color!=='white'||white.number!==0||!matchColor(rule.after.color,last.color)||(rule.after.number!=null&&last.number!==rule.after.number))return null;
+ if(white.seq!==first.seq+1||last.seq!==white.seq+1||last.minute_epoch<white.minute_epoch)return null;
+ // A sequência coringa + branco exige o branco no mesmo minuto da primeira pedra.
+ if(rule.mode==='relative'&&first.minute_epoch!==white.minute_epoch)return null;
+ return {first,white,last};
 };
 const within=(time,target,tol)=>Math.abs(time-target)<=tol*60;
 const lastEnd=a=>a.target2+a.tolerance*60;
@@ -87,6 +122,7 @@ const activeAt=a=>a&&a.status==='active';
 const updateScore=async(env,id,key)=>{const score=await doc(env,scoreKey(id),emptyScore());score[key]=(score[key]||0)+1;score.updatedAt=now();await save(env,scoreKey(id),score)};
 
 export async function whiteHasActiveForecast(env){const st=await doc(env,KEY.runtime,emptyRun());return !!activeAt(st.active)}
+export async function whiteShouldBlockLegacy(env){const [st,cfg]=await Promise.all([doc(env,KEY.runtime,emptyRun()),doc(env,KEY.config,defaults())]);return cfg.botEnabled===true&&!!activeAt(st.active)}
 
 export async function resetWhiteAfterCatchup(env,game,rows){
  if(game.id!=='brabet-double'||!rows.length)return;
@@ -99,7 +135,7 @@ export async function resetWhiteAfterCatchup(env,game,rows){
 
 export async function processWhiteRounds(env,game,rows){
  if(game.id!=='brabet-double'||!rows.length)return;
- const cfg=await doc(env,KEY.config,defaults()),rules=(await doc(env,KEY.rules,[])).filter(x=>x.enabled);
+ const cfg=await doc(env,KEY.config,defaults()),rules=(await ensureWhitePresets(env)).filter(x=>x.enabled);
  const st=await doc(env,KEY.runtime,emptyRun());
  const ordered=[...rows].filter(x=>Number.isSafeInteger(x.seq)).sort((a,b)=>a.seq-b.seq);
  for(const r of ordered){
@@ -118,11 +154,17 @@ export async function processWhiteRounds(env,game,rows){
   if(!activeAt(st.active)&&rules.length){
    // Não disputar o jogo com uma estratégia tradicional ainda em execução.
    const legacy=await doc(env,'nexo-v3/runtime/game-owner/'+game.id+'.json',{ownerId:null});
-   const rule=!legacy.ownerId?rules.find(rule=>matches(st.recent,rule)):null;
-   if(rule){
-    const [first,white,last]=st.recent;const dates=calculateWhiteWindows(first,white,last,rule.increment);
-    const active={status:'active',strategyId:rule.id,name:rule.name,firstId:first.id,lastId:last.id,sourceWhiteMinute:white.minute_epoch,sequence:`${iconColor(first.color)}${first.number} → ⚪0 → ${iconColor(last.color)}${last.number}`,tolerance:rule.tolerance,increment:rule.increment,...dates,attentionSent:false,createdAt:now()};
-    st.active=active;await updateScore(env,rule.id,'signals');await sendEvent(env,'signal',active);
+   const chosen=!legacy.ownerId?rules.map(rule=>({rule,match:matchRule(st.recent,rule)})).find(x=>x.match):null;
+   if(chosen){
+    const {rule,match}=chosen,{first,white,last}=match;
+    const dates=rule.mode==='relative'?calculateRelativeWhiteWindows(white,last,rule.offset||10,rule.increment):calculateWhiteWindows(first,white,last,rule.increment);
+    if(dates){
+     const sequence=`${rule.before.color==='any'?'🟦':iconColor(first.color)}${first.number} → ⚪0`+(rule.after.color==='none'?'':` → ${iconColor(last.color)}${last.number}`);
+     const alertFirst=rule.mode==='relative'&&rule.alertDelaySeconds>0;
+     const active={status:'active',strategyId:rule.id,name:rule.name,firstId:first.id,lastId:last.id,sourceWhiteMinute:white.minute_epoch,sequence,tolerance:rule.tolerance,increment:rule.increment,mode:rule.mode||'sum',house:rule.house==='auto'?(white.minute_epoch>first.minute_epoch?'first':'second'):(rule.house||'any'),...dates,attentionSent:alertFirst,signalSent:!alertFirst,alertDelaySeconds:rule.alertDelaySeconds||0,createdAt:now()};
+     st.active=active;await updateScore(env,rule.id,'signals');
+     if(alertFirst)await sendEvent(env,'attention',active);else await sendEvent(env,'signal',active);
+    }
    }
   }
  }
@@ -131,6 +173,12 @@ export async function processWhiteRounds(env,game,rows){
 
 export async function scheduledWhite(env){
  const st=await doc(env,KEY.runtime,emptyRun()),a=st.active;if(!activeAt(a))return;
+ // V14: atenção imediata na identificação; sinal após atraso configurado.
+ // A rotina cron roda por minuto: 30s configurados podem demorar até ~60s extras.
+ if(a.signalSent===false&&now()>=a.createdAt+(a.alertDelaySeconds||0)){
+  a.signalSent=true;await save(env,KEY.runtime,st);
+  if(now()-st.lastReceivedAt<150&&now()<a.target1-60)await sendEvent(env,'signal',a);
+ }
  // A fonte precisa estar funcionando para que a mensagem de atenção seja confiável.
  if(!a.attentionSent&&now()>=a.target1-60&&now()<=a.target1+60&&now()-st.lastReceivedAt<150){
   a.attentionSent=true;await save(env,KEY.runtime,st);await sendEvent(env,'attention',a);
@@ -144,11 +192,27 @@ export async function scheduledWhite(env){
 function validatedRule(x,id){
  if(!x||typeof x!=='object')throw Error('Estratégia inválida');
  const name=String(x.name||'').trim();if(name.length<3||name.length>75)throw Error('Nome: de 3 a 75 caracteres');
- const readSide=(part,label)=>{if(!colorOK(part?.color))throw Error('Cor '+label+' inválida');const number=part.number===null||part.number===''||part.number===undefined?null:Number(part.number);if(number!==null&&(!Number.isInteger(number)||number<1||number>14||(part.color==='red'?number>7:number<8)))throw Error('Número '+label+' não pertence à cor selecionada');return {color:part.color,number}};
+ const readSide=(part,label,allowNone)=>{
+  const color=String(part?.color||'');
+  if(!['red','black','any',...(allowNone?['none']:[])].includes(color))throw Error('Cor '+label+' inválida');
+  const number=part?.number==null||part?.number===''?null:Number(part.number);
+  if(['any','none'].includes(color)){
+   if(number!==null)throw Error('Coringa e sem pedra não aceitam número fixo');
+  }else if(number!==null&&(!Number.isInteger(number)||number<1||number>14||(color==='red'?number>7:number<8)))throw Error('Número '+label+' não pertence à cor');
+  return {color,number};
+ };
+ const before=readSide(x.before,'antes',false),after=readSide(x.after,'depois',true);
  const increment=Number(x.increment),tolerance=Number(x.tolerance);
- if(!Number.isInteger(increment)||increment<3||increment>30)throw Error('Intervalo: 3 a 30 minutos');
+ if(!Number.isInteger(increment)||increment<3||increment>30)throw Error('Proteção: 3 a 30 minutos');
  if(!Number.isInteger(tolerance)||tolerance<0||tolerance>2)throw Error('Tolerância: 0 a 2 minutos');
- return {id,name,before:readSide(x.before,'antes'),after:readSide(x.after,'depois'),increment,tolerance,enabled:x.enabled===true,updatedAt:now()};
+ const mode=x.mode==='relative'?'relative':'sum';
+ if(mode==='sum'&&after.color==='none')throw Error('Soma exige uma pedra depois do branco');
+ const offset=x.offset==null?10:Number(x.offset);
+ if(!Number.isInteger(offset)||offset<1||offset>120)throw Error('Deslocamento: 1 a 120 minutos');
+ const house=['first','second','any','auto'].includes(x.house)?x.house:'any';
+ const alertDelaySeconds=x.alertDelaySeconds==null?0:Number(x.alertDelaySeconds);
+ if(!Number.isInteger(alertDelaySeconds)||alertDelaySeconds<0||alertDelaySeconds>120)throw Error('Atraso do alerta: 0 a 120 segundos');
+ return {id,name,before,after,mode,offset,house,increment,tolerance,alertDelaySeconds,enabled:x.enabled===true,updatedAt:now()};
 }
 function validateTemplate(v,media){
  if(!v||!['text','sticker','gif'].includes(v.type))throw Error('Selecione texto, sticker ou GIF');
@@ -168,14 +232,22 @@ export async function routeWhiteAdmin(req,env,url){
   const parts=path.slice('/api/adm/white/'.length).split('/');
   const config=()=>doc(env,KEY.config,defaults());const rules=()=>doc(env,KEY.rules,[]);const runtime=()=>doc(env,KEY.runtime,emptyRun());
   if(path==='/api/adm/white/overview'&&req.method==='GET'){
+   await ensureWhitePresets(env);
    const [cfg,rs,st,chats,media,blockedEntries]=await Promise.all([config(),rules(),runtime(),doc(env,KEY.chats,[]),doc(env,KEY.media,[]),env.R2.list({prefix:ROOT+'blocked/',limit:30})]);
    const blocked=(await Promise.all((blockedEntries.objects||[]).map(x=>doc(env,x.key,null)))).filter(Boolean);
    const scores=await Promise.all(rs.map(async r=>({id:r.id,name:r.name,...await doc(env,scoreKey(r.id),emptyScore())})));
    return response({ok:true,config:cfg,rules:rs,runtime:st,chats,media,scores,blocked,botConfigured:botReady(env),sourcePrecision:'minute'});
   }
+  if(path==='/api/adm/white/presets'&&req.method==='POST'){
+   const body=await readBody(req);if(body.confirm!==true)return fail('Confirme a instalação dos modelos fixos');
+   const old=await doc(env,KEY.rules,[]),missing=fixedPresets().filter(p=>!old.some(x=>x.id===p.id));
+   if(old.length+missing.length>30)return fail('Limite de 30 estratégias');
+   if(missing.length)await save(env,KEY.rules,[...old,...missing]);
+   return response({ok:true,added:missing.length});
+  }
   if(path==='/api/adm/white/rules'&&req.method==='POST'){
    const body=await readBody(req),list=await rules();if(list.length>=30)return fail('Máximo de 30 estratégias do branco');
-   const rule=validatedRule({...body,enabled:false},crypto.randomUUID().replaceAll('-',''));list.push(rule);await save(env,KEY.rules,list);return response({ok:true,rule});
+   const rule=validatedRule({...body,enabled:body.mode==='relative'&&body.enabled!==false},crypto.randomUUID().replaceAll('-',''));list.push(rule);await save(env,KEY.rules,list);return response({ok:true,rule});
   }
   const ruleMatch=/^\/api\/adm\/white\/rules\/([a-f0-9]{32})$/.exec(path);
   if(ruleMatch&&['PUT','DELETE'].includes(req.method)){
@@ -186,7 +258,7 @@ export async function routeWhiteAdmin(req,env,url){
     if(st.active?.strategyId===ruleMatch[1]){await updateScore(env,ruleMatch[1],'cancelled');st.active=null;await save(env,KEY.runtime,st)}
     const gone=list.splice(idx,1)[0];await save(env,KEY.rules,list);await env.R2.delete?.(scoreKey(gone.id));return response({ok:true,deletedId:gone.id});
    }
-   const body=await readBody(req),rule=validatedRule(body,ruleMatch[1]);if(st.active?.strategyId===rule.id&&(!rule.enabled||JSON.stringify(rule)!==JSON.stringify(list[idx]))){await updateScore(env,rule.id,'cancelled');st.active=null;await save(env,KEY.runtime,st)}
+   const body=await readBody(req),rule=validatedRule(body,ruleMatch[1]);if(st.active?.strategyId===rule.id&&(!rule.enabled||JSON.stringify({...rule,updatedAt:0})!==JSON.stringify({...list[idx],updatedAt:0}))){await updateScore(env,rule.id,'cancelled');st.active=null;await save(env,KEY.runtime,st)}
    list[idx]=rule;await save(env,KEY.rules,list);
    if(rule.enabled){
     const latest=await doc(env,'nexo-v1/games/brabet-double/latest.json',{items:[]});

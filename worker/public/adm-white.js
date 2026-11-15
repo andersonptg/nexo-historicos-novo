@@ -1,94 +1,124 @@
-/* NEXO V13 - Branco por Minuto: painel independente, só ações explícitas salvam. */
+/* NEXO V14 — Editor oficial das duas estratégias fixas de Branco por Minuto.
+   Todo conteúdo dinâmico é inserido com textContent; alteração só salva via API autenticada. */
 'use strict';
 (()=>{
  const $=id=>document.getElementById(id);
- const el=(tag,cls,text)=>{const x=document.createElement(tag);if(cls)x.className=cls;if(text!==undefined)x.textContent=text;return x};
- const apiWhite=(p,method='GET',body)=>api('white/'+p,method==='GET'?{}:payload(method,body||{}));
- let data=null,editing='',busy=false,lastOpen=0;
- const icon=c=>c==='red'?'🔴':c==='black'?'⚫':'⚪';
- function make(label,action,style=''){const b=el('button','white-btn '+style,label);b.type='button';b.addEventListener('click',action);return b;}
- function line(title,content){const b=el('div','white-line');b.append(el('span','',title),el('strong','',String(content)));return b;}
- function setStatus(text,bad=false){const e=$('white-status');if(e){e.textContent=text;e.classList.toggle('bad',bad)}}
- function panels(){const root=$('white-dashboard');if(!root||$('white-editor'))return;
-  const hero=el('section','white-hero');hero.append(el('span','white-tag','NEXO · MÓDULO INDEPENDENTE'),el('h2','','Branco por minuto'),el('p','','Padrão detectado → soma dos números + minuto do branco → duas janelas de horário. O cálculo indica uma hipótese, não uma probabilidade comprovada de acerto.'));
-  hero.append(el('div','white-hero-values','⚫8   +   ⚪ 05:20   +   🔴7   =   35   →   05:35 / 05:39'));
-  const info=el('div','white-info');info.id='white-info';hero.append(info);root.append(hero);
-  const layout=el('div','white-layout');const editor=el('section','white-panel');editor.id='white-editor';editor.append(el('div','white-panel-kicker','01 / REGRAS'),el('h3','','Montador de sequência'));
-  const form=el('form');form.id='white-rule-form';form.innerHTML=`
-   <label class="white-label">Nome da estratégia <input id="white-name" maxlength="75" required placeholder="Ex.: Branco de Soma 8 + 20 + 7"></label>
-   <div class="white-builder"><div class="white-step"><strong>01 · ANTES</strong><select id="white-before-color"><option value="black">⚫ Preto</option><option value="red">🔴 Vermelho</option></select><select id="white-before-number"></select></div>
-   <div class="white-step white-white"><strong>02 · BRANCO</strong><span class="white-zero">⚪ 0</span><small>Minuto identificado automaticamente</small></div>
-   <div class="white-step"><strong>03 · DEPOIS</strong><select id="white-after-color"><option value="red">🔴 Vermelho</option><option value="black">⚫ Preto</option></select><select id="white-after-number"></select></div></div>
-   <div class="white-two"><label class="white-label">Somar minutos à segunda janela<select id="white-increment"><option value="3">+3 minutos</option><option value="4" selected>+4 minutos</option><option value="5">+5 minutos</option><option value="6">+6 minutos</option><option value="10">+10 minutos</option></select></label>
-   <label class="white-label">Tolerância<select id="white-tolerance"><option value="0">Somente minuto exato</option><option value="1" selected>±1 minuto</option><option value="2">±2 minutos</option></select></label></div>
-   <div class="white-preview" id="white-rule-preview"></div><div class="white-buttons"><button type="submit" class="white-btn primary">💾 Salvar estratégia</button><button type="button" class="white-btn" id="white-clear">+ Nova regra</button></div>`;
-  editor.append(form);layout.append(editor);
-  const roster=el('section','white-panel');roster.append(el('div','white-panel-kicker','02 / CADASTROS'),el('h3','','Estratégias e placares'));const saved=el('div');saved.id='white-saved';roster.append(saved);layout.append(roster);root.append(layout);
-  const runtime=el('section','white-panel');runtime.append(el('div','white-panel-kicker','03 / MONITORAMENTO'),el('h3','','Tendência ativa e eventos'));const state=el('div');state.id='white-runtime';const log=el('div');log.id='white-events';runtime.append(state,log);root.append(runtime);
-  const bot=el('section','white-panel');bot.append(el('div','white-panel-kicker','04 / BOT EXCLUSIVO'),el('h3','','Telegram — Branco por Minuto'),el('p','white-sub','Crie outro bot no @BotFather. Configure o token como Secret NEXO_WHITE_BOT_TOKEN na Cloudflare. O bot atual continua independente; nenhum webhook antigo será alterado.'));
-  const boot=el('div','white-bot-head');boot.id='white-bot-head';bot.append(boot);
-  const action=el('div','white-buttons');action.append(make('↻ Buscar grupos do novo bot',()=>void run(async()=>{await apiWhite('chats/discover','POST',{});await refresh();setStatus('Grupos atualizados.')})),make('🎞 Importar stickers/GIFs',()=>void run(async()=>{const r=await apiWhite('media/import','POST',{});await refresh();setStatus('Mídias importadas: '+r.imported)})));
-  bot.append(action);const chat=el('div');chat.id='white-chat-list';bot.append(chat);const blocked=el('div');blocked.id='white-blocked';bot.append(blocked);
-  const control=el('div','white-buttons');const label=el('label','white-check');const toggle=el('input');toggle.type='checkbox';toggle.id='white-bot-enabled';label.append(toggle,el('span','','Autorizar envios do NOVO robô'));control.append(label,make('💾 Salvar destinos e estado',()=>void saveBot()));bot.append(control);
-  root.append(bot);
-  const events=el('section','white-panel');events.append(el('div','white-panel-kicker','05 / MENSAGENS'),el('h3','','Mensagens e mídias por evento'),el('p','white-sub','Cada evento escolhe UM formato: texto, sticker ou GIF. A nova biblioteca é exclusiva desse bot.'));
-  const list=el('div','white-template-list');list.id='white-template-list';events.append(list);root.append(events);
-  const notice=el('p','white-status');notice.id='white-status';notice.textContent='O módulo inicia pausado. Nenhum envio automático antes de ativar uma regra e o novo bot.';root.append(notice);
-  $('white-rule-form').addEventListener('submit',e=>{e.preventDefault();void saveRule()});$('white-clear').addEventListener('click',()=>clearEditor());
-  for(const id of ['white-before-color','white-after-color'])$(id).addEventListener('change',()=>{populateNum(id==='white-before-color'?'before':'after');paintPreview()});
-  for(const id of ['white-before-number','white-after-number','white-increment','white-tolerance'])$(id).addEventListener('change',paintPreview);
-  populateNum('before');populateNum('after');paintPreview();
+ const e=(tag,cls,txt)=>{const n=document.createElement(tag);if(cls)n.className=cls;if(txt!==undefined)n.textContent=String(txt);return n;};
+ const apiW=(path,method='GET',body)=>api('white/'+path,method==='GET'?{}:payload(method,body||{}));
+ const icons={red:'🔴',black:'⚫',white:'⚪',any:'🟦',none:''};
+ const names={red:'Vermelho',black:'Preto',any:'Coringa azul — vermelho ou preto',none:'Sem terceira pedra'};
+ const ruleIcon=side=>side.color==='none'?'—':(icons[side.color]||'●')+(side.number==null?' ★':String(side.number));
+ const fixedPreview=[
+  {name:'FIXA 01 · 🔴4 → ⚪0',stones:'🔴4 → ⚪0',example:'17:30 → 17:40 · proteção 17:44',house:'Segunda casa (estimada)'},
+  {name:'FIXA 02 · 🟦 → ⚪0 → ⚫11',stones:'🟦★ → ⚪0 → ⚫11',example:'17:57 / 17:58 → 18:07 · proteção 18:11',house:'Primeira casa (estimada)'}
+ ];
+ let state=null,editing='',busy=false,lastRefresh=0;
+ function btn(text,fn,cls=''){const n=e('button','wh14-btn '+cls,text);n.type='button';n.addEventListener('click',fn);return n;}
+ function status(msg,bad=false){const n=$('wh14-status');if(n){n.textContent=msg;n.classList.toggle('bad',bad)}}
+ async function safe(fn){if(busy)return;busy=true;try{await fn()}catch(err){status(err?.message||String(err),true)}finally{busy=false}}
+ function field(label,id,type='text',opts={}){const wrap=e('label','wh14-field'),cap=e('span','',label);let n;
+  if(type==='select'){n=e('select');for(const [v,t] of opts.choices||[]){const o=e('option','',t);o.value=v;n.append(o)}}
+  else{n=e('input');n.type=type;if(opts.placeholder)n.placeholder=opts.placeholder;if(opts.min!=null)n.min=opts.min;if(opts.max!=null)n.max=opts.max;if(opts.maxLength)n.maxLength=opts.maxLength;}
+  n.id=id;wrap.append(cap,n);return wrap;
  }
- function populateNum(side,selectValue){const color=$('white-'+side+'-color').value,select=$('white-'+side+'-number'),old=selectValue===undefined?select.value:selectValue;select.replaceChildren();let opt=el('option','','Qualquer número');opt.value='';select.append(opt);
-  for(let n=color==='red'?1:8;n<=(color==='red'?7:14);n++){opt=el('option','',String(n));opt.value=String(n);select.append(opt)}select.value=old||'';
+ function formBlock(){
+  const box=e('section','wh14-panel wh14-editor');box.id='wh14-editor';
+  box.append(e('div','wh14-eyebrow','01 / MONTADOR PROFISSIONAL'),e('h3','','Editar estratégias fixas'),e('p','wh14-muted','Toque em Editar em uma das regras já montadas ou crie outra. Os horários são calculados pelas rodadas observadas, sem digitar minutos manualmente.'));
+  const form=e('form');form.id='wh14-form';
+  form.append(field('Nome da estratégia','wh14-name','text',{maxLength:75,placeholder:'Ex.: Coringa + branco + 11'}));
+  const stones=e('div','wh14-stones');
+  const before=e('div','wh14-stone-edit');before.append(e('strong','','01 · PEDRA ANTES'),field('Cor ou coringa','wh14-before-color','select',{choices:[['red','🔴 Vermelho'],['black','⚫ Preto'],['any','🟦 Curinga · vermelho ou preto']]}),field('Número da pedra','wh14-before-number','select',{choices:[]}));
+  const center=e('div','wh14-center');center.append(e('strong','','02 · BRANCO'),e('div','wh14-whiteball','⚪0'),e('small','','Minuto calculado automaticamente'));
+  const after=e('div','wh14-stone-edit');after.append(e('strong','','03 · PEDRA DEPOIS'),field('Cor ou ausência','wh14-after-color','select',{choices:[['none','Sem terceira pedra'],['red','🔴 Vermelho'],['black','⚫ Preto'],['any','🟦 Coringa · vermelho ou preto']]}),field('Número da pedra','wh14-after-number','select',{choices:[]}));
+  stones.append(before,center,after);form.append(stones);
+  const timing=e('div','wh14-field-grid');timing.append(
+   field('Tipo de cálculo','wh14-mode','select',{choices:[['relative','+ minutos após o branco'],['sum','Soma dos números + minuto (V13)']]}),
+   field('Minutos após o branco','wh14-offset','number',{min:1,max:120}),
+   field('Proteção (+ minutos)','wh14-increment','number',{min:3,max:30}),
+   field('Tolerância (± minutos)','wh14-tolerance','select',{choices:[['0','Minuto exato'],['1','± 1 minuto'],['2','± 2 minutos']]}),
+   field('Casa de entrada (referência)','wh14-house','select',{choices:[['auto','Detectar 1ª / 2ª pelo minuto'],['second','Segunda casa'],['first','Primeira casa'],['any','Qualquer casa']]}),
+   field('Atraso após atenção (segundos)','wh14-delay','select',{choices:[['0','Sem atraso'],['15','15 s · depende do cron'],['30','30 s · depende do cron'],['60','60 s · depende do cron']]})
+  );form.append(timing);
+  const enable=e('label','wh14-switch'),check=e('input');check.type='checkbox';check.id='wh14-enabled';check.checked=true;enable.append(check,e('span','','Estratégia ATIVA ao salvar — detecção automática; Telegram continua independente'));form.append(enable);
+  const preview=e('div','wh14-preview');preview.id='wh14-preview';form.append(preview);
+  const controls=e('div','wh14-actions'),save=e('button','wh14-btn primary','💾 Salvar estratégia');save.type='submit';save.id='wh14-save';controls.append(save,btn('+ Nova estratégia',resetForm));form.append(controls);
+  const note=e('p','wh14-warning','⚠️ A fonte atual informa o MINUTO, não confirma a primeira/segunda casa de cada giro. A casa é uma referência configurável; o WIN é conferido pelo minuto até existir informação mais precisa.');form.append(note);
+  form.addEventListener('submit',ev=>{ev.preventDefault();void safe(saveRule)});
+  box.append(form);
+  return box;
  }
- function previewCalc(before,after,min,increment){const a=Number(before)+Number(min)+Number(after);const minutes=(h,m)=>{let total=h*60+m;return String(Math.floor(total/60)%24).padStart(2,'0')+':'+String(total%60).padStart(2,'0')};const base=5;let first=base*60+a;while(first<=base*60+21)first+=60;return {sum:a,t1:minutes(0,first),t2:minutes(0,first+increment)}}
- function paintPreview(){const host=$('white-rule-preview');if(!host)return;const b=$('white-before-number').value||'8',c=$('white-after-number').value||'7',calc=previewCalc(b,c,20,Number($('white-increment').value));host.textContent=`EXEMPLO • ${icon($('white-before-color').value)}${b} → ⚪0 às 05:20 → ${icon($('white-after-color').value)}${c}  |  Soma ${calc.sum}  |  ${calc.t1} e ${calc.t2}  |  Tolerância ±${$('white-tolerance').value} min`;}
- function readRule(){return {name:$('white-name').value.trim(),before:{color:$('white-before-color').value,number:$('white-before-number').value===''?null:Number($('white-before-number').value)},after:{color:$('white-after-color').value,number:$('white-after-number').value===''?null:Number($('white-after-number').value)},increment:Number($('white-increment').value),tolerance:Number($('white-tolerance').value),enabled:editing?data.rules.find(x=>x.id===editing)?.enabled===true:false}}
- function clearEditor(){$('white-rule-form').reset();editing='';populateNum('before');populateNum('after');paintPreview();$('white-rule-form button[type=submit]').textContent='💾 Salvar estratégia'}
- async function run(fn){if(busy)return;busy=true;try{await fn()}catch(e){setStatus(String(e.message||e),true)}finally{busy=false}}
- function saveRule(){void run(async()=>{const body=readRule(),method=editing?'PUT':'POST',path=editing?'rules/'+editing:'rules';const r=await apiWhite(path,method,body);await refresh();setStatus('✓ Estratégia salva: '+r.rule.name);clearEditor()})}
- function editRule(rule){editing=rule.id;$('white-name').value=rule.name;$('white-before-color').value=rule.before.color;$('white-after-color').value=rule.after.color;populateNum('before',rule.before.number===null?'':String(rule.before.number));populateNum('after',rule.after.number===null?'':String(rule.after.number));$('white-increment').value=String(rule.increment);$('white-tolerance').value=String(rule.tolerance);$('white-rule-form button[type=submit]').textContent='💾 Salvar alterações';paintPreview();$('white-editor').scrollIntoView({behavior:'smooth',block:'center'})}
- function toggleRule(rule){void run(async()=>{await apiWhite('rules/'+rule.id,'PUT',{...rule,enabled:!rule.enabled});await refresh();setStatus(rule.enabled?'Estratégia pausada':'Estratégia ativada somente para novas rodadas')})}
- function deleteRule(rule){if(!confirm('Excluir definitivamente a estratégia “'+rule.name+'” e o placar dela? Não altera o histórico geral nem as outras regras.'))return;void run(async()=>{await apiWhite('rules/'+rule.id,'DELETE',{confirm:true});if(editing===rule.id)clearEditor();await refresh();setStatus('Estratégia excluída com sucesso.')})}
- function paintRules(){const host=$('white-saved');host.replaceChildren();const rules=data.rules||[];
-  if(!rules.length){host.append(el('p','white-sub','Nenhuma regra cadastrada. Monte a primeira sequência ao lado.'));return;}
-  for(const r of rules){const card=el('article','white-rule-card'),title=el('div','white-title');title.append(el('strong','',r.name),el('span',r.enabled?'white-active':'white-paused',r.enabled?'ATIVA':'PAUSADA'));card.append(title);
-   const code=el('div','white-stones');code.append(el('span','white-stone '+r.before.color,`${icon(r.before.color)}${r.before.number??'•'}`),el('span','white-stone white','⚪0'),el('span','white-stone '+r.after.color,`${icon(r.after.color)}${r.after.number??'•'}`));card.append(code);
-   card.append(el('p','white-sub',`+${r.increment} min · tolerância ±${r.tolerance} min · leitura automática`));
-   const sc=data.scores.find(x=>x.id===r.id)||{};card.append(el('div','white-mini-score',`📍 ${sc.signals||0} sinais   ✅ ${sc.wins||0} WIN   🚫 ${sc.losses||0} LOSS   ↻ ${sc.cancelled||0} cancelados`));
-   const actions=el('div','white-buttons');actions.append(make('✎ Editar',()=>editRule(r)),make(r.enabled?'⏸ Pausar':'▶ Ativar',()=>toggleRule(r),r.enabled?'pause':'activate'),make('Excluir',()=>deleteRule(r),'danger'));card.append(actions);host.append(card);
+ function numbers(side,current){const select=$('wh14-'+side+'-number'),color=$('wh14-'+side+'-color').value;select.replaceChildren();
+  const empty=e('option','','Qualquer número');empty.value='';select.append(empty);
+  if(color==='red'||color==='black')for(let n=color==='red'?1:8;n<=(color==='red'?7:14);n++){const opt=e('option','',n);opt.value=String(n);select.append(opt)}
+  if(['any','none'].includes(color)){select.value='';select.disabled=true;return}
+  select.disabled=false;const ok=[...select.options].some(x=>x.value===String(current??''));select.value=ok?String(current??''):'';
+ }
+ function readRule(){const part=side=>({color:$('wh14-'+side+'-color').value,number:$('wh14-'+side+'-number').value===''?null:Number($('wh14-'+side+'-number').value)});
+  return {name:$('wh14-name').value.trim(),before:part('before'),after:part('after'),mode:$('wh14-mode').value,offset:Number($('wh14-offset').value),increment:Number($('wh14-increment').value),tolerance:Number($('wh14-tolerance').value),house:$('wh14-house').value,alertDelaySeconds:Number($('wh14-delay').value),enabled:$('wh14-enabled').checked};
+ }
+ function resetForm(){if(!$('wh14-form'))return;editing='';$('wh14-form').reset();$('wh14-name').value='';$('wh14-before-color').value='red';$('wh14-after-color').value='none';numbers('before',4);numbers('after');$('wh14-mode').value='relative';$('wh14-offset').value='10';$('wh14-increment').value='4';$('wh14-tolerance').value='1';$('wh14-house').value='auto';$('wh14-delay').value='30';$('wh14-enabled').checked=true;$('wh14-save').textContent='💾 Salvar nova estratégia';paintPreview()}
+ function paintPreview(){const preview=$('wh14-preview');if(!preview)return;const r=readRule();const left=ruleIcon(r.before)+' → ⚪0'+(r.after.color==='none'?'':' → '+ruleIcon(r.after));preview.replaceChildren();preview.append(e('strong','','PRÉVIA DA ESTRATÉGIA'),e('div','wh14-preview-stones',left));
+  const example=r.mode==='relative'?`Se ⚪0 sair 17:30, entrada ${minClock(17,30+r.offset)} e proteção ${minClock(17,30+r.offset+r.increment)}`:'Soma dos números e do minuto, conforme modelo V13';
+  preview.append(e('small','',example+' · '+({first:'1ª casa',second:'2ª casa',any:'qualquer casa',auto:'casa estimada conforme minuto'}[r.house]||'')+' (não verificável pela fonte atual)'));
+  $('wh14-offset').disabled=r.mode==='sum';
+ }
+ function minClock(h,m){const n=(h*60+m)%(24*60);return String(Math.floor(n/60)).padStart(2,'0')+':'+String(n%60).padStart(2,'0')}
+ function editRule(r){editing=r.id;for(const [id,value] of [['name',r.name],['before-color',r.before.color],['after-color',r.after.color],['mode',r.mode||'sum'],['offset',r.offset||10],['increment',r.increment],['tolerance',r.tolerance],['house',r.house||'any'],['delay',r.alertDelaySeconds||0]])$('wh14-'+id).value=String(value);
+  numbers('before',r.before.number);numbers('after',r.after.number);$('wh14-enabled').checked=r.enabled===true;$('wh14-save').textContent='💾 Salvar alterações';paintPreview();$('wh14-editor').scrollIntoView({behavior:'smooth',block:'start'});
+ }
+ async function saveRule(){const r=readRule();if(!r.name||r.name.length<3)throw Error('Digite um nome com pelo menos 3 caracteres.');if(r.mode==='sum'&&r.after.color==='none')throw Error('O modo Soma precisa de pedra depois do branco.');
+  const out=await apiW(editing?'rules/'+editing:'rules',editing?'PUT':'POST',r);await refresh();status('✓ Estratégia salva: '+out.rule.name+'. '+(out.rule.enabled?'Monitoramento ativo; bot depende de sua configuração.':'Monitoramento pausado.'));resetForm();
+ }
+ async function toggleRule(r){await safe(async()=>{await apiW('rules/'+r.id,'PUT',{...r,enabled:!r.enabled});await refresh();status('Estratégia '+(r.enabled?'pausada':'ativada')+' com sucesso')})}
+ async function deleteRule(r){if(!confirm('Excluir definitivamente “'+r.name+'”? A exclusão não afeta as outras regras nem os históricos gerais.'))return;await safe(async()=>{await apiW('rules/'+r.id,'DELETE',{confirm:true});if(editing===r.id)resetForm();await refresh();status('Estratégia excluída.')})}
+ function ruleList(){const host=$('wh14-rule-list');host.replaceChildren();const all=state?.rules||[];
+  if(!all.length){host.append(e('p','wh14-muted','Nenhuma regra. Use o editor para criar uma.'));return}
+  for(const r of all){const item=e('article','wh14-rule'),head=e('div','wh14-rule-head');head.append(e('strong','',r.name),e('span',r.enabled?'wh14-on':'wh14-off',r.enabled?'● ATIVA':'○ PAUSADA'));item.append(head);
+   const stones=e('div','wh14-rule-stones');stones.append(chip(r.before),e('span','','→'),chip({color:'white',number:0}));if(r.after.color!=='none')stones.append(e('span','','→'),chip(r.after));item.append(stones);
+   const mode=r.mode==='relative'?`+${r.offset||10} minutos após branco`:'Soma das pedras + minuto';
+   item.append(e('p','wh14-muted',mode+' · proteção +'+r.increment+' min · ±'+r.tolerance+' min · '+(r.house==='first'?'1ª casa':r.house==='second'?'2ª casa':r.house==='auto'?'detecção automática da casa':'casa livre')));
+   const sc=(state.scores||[]).find(x=>x.id===r.id)||{};item.append(e('div','wh14-score',`🎯 ${sc.signals||0} sinais   ✅ ${sc.wins||0} WIN   🚫 ${sc.losses||0} LOSS   ⏸ ${sc.cancelled||0} cancelados`));
+   const actions=e('div','wh14-rule-actions');actions.append(btn('✎ Editar',()=>editRule(r)),btn(r.enabled?'⏸ Pausar':'▶ Ativar',()=>void toggleRule(r),r.enabled?'pause':'success'),btn('Excluir',()=>void deleteRule(r),'danger'));item.append(actions);host.append(item)
   }
  }
- function paintRuntime(){const root=$('white-runtime');root.replaceChildren();const a=data.runtime?.active;root.append(el('span','white-label',a?'TENDÊNCIA EM MONITORAMENTO':'SEM TENDÊNCIA ATIVA'));
-  if(a)root.append(line(a.name,`${a.label1} ▫️ / ${a.label2} ▫️ · ±${a.tolerance} min`),el('p','white-sub',a.sequence+' · soma '+a.sum));
-  else root.append(el('p','white-sub','Nova regra só será acionada quando nenhuma outra estratégia estiver ocupando o ciclo.'));
-  const list=$('white-events');list.replaceChildren();const scores=data.scores||[];for(const s of scores)list.append(line(s.name,`✅ ${s.wins}   🚫 ${s.losses}   📍 ${s.signals}`));
+ function chip(part){const cls=part.color||'any';return e('span','wh14-chip '+cls,ruleIcon(part))}
+ function statusPanel(){const host=$('wh14-running');host.replaceChildren();const a=state.runtime?.active;host.append(e('strong','',a?'⏱ Estratégia em andamento':'⌛ Aguardando sequência'));if(a)host.append(e('p','',`${a.name} — ${a.label1} / ${a.label2} · ${a.sequence}`));
+  else host.append(e('p','wh14-muted','Uma regra por vez. Quando uma sequência nova for identificada, o bot agendado respeitará a regra escolhida.'));
+  $('wh14-live').textContent=state.config.botEnabled?'BOT BRANCO LIGADO':'BOT BRANCO DESLIGADO';
+  $('wh14-config').textContent=state.botConfigured?'✓ Secret do bot de branco configurado':'⚠️ Token do segundo bot ausente';
  }
- function paintChats(){const root=$('white-chat-list');root.replaceChildren();for(const chat of data.chats||[]){const line=el('label','white-chat'),check=el('input');check.type='checkbox';check.value=String(chat.id);check.checked=data.config.chats.includes(String(chat.id));check.disabled=!chat.permitted;line.append(check,el('span','',chat.name+' · '+chat.type+(chat.permitted?'':' · sem permissão')),make('Testar',()=>void run(async()=>{await apiWhite('bot/test','POST',{chatId:String(chat.id)});setStatus('Teste enviado ao Telegram.')})));root.append(line)}
-  if(!data.chats.length)root.append(el('p','white-sub','Para descobrir um chat: adicione o bot como administrador no grupo, envie /nexo_branco e toque em “Buscar grupos”. Para privado, envie /start.'));
-  $('white-bot-head').textContent=data.botConfigured?'✓ Secret do bot branco configurado':'⚠️ Secret NEXO_WHITE_BOT_TOKEN ainda não configurado';$('white-bot-enabled').checked=data.config.botEnabled===true;
+ function chatPanel(){const host=$('wh14-chats');host.replaceChildren();for(const ch of state.chats||[]){const line=e('label','wh14-chat'),input=e('input');input.type='checkbox';input.value=String(ch.id);input.checked=(state.config.chats||[]).includes(String(ch.id));input.disabled=!ch.permitted;line.append(input,e('span','',ch.name+(ch.permitted?'':' · sem permissão')));line.append(btn('Testar',()=>void safe(async()=>{await apiW('bot/test','POST',{chatId:String(ch.id)});status('Mensagem de teste enviada.')})));host.append(line)}
+  if(!state.chats.length)host.append(e('p','wh14-muted','Adicione o novo bot a um grupo, envie /nexo_branco e clique em Buscar grupos. No privado, envie /start.'));
+  $('wh14-bot-enabled').checked=state.config.botEnabled===true;
+  const blocked=$('wh14-blocked');blocked.replaceChildren();for(const row of state.blocked||[]){const cell=e('div','wh14-danger-row');cell.append(e('strong','','Entrega incerta · chat ••'+String(row.chatId).slice(-4)),e('small','',row.error||''),btn('Já conferi — desbloquear',()=>{if(!confirm('Conferiu o destino? A mensagem incerta não será reenviada.'))return;void safe(async()=>{await apiW('deliveries/clear','POST',{chatId:row.chatId,confirm:true});await refresh()})}));blocked.append(cell)}
  }
- function paintBlocked(){const host=$('white-blocked');if(!host)return;host.replaceChildren();
-  for(const b of data.blocked||[]){const row=el('div','white-blocked-item');row.append(el('strong','','⚠️ Entrega incerta · chat ••'+String(b.chatId).slice(-4)),el('small','',b.type+' · '+b.error));
-   row.append(make('✓ Já conferi: desbloquear',()=>{if(!confirm('Você conferiu o Telegram? O sistema NÃO repetirá a mensagem incerta. Desbloquear apenas futuros sinais?'))return;void run(async()=>{await apiWhite('deliveries/clear','POST',{chatId:b.chatId,confirm:true});await refresh();setStatus('Chat desbloqueado sem repetir mensagens antigas.')})}));host.append(row);
-  }
- }
- async function saveBot(){await run(async()=>{const chats=[...document.querySelectorAll('#white-chat-list input:checked')].map(x=>x.value);await apiWhite('config','PUT',{kind:'bot',chats,botEnabled:$('white-bot-enabled').checked});await refresh();setStatus('✓ Configuração do bot branco salva')})}
- const label={signal:'🎯 SINAL LOCALIZADO',attention:'⚠️ ATENTOS',win:'✅ WIN BRANCO',loss:'🚫 LOSS'};
- function paintTemplates(){const root=$('white-template-list');root.replaceChildren();for(const key of ['signal','attention','win','loss']){
-  const conf=data.config.templates[key]||{},card=el('div','white-template-card');card.append(el('h4','',label[key]));const select=el('select','white-select');for(const [id,name] of [['text','Texto'],['sticker','Sticker'],['gif','GIF']]){const option=el('option','',name);option.value=id;select.append(option)}select.value=conf.type||'text';
-  const txt=el('textarea','white-textarea');txt.rows=3;txt.value=conf.text||'';const media=el('select','white-select');const fillMedia=()=>{media.replaceChildren();const empty=el('option','','Selecione a mídia');empty.value='';media.append(empty);for(const asset of data.media.filter(x=>x.type===select.value)){const opt=el('option','',asset.name+' · '+asset.id.slice(0,6));opt.value=asset.id;media.append(opt)}media.value=conf.mediaId||'';txt.hidden=select.value!=='text';media.hidden=select.value==='text';};select.addEventListener('change',fillMedia);fillMedia();
-  const row=el('div','white-buttons');row.append(select,make('💾 Salvar '+label[key],()=>void run(async()=>{await apiWhite('config','PUT',{kind:'template',event:key,template:{type:select.value,text:txt.value,mediaId:media.value}});await refresh();setStatus('Modelo salvo: '+label[key])})));card.append(row,txt,media);root.append(card);
+ const templates={attention:'⚠️ Atenção — sticker ou texto',signal:'🤍 BRANCO BRABET PRO',win:'✅ WIN (horário confirmado)',loss:'🚫 LOSS'};
+ function messagePanel(){const host=$('wh14-templates');host.replaceChildren();for(const key of ['attention','signal','win','loss']){
+  const template=state.config.templates?.[key]||{},wrap=e('article','wh14-template');wrap.append(e('h4','',templates[key]));
+  const format=e('select'),types=[['text','Texto'],['sticker','Sticker'],['gif','GIF']];for(const [v,title] of types){const option=e('option','',title);option.value=v;format.append(option)}format.value=template.type||'text';
+  const input=e('textarea');input.rows=3;input.value=template.text||'';input.maxLength=1000;
+  const media=e('select');const update=()=>{media.replaceChildren();const empty=e('option','','Selecione a mídia importada');empty.value='';media.append(empty);for(const item of state.media||[]){if(item.type!==format.value)continue;const opt=e('option','',item.name||item.type);opt.value=item.id;media.append(opt)}media.value=template.mediaId||'';input.hidden=format.value!=='text';media.hidden=format.value==='text'};format.addEventListener('change',update);update();
+  wrap.append(format,input,media,e('p','wh14-muted','Campos: {hora1}, {hora2}, {casa}, {sequencia}, {resultado}, {estrategia}'));
+  wrap.append(btn('💾 Salvar '+templates[key],()=>void safe(async()=>{await apiW('config','PUT',{kind:'template',event:key,template:{type:format.value,text:input.value,mediaId:media.value}});await refresh();status('Mensagem '+templates[key]+' salva.')}),'primary'));host.append(wrap);
  }}
- async function refresh(){if(!$('white-dashboard'))return;const res=await apiWhite('overview');data=res;paintRules();paintRuntime();paintChats();paintBlocked();paintTemplates();$('white-info').textContent=`${data.rules.filter(x=>x.enabled).length} regra(s) ativa(s) · ${data.config.botEnabled?'BOT LIGADO':'BOT DESLIGADO'} · fonte com precisão de minuto`;
-  lastOpen=Date.now();
+ async function refresh(){if(!$('wh14-dashboard'))return;state=await apiW('overview');ruleList();statusPanel();chatPanel();messagePanel();$('wh14-summary').textContent=(state.rules||[]).filter(x=>x.enabled).length+' estratégias ativas · fonte com precisão de minuto';lastRefresh=Date.now()}
+ async function saveBot(){await safe(async()=>{const chats=[...document.querySelectorAll('#wh14-chats input:checked')].map(x=>x.value);await apiW('config','PUT',{kind:'bot',botEnabled:$('wh14-bot-enabled').checked,chats});await refresh();status('Novo bot configurado; robô antigo preservado.')})}
+ function build(){const root=$('white-dashboard');if(!root||$('wh14-dashboard'))return;root.replaceChildren();const dashboard=e('div','wh14-dashboard');dashboard.id='wh14-dashboard';
+  const hero=e('header','wh14-hero');hero.append(e('span','wh14-eyebrow','NEXO · ESTRATÉGIAS FIXAS'),e('h2','','Branco por Minuto'),e('p','wh14-muted','Duas estratégias pré-montadas, prontas para editar números, coringa, horários e mensagens. Reconhecimento das pedras automático.'));const head=e('div','wh14-headline');head.id='wh14-summary';hero.append(head,btn('↻ Adicionar modelos fixos que estiverem faltando',()=>{if(!confirm('Adicionar somente os modelos fixos ausentes, sem mudar suas regras atuais?'))return;void safe(async()=>{const r=await apiW('presets','POST',{confirm:true});await refresh();status(r.added+' modelo(s) fixo(s) adicionado(s).')})},'primary'));dashboard.append(hero);
+  const presets=e('section','wh14-presets');for(const p of fixedPreview){const item=e('article','wh14-preset');item.append(e('strong','',p.name),e('div','wh14-big-stones',p.stones),e('p','',p.example),e('small','',p.house));presets.append(item)}dashboard.append(presets);
+  const grid=e('div','wh14-main-grid');const roster=e('section','wh14-panel');roster.append(e('div','wh14-eyebrow','ESTRATÉGIAS SALVAS'),e('h3','','Suas estratégias'),e('p','wh14-muted','Edite qualquer regra. A exclusão exige uma confirmação, sem digitar nome.'));const rules=e('div');rules.id='wh14-rule-list';roster.append(rules);grid.append(roster);grid.append(formBlock());dashboard.append(grid);
+  const monitor=e('section','wh14-panel');monitor.append(e('div','wh14-eyebrow','MONITORAMENTO'),e('h3','','Status da estratégia e do robô'));const box=e('div');box.id='wh14-running';monitor.append(box,e('span','wh14-live','BOT BRANCO DESLIGADO'));const live=monitor.querySelector('.wh14-live');live.id='wh14-live';dashboard.append(monitor);
+  const msg=e('section','wh14-panel');msg.append(e('div','wh14-eyebrow','MENSAGENS AUTOMÁTICAS'),e('h3','','Editar atenção, sinal, WIN e LOSS'),e('p','wh14-muted','Atenção primeiro. Sinal personalizado depois do atraso configurado. WIN ou LOSS por resultado confirmado. Sticker e GIF importados do segundo bot.'));const msggrid=e('div','wh14-template-grid');msggrid.id='wh14-templates';msg.append(msggrid);dashboard.append(msg);
+  const bot=e('section','wh14-panel');bot.append(e('div','wh14-eyebrow','TELEGRAM INDEPENDENTE'),e('h3','','Segundo bot · Branco BRABET PRO'),e('p','wh14-muted','Secret Cloudflare: NEXO_WHITE_BOT_TOKEN. Não digite token no navegador. O bot de cores não será alterado.'));const configured=e('div','wh14-config','Verificando token...');configured.id='wh14-config';bot.append(configured);
+  const actions=e('div','wh14-actions');actions.append(btn('↻ Buscar grupos',()=>void safe(async()=>{await apiW('chats/discover','POST',{});await refresh()})),btn('🎞 Importar stickers',()=>void safe(async()=>{const r=await apiW('media/import','POST',{});await refresh();status(r.imported+' mídias importadas')})));bot.append(actions);const chats=e('div');chats.id='wh14-chats';bot.append(chats);const switcher=e('label','wh14-switch'),enabled=e('input');enabled.id='wh14-bot-enabled';enabled.type='checkbox';switcher.append(enabled,e('span','','Autorizar envios do segundo bot somente após configurar grupos e stickers'));bot.append(switcher,btn('💾 Salvar novo bot',()=>void saveBot(),'primary'));const blocked=e('div');blocked.id='wh14-blocked';bot.append(blocked);dashboard.append(bot);
+  const foot=e('p','wh14-status','Aguardando autenticação...');foot.id='wh14-status';dashboard.append(foot);root.append(dashboard);resetForm();
+  for(const id of ['wh14-before-color','wh14-after-color'])$(id).addEventListener('change',()=>{numbers(id==='wh14-before-color'?'before':'after');paintPreview()});
+  for(const id of ['wh14-before-number','wh14-after-number','wh14-mode','wh14-offset','wh14-increment','wh14-tolerance','wh14-house','wh14-delay'])$(id).addEventListener('input',paintPreview);
  }
- function init(){panels();
-  if(typeof page==='function'){const previous=page;page=function(name){previous(name);if(name==='branco-minuto')void run(refresh)}}
-  if(location.hash==='#branco-minuto'&&!$('shell')?.hidden)void run(refresh);
-  document.addEventListener('visibilitychange',()=>{if(!document.hidden&&location.hash==='#branco-minuto')void run(refresh)});
-  setInterval(()=>{if(!document.hidden&&location.hash==='#branco-minuto'&&!busy&&Date.now()-lastOpen>15000&&!['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName))void run(refresh)},5000);
+ function start(){build();if(typeof page==='function'){const orig=page;page=function(name){orig(name);if(name==='branco-minuto')void safe(refresh)}}
+  if(location.hash==='#branco-minuto'&&!$('shell')?.hidden)void safe(refresh);
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden&&location.hash==='#branco-minuto')void safe(refresh)});
+  setInterval(()=>{if(location.hash==='#branco-minuto'&&!document.hidden&&!busy&&Date.now()-lastRefresh>20000&&!['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName))void safe(refresh)},5000);
  }
- if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init,{once:true});else init();
+ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',start,{once:true});else start();
 })();
