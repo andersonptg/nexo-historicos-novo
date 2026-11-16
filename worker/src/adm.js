@@ -3,8 +3,8 @@
 import {routeWhiteAdmin} from './white.js';
 const ROOT='nexo-v3/';
 const K={settings:ROOT+'admin/settings.json',strategies:ROOT+'admin/strategies.json',groups:ROOT+'telegram/groups.json',media:ROOT+'media/catalog.json',bot:ROOT+'telegram/bot-encrypted.json',owner:ROOT+'telegram/owner.json',pair:ROOT+'telegram/pair.json'};
-const E=['attention','entry_black','entry_red','gale1','gale2','win_black','win_red','win_white','red'];
-const TARGETS=['black','red'];
+const E=['attention','entry_black','entry_red','entry_white','gale1','gale2','win_black','win_red','win_white','red'];
+const TARGETS=['black','red','white'];
 // Limite técnico de segurança para o processamento e armazenamento no Worker.
 const MAX_PATTERN_STONES=256;
 const UTF=new TextEncoder();
@@ -19,8 +19,8 @@ const settingsDefault={botEnabled:false,showNumbers:true,jokerWhite:false,resetM
 const GLOBAL_KEY=ROOT+'admin/global-signals.json';
 // V8: solicitação de ID de administrador, verificada apenas por mensagem real do Telegram.
 const OWNER_ID_KEY=ROOT+'telegram/owner-request.json';
-const GLOBAL_KEYS=['entry_black','entry_red','green','white','red','attention','bot_on','gale1','gale2'];
-const GLOBAL_MAP={entry_black:'entry_black',entry_red:'entry_red',win_black:'green',win_red:'green',win_white:'white',red:'red',attention:'attention',gale1:'gale1',gale2:'gale2',bot_on:'bot_on'};
+const GLOBAL_KEYS=['entry_black','entry_red','entry_white','green','white','red','attention','bot_on','gale1','gale2'];
+const GLOBAL_MAP={entry_black:'entry_black',entry_red:'entry_red',entry_white:'entry_white',win_black:'green',win_red:'green',win_white:'white',red:'red',attention:'attention',gale1:'gale1',gale2:'gale2',bot_on:'bot_on'};
 const V12_2_AFTER_PATTERN_DEFAULT='🎲 Após pedra: {pedra}';
 const emptyGlobal=()=>({version:3,registration:{enabled:false,url:'',label:'🔗 CADASTRE-SE'},afterPattern:{enabled:true,text:V12_2_AFTER_PATTERN_DEFAULT},stone:{enabled:true,text:'🎲 Pedra sorteada: {pedra}'},templates:{},updatedAt:0});
 const globalDoc=env=>getDoc(env,GLOBAL_KEY,emptyGlobal());
@@ -315,6 +315,7 @@ function defaultSignalText(key){
  switch(key){
   case 'entry_black':return '🎯 ENTRADA CONFIRMADA\nAlvo: PRETO ⚫ + BRANCO ⚪\n- - - - ATÉ GALE {limite_gale} - - - -\n🤖 NEXO DOUBLE PRO 🤖';
   case 'entry_red':return '🎯 ENTRADA CONFIRMADA\nAlvo: VERMELHO 🔴 + BRANCO ⚪\n- - - - ATÉ GALE {limite_gale} - - - -\n🤖 NEXO DOUBLE PRO 🤖';
+   case 'entry_white':return '🎯 ENTRADA CONFIRMADA\nAlvo: SOMENTE BRANCO ⚪\n- - - - ATÉ GALE {limite_gale} - - - -\n🤖 NEXO DOUBLE PRO 🤖';
   case 'gale1':return '- - - - GALE 1 - - - -';
   case 'gale2':return '- - - - GALE 2 - - - -';
   case 'green':return '✅ WIN NO {pedra}';
@@ -401,11 +402,11 @@ async function transmit(env,group,evt){
   }
  }
  // V12.2: ENTRADA -> CADASTRE-SE -> APÓS PEDRA, balões independentes.
- if(['entry_black','entry_red'].includes(evt.type)&&evt.registration?.enabled&&evt.registration.url){
+ if(['entry_black','entry_red','entry_white'].includes(evt.type)&&evt.registration?.enabled&&evt.registration.url){
   const label=evt.registration.label||'🔗 CADASTRE-SE';
   await deliver('link','sendMessage',{chat_id:group.id,text:label,entities:[{type:'text_link',offset:0,length:[...label].reduce((n,c)=>n+(c.codePointAt(0)>65535?2:1),0),url:evt.registration.url}],disable_web_page_preview:true});
   }
- if(['entry_black','entry_red'].includes(evt.type)&&evt.afterPattern)await deliver('after-pattern','sendMessage',{chat_id:group.id,text:evt.afterPattern,disable_web_page_preview:true});
+ if(['entry_black','entry_red','entry_white'].includes(evt.type)&&evt.afterPattern)await deliver('after-pattern','sendMessage',{chat_id:group.id,text:evt.afterPattern,disable_web_page_preview:true});
  if(['win_black','win_red','win_white'].includes(evt.type)&&evt.stoneAfter)await deliver('stone','sendMessage',{chat_id:group.id,text:evt.stoneAfter,disable_web_page_preview:true});
  if(tracked){
   progress.completed=true;progress.updatedAt=now();await putDoc(env,stageKey,progress);
@@ -457,7 +458,7 @@ async function fireEvent(env,settings,strategy,r,type,step){
  const message=String(savedText||'').trim()?savedText:defaultSignalText(key);
  const media=globalSaved?{type:template.type,assetId:template.assetId}:(strategy.media?.[type]||{type:'text'});
  const evt={id:strategy.id+'_'+r.id+'_'+type,seq:r.seq,strategyId:strategy.id,strategyName:strategy.name,type,gameId:strategy.gameId,roundId:r.id,number:r.number,color:r.color,minute_epoch:r.minute_epoch,at:now(),message:formatMessage(message,r,strategy,step),media,showStoneBeforeMedia:strategy.showStoneBeforeMedia};
-  if(type==='entry_black'||type==='entry_red'){
+  if(['entry_black','entry_red','entry_white'].includes(type)){
    if(global.registration?.enabled===true)evt.registration=global.registration;
    const after=global?.afterPattern||{enabled:true,text:V12_2_AFTER_PATTERN_DEFAULT};
    if(after.enabled!==false&&strategy.showAfterPattern!==false){
@@ -471,7 +472,7 @@ async function fireEvent(env,settings,strategy,r,type,step){
    const stoneTemplate=String(sc.text||'🎲 Pedra sorteada: {pedra}').slice(0,400).replace(/\{quadrado(?:_espaco)?\}/g,'{pedra}');
    evt.stoneAfter=formatMessage(stoneTemplate,r,strategy,step);
   }
- if((type==='entry_black'||type==='entry_red')&&String(media.type||'text')==='text'){
+ if(['entry_black','entry_red','entry_white'].includes(type)&&String(media.type||'text')==='text'){
     const ordered=(await getDoc(env,K.strategies,[])).filter(x=>!x.archived);
     const number=ordered.findIndex(x=>x.id===strategy.id)+1;
     if(number>0){const digits=String(number).replace(/[0-9]/g,c=>'⁰¹²³⁴⁵⁶⁷⁸⁹'[Number(c)]);evt.message+='\n\nᵉˢᵗ '+digits;}
@@ -489,7 +490,7 @@ async function simulate(s,rows){const state={recent:[],active:null};const score=
      else{type='red';score.red++}
      events.push({type,number:r.number,minute_epoch:r.minute_epoch});if(['red','win_white','win_red','win_black'].includes(type))state.active=null;
    }else if(matchPat([...state.recent,r],s.pattern,s.jokerWhite)){
-     state.active={step:0};score.entries++;events.push({type:s.target==='red'?'entry_red':'entry_black',number:r.number,minute_epoch:r.minute_epoch});
+     state.active={step:0};score.entries++;events.push({type:s.target==='red'?'entry_red':s.target==='white'?'entry_white':'entry_black',number:r.number,minute_epoch:r.minute_epoch});
    }
    state.recent.push(r);if(state.recent.length>Math.max(1,s.pattern.length-1))state.recent.shift();
  }
@@ -569,7 +570,7 @@ export async function processNewRounds(env,game,records){
     }
    }else if(!ownerId&&!closedInThisRound&&full&&(!preferred||preferred.id===s.id)){
     state.active={step:0,roundId:r.id};ownerId=s.id;score.entries++;
-    actions.push({type:s.target==='red'?'entry_red':'entry_black',step:0});
+    actions.push({type:s.target==='red'?'entry_red':s.target==='white'?'entry_white':'entry_black',step:0});
    }else if(!ownerId&&!preferred&&!closedInThisRound&&!attentionOwnerId&&settings.botEnabled&&almost&&!state.attentionEventId){
     state.attentionEventId=s.id+'_'+r.id+'_attention';
     actions.push({type:'attention',step:0});attentionOwnerId=s.id;
@@ -673,6 +674,39 @@ export async function routeAdmin(req,env,url){
    const next={...current,showNumbers:b.showNumbers!==false,jokerWhite:b.jokerWhite===true,resetMidnight:b.resetMidnight!==false,updatedAt:now()};
    await putDoc(env,K.settings,next);return json({ok:true,settings:next});
   }
+   // V20: importacao idempotente em lotes limitados. NUNCA ativa sinais.
+   if(path==='/api/adm/strategies/import-batch'&&req.method==='POST'){
+     const body=await req.json();const input=body?.items;
+     if(!Array.isArray(input)||input.length<1||input.length>10)return err('Envie de 1 a 10 padroes por lote.',400);
+     const gale=Number(body.maxGale);
+     if(![0,1,2].includes(gale))return err('Gale deve ser 0, 1 ou 2.',400);
+     const all=await strategies();const keys=new Set(all.filter(x=>!x.archived).map(x=>x.target+'|'+JSON.stringify(x.pattern)));
+     const added=[];let skipped=0;
+     for(const raw of input){
+       if(!raw||typeof raw!=='object'||!Array.isArray(raw.tokens)||raw.tokens.length<1||raw.tokens.length>MAX_PATTERN_STONES||!TARGETS.includes(raw.target)||raw.tokens.some(t=>typeof t!=='string'||!(['red','black','white','*'].includes(t)||/^(?:n:)(?:[0-9]|1[0-4])$/.test(t))))return err('Padrao ou alvo invalido.',400);
+       const key=raw.target+'|'+JSON.stringify(raw.tokens);
+       if(keys.has(key)){skipped++;continue;}
+       const title='Histórico · '+raw.tokens.map(t=>t==='red'?'🔴':t==='black'?'⚫':t==='white'?'⚪':t.startsWith('n:')?t.slice(2):'★').join(' ')+' → '+(raw.target==='white'?'⚪':raw.target==='red'?'🔴':'⚫');
+       const item=validateStrategy({name:title.slice(0,70),gameId:'brabet-double',target:raw.target,pattern:raw.tokens,maxGale:gale,enabled:false,showStoneAfter:true,showAfterPattern:true,showNumbers:true,jokerWhite:false},null);
+       added.push(item);keys.add(key);
+     }
+     if(added.length){
+       const latest=await recentR2(env,'brabet-double'),cursor=Math.max(0,...(latest.items||[]).map(x=>Number(x.seq)||0));
+       // Persistir runtime de cada regra ANTES da lista de estrategias; em caso
+       // de falha, nenhuma regra ativa nasce sem cursor de seguranca.
+       for(const s of added){await putDoc(env,runtimeKey(s.id),{lastSeq:cursor,recent:[],active:null});await resetScore(env,s.id);}
+       await putDoc(env,K.strategies,[...all,...added]);
+     }
+     return json({ok:true,added:added.length,skipped,ids:added.map(s=>s.id)});
+   }
+   // V20: mudar o Gale de TODAS as regras existentes com uma unica acao.
+   if(path==='/api/adm/strategies/gale-all'&&req.method==='POST'){
+     const body=await req.json(),gale=Number(body?.maxGale);
+     if(body?.confirm!==true||![0,1,2].includes(gale))return err('Confirme um Gale valido (0, 1 ou 2).',400);
+     const all=await strategies(),updated=all.map(s=>s.archived?s:{...s,maxGale:gale,updatedAt:now()});
+     await putDoc(env,K.strategies,updated);
+     return json({ok:true,count:all.filter(s=>!s.archived).length,maxGale:gale,notice:'O Gale atualizado vale tambem para os proximos eventos das regras ativas.'});
+   }
   if(path==='/api/adm/strategies'&&req.method==='POST'){
    const b=await req.json();const all=await strategies();/* V10: sem limite artificial de 30 estratégias; o armazenamento e as cotas do Worker continuam valendo. */
    if(b&&typeof b==='object'&&!String(b.name||'').trim()){let n=1;const existing=new Set(all.filter(x=>!x.archived).map(x=>x.name));while(existing.has('Estratégia '+n))n++;b.name='Estratégia '+n;}

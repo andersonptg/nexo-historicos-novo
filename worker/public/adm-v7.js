@@ -5,6 +5,7 @@
   const evs = [
     ['entry_black','Entrada PRETO + BRANCO','🎯','entry'],
     ['entry_red','Entrada VERMELHO + BRANCO','🎯','entry'],
+    ['entry_white','Entrada SOMENTE BRANCO','⚪','entry'],
     ['green','GREEN (WIN)','✅','green'],
     ['white','BRANCO (WIN)','⚪','white'],
     ['red','RED (LOSS)','❌','red'],
@@ -14,6 +15,7 @@
   const defaultTemplates = {
     entry_black:{text:'🎯 ENTRAR PRETO ⚫ E BRANCO ⚪\n- - - - ATÉ GALE {limite_gale} - - - -\n🤖 NEXO DOUBLE PRO 🤖',type:'text',assetId:''},
     entry_red:{text:'🎯 ENTRAR VERMELHO 🔴 E BRANCO ⚪\n- - - - ATÉ GALE {limite_gale} - - - -\n🤖 NEXO DOUBLE PRO 🤖',type:'text',assetId:''},
+    entry_white:{text:'🎯 ENTRAR SOMENTE NO BRANCO ⚪\n- - - - ATÉ GALE {limite_gale} - - - -\n🤖 NEXO DOUBLE PRO 🤖',type:'text',assetId:''},
     green:{text:'✅ WIN NO {pedra}',type:'text',assetId:''},
     white:{text:'✅ WIN NO BRANCO — ⚪ {numero}',type:'text',assetId:''},
     red:{text:'❌ RED — não bateu até o Gale {limite_gale}',type:'text',assetId:''},
@@ -46,7 +48,7 @@
   function panel(title,tag='section',cls=''){const e=el(tag,'v7-panel '+cls);e.append(el('h2','',title));return e;}
   function status(msg,bad=false){const out=$('v7-status');if(out){out.textContent=msg;out.classList.toggle('v7-error',bad);}if(typeof pop==='function')pop(msg,bad);}
   function setDirty(key,yes=true){const b=$('v7-save-'+key);if(b){b.textContent=yes?'Salvar '+labelFor(key)+' • alterações':'Salvar '+labelFor(key);b.classList.toggle('v7-dirty',yes)}}
-  function labelFor(key){return ({entry_black:'PRETO',entry_red:'VERMELHO',green:'GREEN',white:'BRANCO',red:'RED',attention:'ATENÇÃO',bot_on:'BOT',gale1:'GALE 1',gale2:'GALE 2'})[key]||key;}
+  function labelFor(key){return ({entry_black:'PRETO',entry_red:'VERMELHO',entry_white:'SOMENTE BRANCO',green:'GREEN',white:'BRANCO',red:'RED',attention:'ATENÇÃO',bot_on:'BOT',gale1:'GALE 1',gale2:'GALE 2'})[key]||key;}
   function buildPage(){
     if($('v7-global-messages'))return;
     const pageEl=$('page-mensagens');if(!pageEl)return;

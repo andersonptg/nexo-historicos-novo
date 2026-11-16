@@ -13,9 +13,9 @@
  function fireworks(){
   if(reduce||document.hidden)return;
   if(fireCancel)fireCancel();
-  const canvas=document.createElement('canvas');canvas.className='v12-fireworks';canvas.setAttribute('aria-hidden','true');card.append(canvas);
+  const canvas=document.createElement('canvas');canvas.className='v12-fireworks v20-screen-fireworks';canvas.setAttribute('aria-hidden','true');document.body.append(canvas);
   const ctx=canvas.getContext('2d');if(!ctx){canvas.remove();return;}
-  const bounds=card.getBoundingClientRect(),dpr=Math.min(2,window.devicePixelRatio||1);
+  const bounds={width:window.innerWidth,height:window.innerHeight},dpr=Math.min(2,window.devicePixelRatio||1);
   canvas.width=Math.min(2000,Math.max(1,Math.round(bounds.width*dpr)));
   canvas.height=Math.min(1000,Math.max(1,Math.round(bounds.height*dpr)));
   ctx.scale(dpr,dpr);
@@ -57,7 +57,7 @@
    old(rows,status);phase.textContent='RESULTADO CONFIRMADO · '+(r.color==='white'?'⚪ BRANCO':r.color==='red'?'🔴 VERMELHO':'⚫ PRETO');
    card.classList.remove('v12-result-arriving');
    if(r.color==='white')fireworks();else if(fireCancel)fireCancel();
-  },300);
+  },60);
  };
  document.addEventListener('visibilitychange',()=>{if(document.hidden&&fireCancel)fireCancel();});
 })();

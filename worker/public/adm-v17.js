@@ -32,7 +32,7 @@
   for(const [index,s] of items.entries()){
    const card=el('article','v17-rule');const top=el('div','v17-rule-top');const left=el('div');left.append(el('span','v17-idx','ESTRATÉGIA '+String(index+1).padStart(2,'0')),el('div','v17-rule-title',s.name||'Regra sem nome'));
    top.append(left,el('span','v17-pill '+(s.enabled?'on':'off'),s.enabled?'● ATIVA':'○ PAUSADA'));card.append(top,stoneRow(s.pattern||[]));
-   card.append(el('small','v17-muted',(s.target==='red'?'🔴 Vermelho':'⚫ Preto')+' + Branco • até Gale '+(s.maxGale||0)));
+   card.append(el('small','v17-muted',(s.target==='white'?'⚪ Somente branco':s.target==='red'?'🔴 Vermelho':'⚫ Preto')+' + Branco • até Gale '+(s.maxGale||0)));
    const actions=labelButtons(card);
    actions.append(btn('✎ Editar',()=>showEditor(s)),btn('▥ Placar',()=>showScore(s)),btn(s.enabled?'Ⅱ Pausar':'▶ Ativar',()=>void toggle(s),s.enabled?'danger':'primary'));
    host.append(card);
@@ -64,7 +64,16 @@
   const c=wrapper('Buscar padrões repetidos','Números exatos, cores ou uma pedra exata no meio de cores. Exibe apenas padrões que tiveram 100% histórico e no mínimo 5 acertos.');const fields=el('div','v17-form-row');const lab=el('label');lab.append(el('small','','Mínimo de acertos'));const min=el('select','v17-input');min.id='v17-min-hits';for(const n of [5,6,8,10,15,20]){const op=el('option','',String(n));op.value=n;min.append(op)}lab.append(min);const other=el('label');other.append(el('small','','Tamanho do padrão'));const sel=el('select','v17-input');sel.id='v17-pattern-length';for(const n of [3,4,5,6,7]){const op=el('option','',`Até ${n} pedras`);op.value=n;sel.append(op)}sel.value='7';other.append(sel);fields.append(lab,other);c.append(fields);
   const buttons=labelButtons(c);buttons.append(btn('⌕ Procurar em todos os dias',()=>void loadPatterns(),'primary'));const status=el('p','v17-muted','Nenhuma busca executada.');status.id='v17-pattern-status';c.append(status);
   c.append(el('p','v17-alert','Uma sequência com 5/5 ou 6/6 acertos no passado não tem 100% de probabilidade futura. A seleção dos melhores padrões após observar resultados aumenta o risco de coincidências.'));
-  root.append(c);const out=wrapper('Padrões encontrados','A lista é ordenada por quantidade de ocorrências, com cada padrão em uma linha.');const filter=el('div','v17-actions');const choose=el('select','v17-input');choose.style.maxWidth='210px';choose.id='v17-target-filter';for(const [v,t] of [['all','Todas as cores'],['red','🔴 Vermelho'],['black','⚫ Preto'],['white','⚪ Branco']]){const o=el('option','',t);o.value=v;choose.append(o)}choose.addEventListener('change',()=>{visibleTarget=choose.value;pageIndex=0;drawPatterns()});filter.append(choose);out.append(filter);const list=el('div','v17-pattern-list');list.id='v17-pattern-results';out.append(list);out.append(btn('Mostrar mais resultados',()=>{pageIndex++;drawPatterns()},''));out.lastChild.id='v17-pattern-more';root.append(out);page.querySelector('.pagehead')?.insertAdjacentElement('afterend',root)}
+  root.append(c);const out=wrapper('Padrões encontrados','A lista é ordenada por quantidade de ocorrências, com cada padrão em uma linha.');const filter=el('div','v17-actions');const choose=el('select','v17-input');choose.style.maxWidth='210px';choose.id='v17-target-filter';for(const [v,t] of [['all','Todas as cores'],['red','🔴 Vermelho'],['black','⚫ Preto'],['white','⚪ Branco']]){const o=el('option','',t);o.value=v;choose.append(o)}choose.addEventListener('change',()=>{visibleTarget=choose.value;pageIndex=0;drawPatterns()});filter.append(choose);out.append(filter);
+   const bulk=el('div','v20-bulk-actions');
+   const galeLabel=el('label','v20-bulk-gale');galeLabel.append(el('span','','GALE PADRÃO'));
+   const galeSelect=el('select','v17-input');galeSelect.id='v20-gale-import';
+   for(const n of [0,1,2]){const op=el('option','',n===0?'Sem Gale':'Gale '+n);op.value=String(n);galeSelect.append(op)}galeSelect.value='2';galeLabel.append(galeSelect);bulk.append(galeLabel);
+   const actionsBulk=el('div','v17-actions');const all=btn('⇩ Exportar TODOS os padrões novos',()=>void exportAllPatterns(),'primary');all.id='v20-export-all';
+   actionsBulk.append(all,btn('Aplicar Gale escolhido em TODAS as regras cadastradas',()=>void setGaleAll()));bulk.append(actionsBulk);
+   const qty=el('div','v17-muted','Busque padrões para calcular quantos ainda não foram cadastrados.');qty.id='v20-available-count';bulk.append(qty);
+   const progress=el('div','v17-muted');progress.id='v20-bulk-status';bulk.append(progress);out.append(bulk);
+   const list=el('div','v17-pattern-list');list.id='v17-pattern-results';out.append(list);out.append(btn('Mostrar mais resultados',()=>{pageIndex++;drawPatterns()},''));out.lastChild.id='v17-pattern-more';root.append(out);page.querySelector('.pagehead')?.insertAdjacentElement('afterend',root)}
  async function retrieveArchive(){const days=[];let cursor=null;for(let batch=0;batch<12;batch++){
   const res=await fetch('/api/days?game_id=brabet-double'+(cursor?'&cursor='+encodeURIComponent(cursor):''),{credentials:'same-origin',cache:'no-store'});if(!res.ok)throw Error('Não foi possível listar dias do R2 (HTTP '+res.status+')');const d=await res.json();days.push(...(d.days||[]));cursor=d.cursor;if(!cursor)break;if(batch===11)throw Error('Há mais datas do que o limite de paginação desta consulta');}
   const all=[],unique=[...new Set(days)].sort();let count=0;for(const day of unique){let offset=0;while(true){const r=await fetch('/api/history?game_id=brabet-double&day='+day+'&limit=500&offset='+offset,{credentials:'same-origin',cache:'no-store'});if(!r.ok)throw Error('Erro ao ler '+day+' (HTTP '+r.status+')');const data=await r.json();const rows=data.items||[];all.push(...rows);offset+=rows.length;if(all.length>120000)throw Error('O histórico ultrapassou 120 mil linhas; use análise por intervalo para evitar travar o celular. Nenhuma regra foi criada.');if(!data.has_more||!rows.length)break;}
@@ -73,19 +82,51 @@
   return {rows:all,days:unique.length};}
  async function loadPatterns(){if(searching)return;searching=true;const stat=$('v17-pattern-status');stat.textContent='Lendo os históricos do R2...';try{
   const {rows,days}=await retrieveArchive();stat.textContent='Analisando '+rows.length+' registros de '+days+' dias...';await new Promise(r=>setTimeout(r,30));
-  const core=window.NEXO_V17_PATTERN;if(!core)throw Error('Motor de padrões não carregado');analysis=core.mine(rows,{minHits:Number($('v17-min-hits').value),maxLength:Number($('v17-pattern-length').value)});pageIndex=0;drawPatterns();stat.textContent=`${analysis.items.length} padrões encontrados em ${days} dias · ${analysis.records} rodadas consideradas · apenas histórico.`;
+  const core=window.NEXO_V17_PATTERN;if(!core)throw Error('Motor de padrões não carregado');analysis=core.mine(rows,{minHits:Number($('v17-min-hits').value),maxLength:Number($('v17-pattern-length').value)});pageIndex=0;drawPatterns();syncNewCount();stat.textContent=`${allNewPatterns().length} padrões NOVOS encontrados em ${days} dias · ${analysis.records} rodadas consideradas · apenas histórico.`;
  }catch(e){stat.textContent='Falha: '+e.message;notice(e.message,true)}finally{searching=false}}
- function drawPatterns(){const host=$('v17-pattern-results');if(!host)return;host.replaceChildren();let rows=(analysis?.items||[]).filter(x=>visibleTarget==='all'||x.target===visibleTarget);const available=rows.length;const shown=rows.slice(0,(pageIndex+1)*15);if(!rows.length)host.append(el('p','v17-blank',analysis?'Nenhum padrão passou no filtro.':'Clique em procurar padrões para iniciar.'));
+ function drawPatterns(){const host=$('v17-pattern-results');if(!host)return;host.replaceChildren();let rows=(analysis?.items||[]).filter(x=>(visibleTarget==='all'||x.target===visibleTarget)&&!alreadySaved(x));const available=rows.length;syncNewCount();const shown=rows.slice(0,(pageIndex+1)*15);if(!rows.length)host.append(el('p','v17-blank',analysis?'Nenhum padrão passou no filtro.':'Clique em procurar padrões para iniciar.'));
   for(const p of shown){const box=el('article','v17-pattern');box.append(stoneRow(p.tokens));const footer=el('footer');const lab=el('div');const target=p.target==='red'?'🔴 VERMELHO':p.target==='black'?'⚫ PRETO':'⚪ BRANCO';lab.append(el('b','',`Depois: ${target}`),el('div','v17-muted',`${p.hits}/${p.total} acertos · 100% histórico · 1ª ${p.first} · 2ª ${p.second} · falhas ${p.fail}`));footer.append(lab);
-   footer.append(btn(p.target==='white'?'Branco: não exportável':'Exportar → Regras',()=>void exportPattern(p),p.target==='white'?'':'primary'));if(p.target==='white')footer.lastChild.disabled=true;box.append(footer);
+   footer.append(btn('Exportar individualmente',()=>void exportPattern(p),'primary'));box.append(footer);
    const d=el('details');d.append(el('summary','','Ver sequência completa'));d.append(el('p','',p.pattern),el('p','',`Total ${p.total}; primeira casa ${p.first}; segunda casa ${p.second}; falhas ${p.fail}.`));box.append(d);host.append(box)}
   $('v17-pattern-more').hidden=shown.length>=available;
  }
- async function exportPattern(p){if(p.target==='white'){notice('O robô de cores ainda não aceita branco como alvo exclusivo.',true);return}
-  const found=(model?.strategies||[]).some(s=>s.target===p.target&&JSON.stringify(s.pattern)===JSON.stringify(p.tokens));if(found){notice('Essa sequência já existe nas regras.',true);return}
-  if(!confirm('Exportar '+p.pattern+' para Regras como PAUSADA (sem envio Telegram)?'))return;
-  const target=p.target;const newRule={name:'Histórico · '+p.tokens.map(label).join(' ')+' → '+(target==='red'?'🔴':'⚫'),gameId:'brabet-double',target,pattern:p.tokens,maxGale:0,enabled:false,jokerWhite:false,showStoneAfter:true,showAfterPattern:true,showNumbers:true,showStoneBeforeMedia:false,messages:{},media:{}};
-  try{await api('strategies',payload('POST',newRule));await safeReload();notice('Regra exportada, PAUSADA. Abra Estratégias para revisar.');page('estrategias')}catch(e){notice('Falha ao exportar: '+e.message,true)} }
+ // V20: mesmos tokens e alvo identificam uma regra ja cadastrada.
+ function alreadySaved(p){return (model?.strategies||[]).some(s=>s.target===p.target&&JSON.stringify(s.pattern)===JSON.stringify(p.tokens));}
+ function galeChoice(){const n=Number($('v20-gale-import')?.value??2);return [0,1,2].includes(n)?n:2;}
+ function allNewPatterns(){return (analysis?.items||[]).filter(p=>!alreadySaved(p));}
+ function syncNewCount(){const node=$('v20-available-count');if(node)node.textContent=allNewPatterns().length+' padrões ainda não cadastrados';}
+ async function importChunk(patterns){return api('strategies/import-batch',payload('POST',{maxGale:galeChoice(),items:patterns.map(p=>({target:p.target,tokens:p.tokens}))}));}
+ async function exportPattern(p){
+  if(alreadySaved(p)){notice('Esta regra ja esta cadastrada.',true);drawPatterns();return;}
+  if(!confirm('Exportar como PAUSADA com Gale '+galeChoice()+'? Ela NÃO será ativada automaticamente.'))return;
+  try{const d=await importChunk([p]);await safeReload();drawPatterns();syncNewCount();notice(d.added?'Estratégia exportada. Gale '+galeChoice()+'. Continua PAUSADA.':'Estratégia já existia.');}
+  catch(e){notice('Erro ao exportar: '+e.message,true);}
+ }
+ async function exportAllPatterns(){
+  if(searching){notice('Aguarde a busca terminar.',true);return;}
+  const rows=allNewPatterns();if(!analysis||!rows.length){notice('Não há padrões novos para exportar.',true);return;}
+  if(!confirm('Exportar '+rows.length+' padrões novos com GALE '+galeChoice()+'? Todos ficarão PAUSADOS. A importação pode demorar e usa cotas do R2.'))return;
+  const button=$('v20-export-all');let added=0,skipped=0,done=0;
+  if(button)button.disabled=true;
+  try{
+   for(let i=0;i<rows.length;i+=10){
+    const batch=rows.slice(i,i+10),result=await importChunk(batch);
+    added+=Number(result.added||0);skipped+=Number(result.skipped||0);done+=batch.length;
+    if($('v20-bulk-status'))$('v20-bulk-status').textContent='Exportando '+done+'/'+rows.length+' · '+added+' novas';
+    if(i%50===0)await new Promise(r=>setTimeout(r,0));
+   }
+   await safeReload();drawPatterns();syncNewCount();
+   notice('Importação concluída: '+added+' novas, '+skipped+' já existentes. Todas PAUSADAS e Gale '+galeChoice()+'.');
+  }catch(e){await safeReload();drawPatterns();syncNewCount();notice('Importação parcial ('+added+' regras). Erro: '+e.message+'. Clique novamente para importar apenas as faltantes.',true);}
+  finally{if(button)button.disabled=false;}
+ }
+ async function setGaleAll(){
+  if(!model?.strategies?.length){notice('Nenhuma regra para atualizar.',true);return;}
+  const g=galeChoice();
+  if(!confirm('Definir Gale '+g+' em TODAS as '+model.strategies.length+' regras existentes? Isso pode afetar ciclos ativos no Telegram.'))return;
+  try{const d=await api('strategies/gale-all',payload('POST',{maxGale:g,confirm:true}));await safeReload();notice('Gale '+g+' atualizado nas '+d.count+' estratégias.');}
+  catch(e){notice('Erro ao definir Gale global: '+e.message,true);}
+ }
  function addExamples(){const list=[['v12-stone-text','Exemplo: 🎲 Pedra sorteada: {pedra}'],['v12-2-after-text','Exemplo: 🎲 Após pedra: {pedra}'],['message-body','Exemplo: 🎯 Entrada confirmada · Estratégia {estrategia} · após pedra {numero}']];for(const [id,text] of list){const field=$(id);if(!field||field.nextElementSibling?.classList.contains('v17-example'))continue;field.insertAdjacentElement('afterend',el('p','v17-example',text+' · Copie o texto se desejar restaurar.'))}
   for(const field of document.querySelectorAll('#v7-global-messages textarea'))if(!field.nextElementSibling?.classList.contains('v17-example'))field.insertAdjacentElement('afterend',el('p','v17-example','Exemplo: 🎲 Após pedra: {pedra} · {numero}, {cor}, {hora} e {estrategia} são preenchidos automaticamente.'));
  }

@@ -1,0 +1,74 @@
+/* NEXO V20: visual profissional, acessivel e comemoracao de branco. */
+:root { --v20-accent:#1fc9a7; --v20-soft:#9bc0d0; }
+/* Canvas fora do cartao: a comemoracao ocupa a tela, nao so a ultima pedra. */
+canvas.v12-fireworks.v20-screen-fireworks {
+  position:fixed!important; inset:0!important; width:100vw!important;
+  height:100vh!important; height:100dvh!important; z-index:9999!important;
+  pointer-events:none!important; display:block!important; overflow:hidden!important;
+}
+#page-padroes .v20-bulk-actions {
+  display:grid;gap:11px;margin:15px 0 20px;padding:15px;
+  border-radius:15px;border:1px solid #3d806d;
+  background:linear-gradient(120deg,#102f34c9,#15253ec9);
+}
+#page-padroes .v20-bulk-gale {display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;
+  color:#e5f4f3;font-weight:800;font-size:12px;letter-spacing:.04em}
+#page-padroes #v20-gale-import {width:auto;min-width:128px;max-width:190px}
+#page-padroes #v20-export-all {background:linear-gradient(120deg,#06b98c,#25d1b8)!important;color:#092c26!important}
+#page-padroes #v20-bulk-status{font-size:12px;min-height:14px;font-variant-numeric:tabular-nums}
+#page-padroes #v20-available-count{font-size:13px;font-weight:800}
+/* Brilho sutil. Profissional, sem matrix/neon piscante. */
+#nexo-v11-now {isolation:isolate;overflow:hidden}
+#nexo-v11-now::before {content:'';position:absolute;inset:0;pointer-events:none;z-index:-1;
+ background:radial-gradient(circle at 80% 0%,#e3a9570d 0%,transparent 44%),
+ radial-gradient(circle at 0% 100%,#41c2bd11 0%,transparent 40%);
+ animation:v20-breath 22s ease-in-out infinite alternate}
+@keyframes v20-breath{from{opacity:.6;transform:scale(1)}to{opacity:1;transform:scale(1.035)}}
+/* Texto e formularios no modo claro: corrigir elementos das versoes antigas.
+   Nao alterar contraste das pedras vermelhas/pretas, nem cor dos status. */
+html[data-nexo-theme="light"] {
+ --v20-accent:#067b66; --v20-soft:#4a6473;
+}
+html[data-nexo-theme="light"] :is(
+ .v7-shell,.v7-panel,.v7-card,.v7-help,.v7-chip,.v7-nav,.v7-section,.v7-events,
+ .v12-showcase,.v12-strategy-card,.v12-inspector,.v12-stone-settings,
+ .v17-section,.v17-hero,.v17-rule,.v17-pattern,.v17-score,.v17-group-row,
+ .v20-bulk-actions,.nexo-v19-numbers,.v11-now-body,.v11-now-header,
+ .v12-result-phase,.archive-bar,.archive-days,.archive-foot,
+ .panel-footer,.filter-bar,.results-head,.site-menu-options,.chat-preview,
+ .v17-form-row,.v17-group-row
+ ) {background-color:#fff!important;color:#172d3d!important;border-color:#cadbe4!important}
+html[data-nexo-theme="light"] #page-padroes .v20-bulk-actions {background:linear-gradient(120deg,#eefbf8,#f3f7fd)!important}
+html[data-nexo-theme="light"] :is(.v20-bulk-gale,.v7-chip,.v7-help,.v7-shell p,.v7-shell span,
+ .v17-rule-title,.v17-section h3,.v17-hero h2,.v17-rule .v17-muted,
+ .v17-pattern .v17-muted,.v17-pattern summary,.v17-pattern b,
+ .v17-pattern footer,.v17-group-row label,.v12-inspector h3,
+ .v12-stone-settings h2,.v12-sub,.v11-now-header strong,
+ .v11-now-body,.v12-result-phase,.site-menu-options a,
+ .archive-bar,.archive-foot,.results-head,.results-head span,
+ #result-title,#filter-count,#rows-badge,.panel-footer,.nexo-v19-numbers-caption
+ ) {color:#254458!important}
+html[data-nexo-theme="light"] :is(label,.v17-form-row label,.v7-shell label,
+ .checks label,.v12-toggle,.switchline,.formgrid label,.v17-idx) {color:#245064!important}
+html[data-nexo-theme="light"] :is(button:not(.primary):not(.danger),select,input,textarea,
+ .v7-action:not(.v7-primary),.v7-chip,.v17-btn:not(.primary):not(.danger),
+ #v20-gale-import,.v19-number) {border-color:#bfd2df!important}
+html[data-nexo-theme="light"] :is(input,textarea,select,.v17-input) {
+ background:#f9fcff!important;color:#122c3e!important;caret-color:#067e6f!important}
+html[data-nexo-theme="light"] :is(input,textarea)::placeholder {color:#647987!important;opacity:1!important}
+html[data-nexo-theme="light"] :is(.notice,.v17-alert,.v17-example,.v7-help,.v17-muted,.hint,.small-note) {color:#345b6f!important}
+html[data-nexo-theme="light"] :is(.pill,.status-pill,.v17-pill,.v17-group-row) {color:#294b60!important}
+html[data-nexo-theme="light"] :is(.v17-pill.on) {color:#07654c!important;background:#ddf5ea!important}
+html[data-nexo-theme="light"] :is(.v17-pill.off) {color:#885120!important;background:#fff1e4!important}
+html[data-nexo-theme="light"] :is(.v17-score.green strong) {color:#07643e!important}
+html[data-nexo-theme="light"] :is(.v17-score.red strong) {color:#a82b45!important}
+html[data-nexo-theme="light"] :is(.v17-score.white strong) {color:#4c5969!important}
+html[data-nexo-theme="light"] .balls .stone small {color:#253d52!important;background:#eaf0f5!important}
+/* Cores oficiais das pedras protegidas das regras globais. */
+html[data-nexo-theme="light"] :is(.nexo-v19-stone-image,.nexo-v19-number img) {filter:none!important}
+@media(max-width:680px){
+ #page-padroes .v20-bulk-actions{padding:12px}
+ #page-padroes .v20-bulk-actions .v17-actions{display:grid;grid-template-columns:1fr}
+ #page-padroes .v20-bulk-actions button{width:100%;white-space:normal}
+}
+@media(prefers-reduced-motion:reduce){#nexo-v11-now::before{animation:none!important}}
