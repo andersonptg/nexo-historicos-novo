@@ -42,8 +42,15 @@
     }
     $('v6-length').textContent=parts.length+' / '+MAX_PATTERN_STONES+' pedras';
     const target=$('st-target').value;
-    $('v6-target').replaceChildren(stoneNode(target,{mini:true}),stoneNode('white',{mini:true}));
-    $('v6-target-text').textContent=target==='red'?'ENTRADA VERMELHO + BRANCO':'ENTRADA PRETO + BRANCO';
+    // Branco é um alvo exclusivo: NÃO exibir preto nem uma segunda pedra.
+    $('v6-target').replaceChildren(...(target==='white'?['white']:[target,'white']).map(v=>stoneNode(v,{mini:true})));
+    $('v6-target-text').textContent=target==='white'?'ENTRAR SOMENTE NO BRANCO':target==='red'?'ENTRADA VERMELHO + BRANCO':'ENTRADA PRETO + BRANCO';
+    const oppositeBox=$('v6-opposite');
+    if(oppositeBox){
+      oppositeBox.disabled=target==='white';
+      oppositeBox.closest('label').hidden=target==='white';
+      if(target==='white'){oppositeBox.checked=false;duplicateOpposite=false;}
+    }
     $('v6-gale-name').textContent=({'0':'SEM GALE','1':'ATE GALE 1','2':'ATE GALE 2'})[$('st-gale').value]||'SEM GALE';
   }
   function createBuilder(){
@@ -102,8 +109,9 @@
     const card=el('article','v6-saved-card'+(s.id===selected?' v6-selected':''));
     const top=el('div','v6-saved-head');top.append(el('strong','v6-saved-name',s.name),el('span','v6-state'+(s.enabled?' on':''),s.enabled?'ATIVA':'PAUSADA'));
     const pattern=el('div','v6-saved-pattern');for(const v of (s.pattern||[]))pattern.append(stoneNode(v,{mini:true,numbered:s.showNumbers!==false}));
-    const arrow=el('span','v6-arrow','→');pattern.append(arrow,stoneNode(s.target||'black',{mini:true}),stoneNode('white',{mini:true}));
-    const meta=el('div','v6-saved-meta');meta.append(el('span','',galaText(s.maxGale||0)),el('span','','BRANCO INCLUSO'),el('span','',`PADRAO ${(s.pattern||[]).length} PEDRAS`));
+    const arrow=el('span','v6-arrow','→');
+    pattern.append(arrow,...(s.target==='white'?['white']:[s.target||'black','white']).map(v=>stoneNode(v,{mini:true})));
+    const meta=el('div','v6-saved-meta');meta.append(el('span','',galaText(s.maxGale||0)),el('span','',s.target==='white'?'SOMENTE BRANCO':'BRANCO INCLUSO'),el('span','',`PADRAO ${(s.pattern||[]).length} PEDRAS`));
     const sc=model?.scores?.find(x=>x.id===s.id);
     const score=el('div','v6-score-mini',sc?`PLACAR  GREEN ${sc.green||0}  ·  BRANCO ${sc.white||0}  ·  RED ${sc.red||0}`:'PLACAR AINDA SEM RESULTADOS');
     const controls=el('div','v6-card-actions');
@@ -150,7 +158,7 @@
     renderStrategies=function(){oldRenderStrategies();$('v6-numbers').checked=$('st-numbers').checked;showBuilder();renderSavedList()};
     const oldSave=saveStrategy;
     saveStrategy=async function(options={}){
-      const original=strategy(),copy=readStrategy(),shouldDup=duplicateOpposite&&!original&&!options.toggle;
+      const original=strategy(),copy=readStrategy(),shouldDup=duplicateOpposite&&copy.target!=='white'&&!original&&!options.toggle;
       await oldSave(options);
       if(shouldDup){
         const name=copy.name.trim()?copy.name.trim()+' • Oposta':'';

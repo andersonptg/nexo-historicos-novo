@@ -237,7 +237,7 @@
     const reloadOriginal=reload;
     reload=async function(){await reloadOriginal();syncDock();void refreshStatus()};
     const countersOriginal=counters;
-    counters=function(){countersOriginal();const label=get('badge-engine');if(label)label.textContent='R2 conectado • NEXO V5'};
+    counters=function(){countersOriginal();const label=get('badge-engine');if(label)label.textContent='R2 conectado • NEXO V21'};
   }
   function syncDock(){
     const active=location.hash.slice(1)||'geral';

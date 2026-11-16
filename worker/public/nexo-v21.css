@@ -1,0 +1,33 @@
+/* NEXO V21: histórico com movimento discreto e editor responsivo. */
+#balls {position:relative;isolation:isolate;overflow:hidden;border-radius:17px;
+ background:linear-gradient(150deg,#0c1b2e,#0e2235)!important}
+#balls::before {content:"";position:absolute;inset:-45%;z-index:0;pointer-events:none;
+ background:radial-gradient(ellipse 37% 32% at 18% 24%,#27cdbb46,transparent 78%),
+ radial-gradient(ellipse 34% 32% at 82% 72%,#367cce47,transparent 80%),
+ radial-gradient(ellipse 22% 24% at 40% 80%,#e1ba6330,transparent 75%);
+ filter:blur(18px);opacity:.84;will-change:transform;
+ animation:v21-history-flow 13s ease-in-out infinite alternate}
+@keyframes v21-history-flow {0%{transform:translate3d(-7%,-2%,0) scale(.94)}
+ 50%{transform:translate3d(5%,3%,0) scale(1.03)}100%{transform:translate3d(-2%,8%,0) scale(1.07)}}
+#balls > .stone,#balls > .empty {position:relative;z-index:1}
+#page-estrategias #v17-rules .v17-hero .v17-actions {display:flex;flex-wrap:wrap;gap:9px}
+#v21-activate-all,#v21-disable-all{border-radius:12px;min-height:43px;font-weight:800}
+#v21-activate-all:disabled,#v21-disable-all:disabled{opacity:.48;cursor:progress}
+/* A prévia de somente branco não deve parecer uma aposta dupla. */
+#v6-target .v6-stone.white {outline:1px solid #9babbf44;outline-offset:2px}
+html[data-nexo-theme="light"] #balls {background:linear-gradient(145deg,#e7f0f6,#f4f8fa)!important}
+html[data-nexo-theme="light"] #balls::before {opacity:.35}
+html[data-nexo-theme="light"] #page-estrategias .v17-hero .v17-btn.danger{
+ background:#fff0f2!important;color:#9c2844!important;border:1px solid #e6a1ad!important}
+html[data-nexo-theme="light"] #page-estrategias .v17-hero .v17-btn.primary{
+ background:#0c9b7e!important;color:#fff!important;border-color:#008a70!important}
+html[data-nexo-theme="light"] #page-estrategias .v6-goal-label,
+html[data-nexo-theme="light"] #page-estrategias .v6-saved-meta,
+html[data-nexo-theme="light"] #page-estrategias .v6-gale-name,
+html[data-nexo-theme="light"] #page-estrategias .v6-subtitle {color:#24485b!important}
+@media(max-width:600px){
+ #page-estrategias #v17-rules .v17-hero .v17-actions {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%}
+ #page-estrategias #v17-rules .v17-hero .v17-actions .v17-btn {white-space:normal;padding:11px 9px;font-size:12px}
+ #balls::before {filter:blur(12px)}
+}
+@media(prefers-reduced-motion:reduce){#balls::before{animation:none!important;will-change:auto}}

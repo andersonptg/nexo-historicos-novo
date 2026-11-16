@@ -328,6 +328,8 @@ function defaultSignalText(key){
 }
 // V11: entrega por etapas duráveis. Nunca reenviar automaticamente uma etapa
 // cujo resultado no Telegram ficou incerto. Os grupos trabalham em paralelo.
+const V22_RETRY_MAX_AGE_S=14;
+const v22ExpiredEvent=evt=>!!evt&&((Number(evt.expiresAtMs)>0&&Date.now()>=Number(evt.expiresAtMs))||(Number(evt.expiresAtMs||0)===0&&Number.isSafeInteger(evt.at)&&now()-evt.at>=V22_RETRY_MAX_AGE_S));
 const V11_STAGE_ROOT=ROOT+'outbox/stages/';
 const V11_BLOCK_ROOT=ROOT+'outbox/chat-block/';
 const v11ChatTag=id=>String(id).replace(/[^\d-]/g,'').replace('-','m');
@@ -361,8 +363,9 @@ async function transmit(env,group,evt){
  }
  if(progress.uncertain)throw Error('Envio incerto em '+progress.uncertain+'; revisar antes de retentar');
  if(progress.completed)return;
- const deliver=async(stage,method,body)=>{
+  const deliver=async(stage,method,body)=>{
   if(progress.confirmed[stage])return;
+   if(v22ExpiredEvent(evt)){console.warn('V22: etapa Telegram vencida, omitida',evt.type,stage);return;}
   if(tracked){
    progress.inFlight=stage;progress.updatedAt=now();
    await putDoc(env,stageKey,progress);
@@ -417,7 +420,7 @@ async function transmit(env,group,evt){
 // NEXO V9 - prioridade do chat privado verificado; canais continuam opcionais.
 // Envio para privado + grupos em paralelo; a ordem dentro de cada chat é mantida.
 async function dispatch(env,config,evt,{privateOnly=false}={}){
- if(!config.botEnabled)return;
+ if(!config.botEnabled||v22ExpiredEvent(evt))return;
  const owner=await getDoc(env,K.owner,null);
  const privateChat=owner?.id&&/^[1-9][0-9]{4,19}$/.test(String(owner.id))
    ? [{id:String(owner.id),private:true}] : [];
@@ -451,13 +454,15 @@ async function dispatch(env,config,evt,{privateOnly=false}={}){
  }));
 }
 
-async function fireEvent(env,settings,strategy,r,type,step){
- const global=await globalDoc(env),key=GLOBAL_MAP[type],template=global?.templates?.[key];
+async function fireEvent(env,settings,strategy,r,type,step,deadlineAtMs=0,globalCache=null){
+ // O estado/placar continua correto, mas notificacoes velhas nao serao enviadas.
+ if(deadlineAtMs&&Date.now()>=deadlineAtMs){console.warn('V22: evento vencido nao enviado',type,r.seq);return;}
+ const global=globalCache||await globalDoc(env),key=GLOBAL_MAP[type],template=global?.templates?.[key];
  const globalSaved=template?.saved===true;
  const savedText=globalSaved?template.text:(strategy.messages?.[type]||'');
  const message=String(savedText||'').trim()?savedText:defaultSignalText(key);
  const media=globalSaved?{type:template.type,assetId:template.assetId}:(strategy.media?.[type]||{type:'text'});
- const evt={id:strategy.id+'_'+r.id+'_'+type,seq:r.seq,strategyId:strategy.id,strategyName:strategy.name,type,gameId:strategy.gameId,roundId:r.id,number:r.number,color:r.color,minute_epoch:r.minute_epoch,at:now(),message:formatMessage(message,r,strategy,step),media,showStoneBeforeMedia:strategy.showStoneBeforeMedia};
+ const evt={id:strategy.id+'_'+r.id+'_'+type,seq:r.seq,strategyId:strategy.id,strategyName:strategy.name,type,gameId:strategy.gameId,roundId:r.id,number:r.number,color:r.color,minute_epoch:r.minute_epoch,at:now(),expiresAtMs:deadlineAtMs||0,message:formatMessage(message,r,strategy,step),media,showStoneBeforeMedia:strategy.showStoneBeforeMedia};
   if(['entry_black','entry_red','entry_white'].includes(type)){
    if(global.registration?.enabled===true)evt.registration=global.registration;
    const after=global?.afterPattern||{enabled:true,text:V12_2_AFTER_PATTERN_DEFAULT};
@@ -517,7 +522,7 @@ export async function resetAfterCatchup(env,game,records){
  // Importacao historica nao abre nem continua sinais; nunca apagar rodadas.
  await putDoc(env,v11GameKey(game.id),{ownerId:null,lastSeq:maxSeq,updatedAt:now(),reason:'catchup'});
 }
-export async function processNewRounds(env,game,records){
+export async function processNewRounds(env,game,records,deadlineAtMs=0){
  if(!env.R2||!records.length)return;
  const strategies=(await getDoc(env,K.strategies,[])).filter(s=>s.enabled&&!s.archived&&s.gameId===game.id);
  if(!strategies.length)return;
@@ -576,9 +581,10 @@ export async function processNewRounds(env,game,records){
     actions.push({type:'attention',step:0});attentionOwnerId=s.id;
    }
    state.recent=history.slice(-Math.max(1,s.pattern.length-1));state.lastSeq=r.seq;
-   await putDoc(env,runtimeKey(s.id),state);
-   score.updatedAt=now();await putDoc(env,scoreKey(s.id),score);
-   for(const action of actions)await fireEvent(env,settings,s,r,action.type,action.step);
+    // Operações de R2 independentes: confirmar ambas antes de emitir eventos.
+    score.updatedAt=now();
+    await Promise.all([putDoc(env,runtimeKey(s.id),state),putDoc(env,scoreKey(s.id),score)]);
+   for(const action of actions)await fireEvent(env,settings,s,r,action.type,action.step,deadlineAtMs,global);
   }
   await putDoc(env,v11GameKey(game.id),{ownerId,lastSeq:r.seq,updatedAt:now()});
  }
@@ -636,8 +642,13 @@ export async function routeAdmin(req,env,url){
  if(path==='/api/adm/logout'&&req.method==='POST')return json({ok:true},200,{'Set-Cookie':sessionCookie('',0)});
  const settings=()=>getDoc(env,K.settings,settingsDefault);
  const strategies=()=>getDoc(env,K.strategies,[]);
- const groups=()=>getDoc(env,K.groups,[]);
- try{
+  const groups=()=>getDoc(env,K.groups,[]);
+  try{
+   if(path==='/api/adm/queue-health'&&req.method==='GET'){
+    if(!env.NEXO_COORDINATOR)return err('Coordenador da fila indisponivel.',503);
+    const id=env.NEXO_COORDINATOR.idFromName('nexo-brabet-double-v11');
+    return env.NEXO_COORDINATOR.get(id).fetch('https://nexo.internal/v11/queue-health');
+   }
   if(path==='/api/adm/bootstrap'&&req.method==='GET'){
    const [st,ss,gs,media]=await Promise.all([settings(),strategies(),groups(),getDoc(env,K.media,[])]);
    const active=ss.filter(x=>!x.archived);
@@ -706,6 +717,40 @@ export async function routeAdmin(req,env,url){
      const all=await strategies(),updated=all.map(s=>s.archived?s:{...s,maxGale:gale,updatedAt:now()});
      await putDoc(env,K.strategies,updated);
      return json({ok:true,count:all.filter(s=>!s.archived).length,maxGale:gale,notice:'O Gale atualizado vale tambem para os proximos eventos das regras ativas.'});
+   }
+   // NEXO V21: alterar apenas as regras cujo estado difere do solicitado.
+   // Um lote pequeno evita exceder as cotas de subrequests no Worker.
+   // NUNCA liga/desliga o bot global e NUNCA importa rodadas como sinais.
+   if(path==='/api/adm/strategies/toggle-batch'&&req.method==='POST'){
+     const body=await req.json();
+     const ids=body?.ids;
+     if(body?.confirm!==true||typeof body?.enabled!=='boolean'||!Array.isArray(ids)||ids.length<1||ids.length>10||ids.some(id=>typeof id!=='string'||!/^[a-f0-9]{32}$/.test(id))||new Set(ids).size!==ids.length)
+       return err('Confirme o estado e informe 1 a 10 IDs únicos de estratégias.',400);
+     const all=await strategies(),desired=body.enabled,idSet=new Set(ids);
+     const changed=all.filter(x=>idSet.has(x.id)&&!x.archived&&x.enabled!==desired);
+     const notFound=ids.filter(id=>!all.some(s=>s.id===id&&!s.archived));
+     if(notFound.length)return err('Uma ou mais estratégias não existem ou foram arquivadas.',404);
+     if(!changed.length)return json({ok:true,changed:0,unchanged:ids.length,enabled:desired});
+     if(desired){
+       // Regra recém-ativada inicia DEPOIS da última pedra disponível.
+       // Regras que já estavam ativas conservam seu estado e placar.
+       const latest=await recentR2(env,'brabet-double');
+       const max=Math.max(0,...(latest.items||[]).map(x=>Number(x.seq)||0));
+       await Promise.all(changed.map(s=>putDoc(env,runtimeKey(s.id),{lastSeq:max,recent:[],active:null})));
+     }
+     await putDoc(env,K.strategies,all.map(s=>idSet.has(s.id)&&!s.archived&&s.enabled!==desired?{...s,enabled:desired,updatedAt:now()}:s));
+     const warnings=[];
+     if(!desired){
+       // Persistir o estado pausado primeiro; depois limpar avisos/bloqueios.
+       for(const s of changed){
+         try{
+           const state=await getDoc(env,runtimeKey(s.id),null);
+           if(state?.attentionEventId)await dismissAttention(env,s.id,state.attentionEventId);
+           await v11DropStrategyBlocks(env,s.id);
+         }catch(e){warnings.push(s.id);console.warn('V21 desativacao: limpeza pendente',s.id,String(e?.message||e).slice(0,80));}
+       }
+     }
+     return json({ok:true,changed:changed.length,unchanged:ids.length-changed.length,enabled:desired,cleanupWarnings:warnings.length});
    }
   if(path==='/api/adm/strategies'&&req.method==='POST'){
    const b=await req.json();const all=await strategies();/* V10: sem limite artificial de 30 estratégias; o armazenamento e as cotas do Worker continuam valendo. */
@@ -1015,7 +1060,16 @@ export async function scheduledAdmin(env){
  const all=await list(env,ROOT+'outbox/pending/',100);
  const gs=await getDoc(env,K.groups,[]);
  let v11Attempts=0;for(const x of all){
-  const row=await getDoc(env,x.key,null);if(!row||row.attempts>=5||row.updatedAt+60>now())continue;
+   const row=await getDoc(env,x.key,null);if(!row)continue;
+   // Nunca ressuscitar sinal antigo, mesmo que o retry do cron rode depois.
+   if(v22ExpiredEvent(row.evt)){
+     await putDoc(env,ROOT+'outbox/cancelled/'+row.id+'.json',{id:row.id,cancelledAt:now(),reason:'v22-expired'});
+     await env.R2.delete?.(x.key);
+     const gate=await getDoc(env,v11BlockKey(row.groupId),null);
+     if(gate?.eventId===row.evt?.id)await env.R2.delete?.(v11BlockKey(row.groupId));
+     continue;
+   }
+   if(row.attempts>=5||row.updatedAt+60>now())continue;
   if(row.evt?.strategyId&&!strategies.some(s=>s.id===row.evt.strategyId&&!s.archived)){await env.R2.delete?.(x.key);continue}
   if(row.evt?.type==='attention'){
     const track=await getDoc(env,attentionKey(row.evt.strategyId,row.evt.id),null);

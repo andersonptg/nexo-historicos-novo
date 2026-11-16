@@ -1,0 +1,16 @@
+/* NEXO V22: acabamento e diagnostico, sem animacao de processamento adicional. */
+#v22-diagnostic {padding:20px;margin:20px 0;border:1px solid #395a69;border-radius:18px;background:#122539;box-shadow:0 10px 25px #0002;color:#eaf4f8}
+#v22-diagnostic h2{font-size:18px;margin:0 0 10px}
+#v22-diagnostic .v22-muted{font-size:12px;color:#b7cfda;line-height:1.6}
+#v22-diagnostic .v22-check{border-radius:11px;border:1px solid #22af93;background:#108d79;color:#fff;padding:10px 14px;font-weight:800;margin:8px 0 15px}
+#v22-diagnostic .v22-check:disabled{opacity:.5}
+#v22-diagnostic .v22-values{display:grid;gap:6px}
+#v22-diagnostic .v22-line{display:flex;justify-content:space-between;align-items:center;gap:14px;border-bottom:1px solid #6b9c9a36;padding:7px 0;font-size:13px}
+#v22-diagnostic .v22-line strong{font-variant-numeric:tabular-nums}
+html[data-nexo-theme="light"] #v22-diagnostic{background:#fff;color:#173247;border-color:#bbd5da}
+html[data-nexo-theme="light"] #v22-diagnostic .v22-muted{color:#445f6e}
+html[data-nexo-theme="light"] #v22-diagnostic .v22-check{background:#087a67;color:#fff}
+/* Cores de legenda legiveis mesmo se modos anteriores aplicarem !important */
+html[data-nexo-theme="light"] #page-estrategias :is(.v6-goal-label,.v6-length,.v6-count,.v6-hint,.v6-saved-name,.v6-saved-meta,.v6-gale-name){color:#17394d!important}
+html[data-nexo-theme="light"] #page-padroes :is(.v20-bulk-gale,.v20-bulk-status,.v17-pattern .v17-muted){color:#184354!important}
+@media(max-width:600px){#v22-diagnostic{padding:14px}#v22-diagnostic .v22-line{font-size:12px;gap:8px}}

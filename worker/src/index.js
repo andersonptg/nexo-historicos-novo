@@ -55,18 +55,23 @@ async function v11Ingest(request,env,trusted=false,queueSignalJob=null,queuedMax
  const rows=normalize(items),groups=new Map();
  for(const r of rows){const day=dayOf(r.minute_epoch);if(!groups.has(day))groups.set(day,[]);groups.get(day).push(r)}
  if(groups.size>5)return out({error:'Lote atravessa mais de cinco dias'},400);
- const b=base(game.id);
- for(const [day,adds] of groups){
-  const key=b+`days/${day}.json`;
-  const old=await jsonGet(env.R2,key);
-  const combined=merge(old?.items||[],adds);
-  await jsonPut(env.R2,key,{game_id:game.id,day,items:combined,updated_at:now()});
- }
- const latestKey=b+'latest.json';
- const oldLatest=await jsonGet(env.R2,latestKey);
- const latest=merge(oldLatest?.items||[],rows,200);
- await jsonPut(env.R2,latestKey,{game_id:game.id,items:latest,updated_at:now()});
- await jsonPut(env.R2,b+'status.json',{game_id:game.id,last_ingest:now(),last_heartbeat:now(),last_result:latest[0]?.minute_epoch||null,received:rows.length,motor:'termux',source:game.source});
+  // NEXO V21: as leituras do dia e do ultimo lote sao independentes.
+  // Leitura e gravação paralelas reduzem as esperas de R2 sem reconhecer
+  // nada antes que TODAS as operacoes terminem. O Durable Object continua
+  // serializando os lotes e a fila de Telegram permanece inalterada.
+  const b=base(game.id),dayGroups=[...groups.entries()],latestKey=b+'latest.json';
+  const docs=await Promise.all([
+   jsonGet(env.R2,latestKey),
+   ...dayGroups.map(([day])=>jsonGet(env.R2,b+`days/${day}.json`))
+  ]);
+  const latest=merge(docs[0]?.items||[],rows,200),stamp=now();
+  const writes=dayGroups.map(([day,adds],i)=>{
+   const combined=merge(docs[i+1]?.items||[],adds);
+   return jsonPut(env.R2,b+`days/${day}.json`,{game_id:game.id,day,items:combined,updated_at:stamp});
+  });
+  writes.push(jsonPut(env.R2,latestKey,{game_id:game.id,items:latest,updated_at:stamp}));
+  writes.push(jsonPut(env.R2,b+'status.json',{game_id:game.id,last_ingest:stamp,last_heartbeat:stamp,last_result:latest[0]?.minute_epoch||null,received:rows.length,motor:'termux',source:game.source}));
+  await Promise.all(writes);
  // Por seguranca, um lote antigo nao dispara sinais mesmo sem flag catchup.
  // V12: nunca transformar reconexao/atraso em uma enxurrada de sinais.
  // O horario da fonte tem precisao de MINUTO: aqui so validamos frescor,
@@ -102,18 +107,23 @@ async function v11Ingest(request,env,trusted=false,queueSignalJob=null,queuedMax
 return out({ok:true,accepted:rows.length,game_id:game.id,catchup,age_seconds:sourceAge,skipped_signal_burst:surge||!!seqGap});
 
 }
+// NEXO V22: historico nunca expira, mas avisos nao podem virar sinais antigos.
+// A idade mede a fila DO (nao os segundos oficiais da Brabet).
+const V22_SIGNAL_TTL_MS=14000;
+const v22IsStale=job=>!Number.isSafeInteger(job?.enqueuedAtMs)||job.enqueuedAtMs<=0||Date.now()-job.enqueuedAtMs>=V22_SIGNAL_TTL_MS;
 // NEXO_V18_1_DURABLE_QUEUE: processar sinais DEPOIS do ACK R2, na ordem dos lotes.
 // O job foi persistido no storage do Durable Object ANTES da resposta HTTP 200.
 async function v18_1ProcessQueuedSignal(env,job){
  const game=gameById(job.gameId);
  if(!game||!Array.isArray(job.rows)||!job.rows.length)throw Error('Job de sinais invalido');
- const rows=job.rows;
- if(job.catchup){
+ const rows=job.rows,expired=v22IsStale(job);
+ if(expired)console.warn('V22: job atrasado descartado para sinais; cursor sera recuperado',job.gameId,Math.max(...rows.map(r=>Number(r.seq)||0)));
+ if(job.catchup||expired){
   await resetAfterCatchup(env,game,rows);
   if(!V17_WHITE_PAUSED)await resetWhiteAfterCatchup(env,game,rows);
  }else{
   if(!V17_WHITE_PAUSED&&await whiteShouldBlockLegacy(env))await resetAfterCatchup(env,game,rows);
-  else await processNewRounds(env,game,rows);
+  else await processNewRounds(env,game,rows,job.enqueuedAtMs+V22_SIGNAL_TTL_MS);
   if(!V17_WHITE_PAUSED)await processWhiteRounds(env,game,rows);
  }
 }
@@ -131,7 +141,7 @@ export class NexoCoordinator {
         const next=Number(await tx.get('nexo-v18-next-job')||0)+1;
         await tx.put('nexo-v18-next-job',next);
         await tx.put('nexo-v18-queued-max',seq);
-        await tx.put('nexo-v18-job/'+String(next).padStart(12,'0'),job);
+        await tx.put('nexo-v18-job/'+String(next).padStart(12,'0'),{...job,enqueuedAtMs:Date.now()});
       });
     }
     // Repetir o POST nao cria outro job; e se o agendamento anterior falhou,
@@ -145,9 +155,14 @@ export class NexoCoordinator {
     const jobs=await st.list({prefix:'nexo-v18-job/',limit:1});
     if(!jobs.size)return;
     const [key,job]=jobs.entries().next().value;
+    const started=Date.now(),discarded=v22IsStale(job);
     try{
       await v18_1ProcessQueuedSignal(this.env,job);
       await st.delete(key);
+    // Diagnostico agregado; nunca armazena token, IDs de chats ou textos.
+    try{const prev=await st.get('nexo-v22-metrics')||{};
+      await st.put('nexo-v22-metrics',{processed:Number(prev.processed||0)+1,expired:Number(prev.expired||0)+(discarded?1:0),lastDurationMs:Date.now()-started,lastQueueAgeMs:Number(job.enqueuedAtMs)>0?Math.max(0,started-job.enqueuedAtMs):null,lastAtMs:Date.now()});
+    }catch(e){console.warn('V22 metricas:',String(e?.message||e).slice(0,80));}
       // Proximo lote apenas depois do atual; evita inversao de eventos.
       const pending=await st.list({prefix:'nexo-v18-job/',limit:1});
       if(pending.size)await st.setAlarm(Date.now()+250);
@@ -162,6 +177,12 @@ export class NexoCoordinator {
    if(path==='/v11/ingest'){
       const queued=Number(await this.state.storage.get('nexo-v18-queued-max')||0);
       return v11Ingest(request,this.env,true,job=>this.v18_1Enqueue(job),queued);
+    }
+   if(path==='/v11/queue-health'){
+      const pending=await this.state.storage.list({prefix:'nexo-v18-job/',limit:100});
+      const first=pending.values().next().value;
+      const metrics=await this.state.storage.get('nexo-v22-metrics')||{};
+      return out({ok:true,version:22,pending_jobs:pending.size,pending_capped:pending.size>=100,oldest_age_ms:first?.enqueuedAtMs?Math.max(0,Date.now()-first.enqueuedAtMs):null,processed:Number(metrics.processed||0),expired:Number(metrics.expired||0),last_duration_ms:metrics.lastDurationMs??null,last_queue_age_ms:metrics.lastQueueAgeMs??null,last_processed_at:metrics.lastAtMs??null});
     }
    if(path==='/v11/cron'){await Promise.allSettled(V17_WHITE_PAUSED?[scheduledAdmin(this.env)]:[scheduledAdmin(this.env),scheduledWhite(this.env)]);return out({ok:true});}
    return out({error:'Rota interna invalida'},404);

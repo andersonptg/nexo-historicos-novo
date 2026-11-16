@@ -18,7 +18,10 @@
  }
  function hideEditor(){$('page-estrategias')?.classList.remove('v17-edit-open')}
  function buildRules(){const page=$('page-estrategias');if(!page||$('v17-rules'))return;
-  const root=el('div','v17-wrap');root.id='v17-rules';const h=header('Estratégias salvas','Padrões em ordem, placares por regra e controle individual. Apenas o administrador pode alterar.');const a=labelButtons(h);a.append(btn('＋ Nova estratégia',()=>showEditor(null),'primary'),btn('↻ Atualizar',()=>void safeReload()));root.append(h);
+  const root=el('div','v17-wrap');root.id='v17-rules';const h=header('Estratégias salvas','Padrões em ordem, placares por regra e controle individual. Apenas o administrador pode alterar.');const a=labelButtons(h);
+  const startAll=btn('▶ Ativar todas',()=>void toggleAll(true),'primary');startAll.id='v21-activate-all';
+  const stopAll=btn('Ⅱ Desativar todas',()=>void toggleAll(false),'danger');stopAll.id='v21-disable-all';
+  a.append(btn('＋ Nova estratégia',()=>showEditor(null),'primary'),startAll,stopAll,btn('↻ Atualizar',()=>void safeReload()));root.append(h);
   const wrap=wrapper('Regras disponíveis','Toque em Editar apenas quando quiser alterar o padrão ou as mensagens. Os sinais são executados somente após ativar o robô.');const cards=el('div','v17-strategies');cards.id='v17-cards';wrap.append(cards);root.append(wrap);
   root.append(el('p','v17-muted','A cor e os números de cada pedra são exibidos como cadastrados. Se a fonte atrasar, o NEXO não pode antecipar resultados.'));
   page.querySelector('.pagehead')?.insertAdjacentElement('afterend',root);
@@ -32,7 +35,7 @@
   for(const [index,s] of items.entries()){
    const card=el('article','v17-rule');const top=el('div','v17-rule-top');const left=el('div');left.append(el('span','v17-idx','ESTRATÉGIA '+String(index+1).padStart(2,'0')),el('div','v17-rule-title',s.name||'Regra sem nome'));
    top.append(left,el('span','v17-pill '+(s.enabled?'on':'off'),s.enabled?'● ATIVA':'○ PAUSADA'));card.append(top,stoneRow(s.pattern||[]));
-   card.append(el('small','v17-muted',(s.target==='white'?'⚪ Somente branco':s.target==='red'?'🔴 Vermelho':'⚫ Preto')+' + Branco • até Gale '+(s.maxGale||0)));
+   card.append(el('small','v17-muted',(s.target==='white'?'⚪ SOMENTE BRANCO':s.target==='red'?'🔴 VERMELHO + BRANCO':'⚫ PRETO + BRANCO')+' • até Gale '+(s.maxGale||0)));
    const actions=labelButtons(card);
    actions.append(btn('✎ Editar',()=>showEditor(s)),btn('▥ Placar',()=>showScore(s)),btn(s.enabled?'Ⅱ Pausar':'▶ Ativar',()=>void toggle(s),s.enabled?'danger':'primary'));
    host.append(card);
@@ -40,6 +43,31 @@
  }
  async function toggle(s){if(!s.enabled&&!confirm('Ativar a regra '+s.name+' para as próximas rodadas?'))return;
   const payloadData={...s,enabled:!s.enabled};await api('strategies/'+s.id,payload('PUT',payloadData));await safeReload();notice(s.enabled?'Regra pausada.':'Regra ativada.');}
+ let v21ToggleBusy=false;
+ async function toggleAll(desired){
+  if(v21ToggleBusy||!model)return;
+  const changed=(model.strategies||[]).filter(s=>s.enabled!==desired);
+  if(!changed.length){notice(desired?'Todas já estão ativas.':'Todas já estão desativadas.');return;}
+  const count=changed.length;
+  const message=desired
+   ?'Ativar '+count+' estratégia(s) pausada(s)? As já ativas NÃO serão reiniciadas. Todas poderão disputar o mesmo ciclo, e muitas regras podem aumentar a latência dos sinais. O robô global não será ligado por esta ação.'
+   :'Desativar '+count+' estratégia(s) ativa(s)? As já desativadas NÃO serão alteradas.';
+  if(!confirm(message))return;
+  v21ToggleBusy=true;let done=0,warnings=0;
+  const buttons=[$('v21-activate-all'),$('v21-disable-all')];
+  for(const b of buttons)if(b)b.disabled=true;
+  try{
+   for(let i=0;i<changed.length;i+=10){
+    const group=changed.slice(i,i+10);
+    const result=await api('strategies/toggle-batch',payload('POST',{ids:group.map(s=>s.id),enabled:desired,confirm:true}));
+    done+=Number(result.changed||0);warnings+=Number(result.cleanupWarnings||0);
+    notice((desired?'Ativando':'Desativando')+' '+Math.min(i+10,count)+'/'+count+'…');
+   }
+   await safeReload();
+   notice(done+' estratégia(s) '+(desired?'ativadas':'desativadas')+'. As demais mantidas.'+(warnings?' '+warnings+' limpeza(s) de aviso pendente(s).':''),warnings>0);
+  }catch(e){await safeReload();notice('Operação parcial: '+done+' alteradas. '+e.message+'; confira o estado antes de repetir.',true)}
+  finally{v21ToggleBusy=false;for(const b of buttons)if(b)b.disabled=false;}
+ }
  async function safeReload(){try{await reload()}catch(e){notice('Falha ao carregar: '+e.message,true)}}
  function buildScores(){const page=$('page-placares');if(!page||$('v17-scoreboard'))return;const root=el('div','v17-wrap');root.id='v17-scoreboard';const top=header('Placar geral · NEXO','Somatório dos resultados registrados por todas as estratégias ativas ou pausadas.');const actions=labelButtons(top);actions.append(btn('↻ Atualizar',()=>void safeReload()));root.append(top);
   const section=wrapper('Resultados somados');const grid=el('div','v17-score-grid');grid.id='v17-score-values';section.append(grid);root.append(section);
