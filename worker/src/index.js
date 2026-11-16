@@ -150,26 +150,65 @@ export class NexoCoordinator {
     if(pending.size)await st.setAlarm(Date.now()+250);
   }
   // A entrega pode levar varios segundos, mas nao bloqueia a gravacao da pedra.
+  // V23: agrupar o prefixo VENCIDO. Cada lote ja foi salvo no R2 antes do ACK.
+  // Uma unica recuperacao de cursor por jogo substitui N recuperacoes caras.
+  // Lotes novos e frescos nao sao descartados.
   async alarm(){
-    const st=this.state.storage;
-    const jobs=await st.list({prefix:'nexo-v18-job/',limit:1});
-    if(!jobs.size)return;
-    const [key,job]=jobs.entries().next().value;
-    const started=Date.now(),discarded=v22IsStale(job);
-    try{
-      await v18_1ProcessQueuedSignal(this.env,job);
-      await st.delete(key);
-    // Diagnostico agregado; nunca armazena token, IDs de chats ou textos.
-    try{const prev=await st.get('nexo-v22-metrics')||{};
-      await st.put('nexo-v22-metrics',{processed:Number(prev.processed||0)+1,expired:Number(prev.expired||0)+(discarded?1:0),lastDurationMs:Date.now()-started,lastQueueAgeMs:Number(job.enqueuedAtMs)>0?Math.max(0,started-job.enqueuedAtMs):null,lastAtMs:Date.now()});
-    }catch(e){console.warn('V22 metricas:',String(e?.message||e).slice(0,80));}
-      // Proximo lote apenas depois do atual; evita inversao de eventos.
-      const pending=await st.list({prefix:'nexo-v18-job/',limit:1});
-      if(pending.size)await st.setAlarm(Date.now()+250);
-    }catch(e){
-      console.error('NEXO V18.1 fila: tentativa pendente',String(e?.message||e).slice(0,150));
-      await st.setAlarm(Date.now()+7000);
+   const st=this.state.storage;
+   const jobs=await st.list({prefix:'nexo-v18-job/',limit:100});
+   if(!jobs.size)return;
+   const old=[];
+   for(const entry of jobs.entries()){
+    if(!v22IsStale(entry[1]))break;
+    old.push(entry);
+   }
+   const first=jobs.entries().next().value;
+   const started=Date.now(),batchSize=old.length||1;
+   const ageRef=old.length?old[0][1]:first[1];
+   const age=Number(ageRef?.enqueuedAtMs)>0?Math.max(0,started-ageRef.enqueuedAtMs):null;
+   try{
+    if(old.length){
+     const newest=new Map();
+     for(const [,job] of old){
+      const game=gameById(job?.gameId);
+      if(!game||!Array.isArray(job.rows)||!job.rows.length)throw Error('V23 lote antigo invalido; preservado para revisao');
+      const seq=Math.max(...job.rows.map(r=>Number(r.seq)||0));
+      if(!Number.isSafeInteger(seq)||seq<1)throw Error('V23 sequencia invalida; fila preservada');
+      const previous=newest.get(job.gameId);
+      if(!previous||seq>previous.seq)newest.set(job.gameId,{game,seq,rows:job.rows});
+     }
+     // Recupera estado somente uma vez por jogo, sem criar sinais historicos.
+     for(const {game,rows} of newest.values()){
+      await resetAfterCatchup(this.env,game,rows);
+      if(!V17_WHITE_PAUSED)await resetWhiteAfterCatchup(this.env,game,rows);
+     }
+     // Nao apaga qualquer lote antes da confirmacao de recuperacao acima.
+     for(let i=0;i<old.length;i+=12){
+      await Promise.all(old.slice(i,i+12).map(([key])=>st.delete(key)));
+     }
+     console.warn('NEXO V23: lotes antigos agrupados sem sinais',old.length);
+    }else{
+     const [key,job]=first;
+     await v18_1ProcessQueuedSignal(this.env,job);
+     await st.delete(key);
     }
+    try{
+     const prev=await st.get('nexo-v22-metrics')||{};
+     await st.put('nexo-v22-metrics',{
+      processed:Number(prev.processed||0)+batchSize,
+      expired:Number(prev.expired||0)+old.length,
+      coalesced:Number(prev.coalesced||0)+(old.length>1?old.length:0),
+      lastBatchSize:batchSize,
+      lastDurationMs:Date.now()-started,
+      lastQueueAgeMs:age,
+      lastAtMs:Date.now()
+     });
+    }catch(e){console.warn('V23 metricas:',String(e?.message||e).slice(0,80));}
+    if((await st.list({prefix:'nexo-v18-job/',limit:1})).size)await st.setAlarm(Date.now()+250);
+   }catch(e){
+    console.error('NEXO V23: lote mantido para nova tentativa',String(e?.message||e).slice(0,160));
+    await st.setAlarm(Date.now()+7000);
+   }
   }
  fetch(request){
   const run=this.serial.then(async()=>{
@@ -182,7 +221,7 @@ export class NexoCoordinator {
       const pending=await this.state.storage.list({prefix:'nexo-v18-job/',limit:100});
       const first=pending.values().next().value;
       const metrics=await this.state.storage.get('nexo-v22-metrics')||{};
-      return out({ok:true,version:22,pending_jobs:pending.size,pending_capped:pending.size>=100,oldest_age_ms:first?.enqueuedAtMs?Math.max(0,Date.now()-first.enqueuedAtMs):null,processed:Number(metrics.processed||0),expired:Number(metrics.expired||0),last_duration_ms:metrics.lastDurationMs??null,last_queue_age_ms:metrics.lastQueueAgeMs??null,last_processed_at:metrics.lastAtMs??null});
+      return out({ok:true,version:22,pending_jobs:pending.size,pending_capped:pending.size>=100,oldest_age_ms:first?.enqueuedAtMs?Math.max(0,Date.now()-first.enqueuedAtMs):null,processed:Number(metrics.processed||0),expired:Number(metrics.expired||0),last_duration_ms:metrics.lastDurationMs??null,last_queue_age_ms:metrics.lastQueueAgeMs??null,last_processed_at:metrics.lastAtMs??null,last_batch_size:metrics.lastBatchSize??null,coalesced:Number(metrics.coalesced||0)});
     }
    if(path==='/v11/cron'){await Promise.allSettled(V17_WHITE_PAUSED?[scheduledAdmin(this.env)]:[scheduledAdmin(this.env),scheduledWhite(this.env)]);return out({ok:true});}
    return out({error:'Rota interna invalida'},404);

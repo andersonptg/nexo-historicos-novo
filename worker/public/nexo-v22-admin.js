@@ -25,6 +25,8 @@
          ['Idade do lote mais antigo',seconds(j.oldest_age_ms)],
          ['Lotes processados desde V22',String(j.processed)],
          ['Lotes vencidos descartados para sinais',String(j.expired)],
+         ['Lotes liberados por agrupamento V23',String(j.coalesced??0)],
+         ['Tamanho do ultimo lote tratado',String(j.last_batch_size??'—')],
          ['Duração do último lote',seconds(j.last_duration_ms)],
          ['Espera anterior ao último lote',seconds(j.last_queue_age_ms)]
        ]){const row=el('div','v22-line');row.append(el('span','',lab),el('strong','',val));data.append(row);}

@@ -511,14 +511,21 @@ export async function resetAfterCatchup(env,game,records){
  const strategies=(await getDoc(env,K.strategies,[])).filter(s=>!s.archived&&s.gameId===game.id);
  const prior=await getDoc(env,v11GameKey(game.id),null);
  if(prior&&maxSeq<=Number(prior.lastSeq||0))return;
- for(const s of strategies){
-  const old=await getDoc(env,runtimeKey(s.id),null);
-  if(old&&Number(old.lastSeq||0)>maxSeq)continue;
-  if(old?.attentionEventId)await dismissAttention(env,s.id,old.attentionEventId);
-  if(!old||maxSeq>Number(old.lastSeq||0)){
-   await putDoc(env,runtimeKey(s.id),{lastSeq:maxSeq,recent:[],active:null,attentionEventId:null,catchupAt:now()});
+ // V23: recuperar estados independentes em paralelismo limitado.
+ // Cada estrategia tem chave propria, e o cursor do jogo so avanca APOS todas.
+ let position=0;
+ const worker=async()=>{
+  while(position<strategies.length){
+   const s=strategies[position++];
+   const old=await getDoc(env,runtimeKey(s.id),null);
+   if(old&&Number(old.lastSeq||0)>maxSeq)continue;
+   if(old?.attentionEventId)await dismissAttention(env,s.id,old.attentionEventId);
+   if(!old||maxSeq>Number(old.lastSeq||0)){
+    await putDoc(env,runtimeKey(s.id),{lastSeq:maxSeq,recent:[],active:null,attentionEventId:null,catchupAt:now()});
+   }
   }
- }
+ };
+ await Promise.all(Array.from({length:Math.min(8,strategies.length)},()=>worker()));
  // Importacao historica nao abre nem continua sinais; nunca apagar rodadas.
  await putDoc(env,v11GameKey(game.id),{ownerId:null,lastSeq:maxSeq,updatedAt:now(),reason:'catchup'});
 }
