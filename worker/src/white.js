@@ -1,6 +1,8 @@
 /* NEXO V13 · Branco por minuto · isolado de nexo-v3 e de nexo-v1.
    Nenhuma promessa de resultado: a regra é apenas uma hipótese do administrador.
    Este módulo só usa um segundo bot (NEXO_WHITE_BOT_TOKEN), nunca o bot antigo. */
+import {processWhiteV15,resetWhiteV15,routeWhiteV15Admin,whiteV15Active,whiteV15BlocksOthers} from './white-v15.js';
+// NEXO V15 DEVEDORAS
 const ROOT='nexo-white-v1/';
 const KEY={config:ROOT+'config.json',rules:ROOT+'rules.json',runtime:ROOT+'runtime.json',chats:ROOT+'chats.json',media:ROOT+'media.json'};
 const now=()=>Math.floor(Date.now()/1000);
@@ -122,11 +124,12 @@ const activeAt=a=>a&&a.status==='active';
 const updateScore=async(env,id,key)=>{const score=await doc(env,scoreKey(id),emptyScore());score[key]=(score[key]||0)+1;score.updatedAt=now();await save(env,scoreKey(id),score)};
 
 export async function whiteHasActiveForecast(env){const st=await doc(env,KEY.runtime,emptyRun());return !!activeAt(st.active)}
-export async function whiteShouldBlockLegacy(env){const [st,cfg]=await Promise.all([doc(env,KEY.runtime,emptyRun()),doc(env,KEY.config,defaults())]);return cfg.botEnabled===true&&!!activeAt(st.active)}
+export async function whiteShouldBlockLegacy(env){const [st,cfg]=await Promise.all([doc(env,KEY.runtime,emptyRun()),doc(env,KEY.config,defaults())]);return cfg.botEnabled===true&&(!!activeAt(st.active)||await whiteV15Active(env))}
 
 export async function resetWhiteAfterCatchup(env,game,rows){
  if(game.id!=='brabet-double'||!rows.length)return;
  const st=await doc(env,KEY.runtime,emptyRun());const max=Math.max(...rows.map(x=>Number(x.seq)||0));
+ await resetWhiteV15(env,game,rows);
  if(max<=st.lastSeq)return;
  if(activeAt(st.active))await updateScore(env,st.active.strategyId,'cancelled');
  st.lastSeq=max;st.active=null;st.recent=[];st.lastSourceMinute=Math.max(...rows.map(x=>x.minute_epoch));st.lastReceivedAt=now();
@@ -151,7 +154,7 @@ export async function processWhiteRounds(env,game,rows){
    }
   }
   st.recent=[...(st.recent||[]),r].slice(-3);
-  if(!activeAt(st.active)&&rules.length){
+  if(!activeAt(st.active)&&rules.length&&!await whiteV15BlocksOthers(env)){
    // Não disputar o jogo com uma estratégia tradicional ainda em execução.
    const legacy=await doc(env,'nexo-v3/runtime/game-owner/'+game.id+'.json',{ownerId:null});
    const chosen=!legacy.ownerId?rules.map(rule=>({rule,match:matchRule(st.recent,rule)})).find(x=>x.match):null;
@@ -169,6 +172,7 @@ export async function processWhiteRounds(env,game,rows){
   }
  }
  await save(env,KEY.runtime,st);
+ await processWhiteV15(env,game,rows);
 }
 
 export async function scheduledWhite(env){
@@ -228,6 +232,7 @@ const allowedChat=x=>digits(x.id)&&['group','supergroup','private','channel'].in
 // Esta rota é chamada SOMENTE após a sessão ADM e same-origin serem verificados em adm.js.
 export async function routeWhiteAdmin(req,env,url){
  const path=url.pathname;if(!path.startsWith('/api/adm/white/'))return null;
+ if(path.startsWith('/api/adm/white/v15/'))return routeWhiteV15Admin(req,env,url);
  try{
   const parts=path.slice('/api/adm/white/'.length).split('/');
   const config=()=>doc(env,KEY.config,defaults());const rules=()=>doc(env,KEY.rules,[]);const runtime=()=>doc(env,KEY.runtime,emptyRun());
