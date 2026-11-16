@@ -1,0 +1,18 @@
+/* NEXO V17 animated sea-light. Zero extra network requests. */
+html{background:radial-gradient(ellipse 75% 70% at 10% 95%,#167c9b39,transparent 75%),radial-gradient(ellipse 50% 50% at 85% 10%,#32c2ae1d,transparent 78%),linear-gradient(100deg,#070d19,#0d2233,#081527,#070d19);background-size:155% 155%;animation:nexo-sea-drift 38s ease-in-out infinite alternate}
+body{background:transparent}
+
+@keyframes nexo-sea-drift{from{background-position:0% 0%}to{background-position:100% 80%}}
+.hero,.workspace,.metric{backdrop-filter:blur(2px)}
+.balls .stone .circle{border-radius:50%!important;border:3px solid #ffffffa6!important;box-shadow:inset 0 2px 8px #ffffff19,0 2px 7px #0005!important;width:43px;height:43px}
+.balls .stone{background:linear-gradient(145deg,#1c2c40,#101b2d);padding:5px 4px 8px;border-radius:13px;box-shadow:0 3px 11px #0005;min-height:70px}
+.balls .stone.red{background:linear-gradient(140deg,#f42e54,#a91533)}
+.balls .stone.black{background:linear-gradient(140deg,#354357,#15202e)}
+.balls .stone.white{background:linear-gradient(140deg,#fff,#e6e9ee)}
+.balls .stone.white small{color:#2b3040}
+.balls .stone.red .circle{background:#ec224a}
+.balls .stone.black .circle{background:#253142}
+.balls .stone.white .circle{background:#fff}
+.balls .stone small{color:#e6edf5}
+#nexo-v11-now .v11-stone{border-radius:12px!important;box-shadow:inset 0 0 0 10px #ffffff1a,0 5px 14px #0005}
+@media(prefers-reduced-motion:reduce){html{animation:none}}

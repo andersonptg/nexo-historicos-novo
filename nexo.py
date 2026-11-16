@@ -152,7 +152,7 @@ def run_motor(interval=1.0):
                 failures=min(8,failures+1)
                 print('Falha do motor:',type(e).__name__,str(e)[:130],flush=True)
             # Rate limit, queda da fonte e rede ruim: espera progressiva ate 60s.
-            wait=max(interval,min(60,2**failures)) if failures else interval
+            wait=max(interval,min(20,2**failures)) if failures else interval
             time.sleep(max(0.1,wait-(time.monotonic()-started)))
 
 

@@ -471,6 +471,11 @@ async function fireEvent(env,settings,strategy,r,type,step){
    const stoneTemplate=String(sc.text||'🎲 Pedra sorteada: {pedra}').slice(0,400).replace(/\{quadrado(?:_espaco)?\}/g,'{pedra}');
    evt.stoneAfter=formatMessage(stoneTemplate,r,strategy,step);
   }
+ if((type==='entry_black'||type==='entry_red')&&String(media.type||'text')==='text'){
+    const ordered=(await getDoc(env,K.strategies,[])).filter(x=>!x.archived);
+    const number=ordered.findIndex(x=>x.id===strategy.id)+1;
+    if(number>0){const digits=String(number).replace(/[0-9]/g,c=>'⁰¹²³⁴⁵⁶⁷⁸⁹'[Number(c)]);evt.message+='\n\nᵉˢᵗ '+digits;}
+  }
  await putDoc(env,eventKey(evt.id),evt);
  if(type==='attention'&&settings.botEnabled)await beginAttention(env,evt);
  await dispatch(env,settings,evt);
@@ -821,13 +826,28 @@ export async function routeAdmin(req,env,url){
    return json({ok:true});
   }
   if(path==='/api/adm/telegram/scoreboard'&&req.method==='POST'){
-   const b=await req.json(),g=(await groups()).find(x=>x.id===String(b.groupId)&&x.selected&&x.admin);
-   if(!g)return err('Grupo nao selecionado ou sem permissao de administrador.');
-   const all=(await strategies()).filter(x=>!x.archived),data=await scores(env,all);const s=data.find(x=>x.id===b.strategyId);if(!s)return err('Estrategia nao encontrada');
-   const msg='🏆 PLACAR — '+s.name+'\n🟢 GREEN: '+s.green+'\n⚪ BRANCO: '+s.white+'\n🔴 RED: '+s.red+'\n↪️ GALE 1: '+s.gale1+' | GALE 2: '+s.gale2+'\nEntradas: '+s.entries+'\nDia: '+s.day;
-   await transmit(env,g,{type:'scoreboard',message:msg,media:{type:'text'}});return json({ok:true});
-  }
-  if(path==='/api/adm/scores'&&req.method==='GET')return json({ok:true,scores:await scores(env,(await strategies()).filter(x=>!x.archived))});
+    const b=await req.json();
+    const privateChat=b.groupId==='__private__';
+    const g=privateChat?null:(await groups()).find(x=>x.id===String(b.groupId)&&x.selected&&x.admin);
+    if(!privateChat&&!g)return err('Grupo nao selecionado ou sem permissao de administrador.');
+    const all=(await strategies()).filter(x=>!x.archived),data=await scores(env,all);
+    let name='GERAL · TODAS AS ESTRATEGIAS';
+    let stat;
+    if(b.strategyId==='__all__'){
+      stat={entries:0,green:0,white:0,red:0,gale1:0,gale2:0,day:dayBR()};
+      for(const item of data)for(const field of ['entries','green','white','red','gale1','gale2'])stat[field]+=Number(item[field]||0);
+    }else{
+      stat=data.find(x=>x.id===b.strategyId);if(!stat)return err('Estrategia nao encontrada');name=stat.name;
+    }
+    const msg='🏆 PLACAR — '+name+'\n🟢 WIN: '+stat.green+'\n⚪ BRANCO: '+stat.white+'\n🔴 RED: '+stat.red+'\n↪️ GALE 1: '+stat.gale1+' | GALE 2: '+stat.gale2+'\nEntradas: '+stat.entries+'\nDia: '+stat.day;
+    if(privateChat){
+      const owner=await getDoc(env,K.owner,null);
+      if(!owner?.id)return err('Vincule primeiro o privado do administrador ao bot.');
+      await tg(env,'sendMessage',{chat_id:owner.id,text:msg});
+    }else await transmit(env,g,{type:'scoreboard',message:msg,media:{type:'text'}});
+    return json({ok:true});
+   }
+   if(path==='/api/adm/scores'&&req.method==='GET')return json({ok:true,scores:await scores(env,(await strategies()).filter(x=>!x.archived))});
   if(path==='/api/adm/scores/reset'&&req.method==='POST'){
    const b=await req.json();if(b.confirm!==true)return err('Confirmacao obrigatoria.');
    const ss=(await strategies()).filter(x=>!x.archived);if(b.id&&!ss.some(x=>x.id===b.id))return err('Estrategia inexistente');
