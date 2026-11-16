@@ -87,7 +87,7 @@ test('V22: integracao V21, botoes coletivos, diagnostico protegido e timeout por
   assert.match(admin,/queue-health/);
   assert.match(rules,/v21-activate-all/);
   assert.match(rules,/v21-disable-all/);
-  assert.match(html,/nexo-v22-admin\.js\?v=(?:22|23)\.0\.0/);
+  assert.match(html,/nexo-v22-admin\.js\?v=(?:22|23|24)\.0\.0/);
   assert.match(get('worker/public/nexo-v22-admin.js'),/credentials:'same-origin'/);
 });
 

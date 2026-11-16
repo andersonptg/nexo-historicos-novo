@@ -22,6 +22,8 @@
        data.replaceChildren();
        for(const [lab,val] of [
          ['Lotes aguardando',String(j.pending_jobs)+(j.pending_capped?'+':'')],
+         ['Estratégias cadastradas',String(typeof model!=='undefined'&&model?.strategies?.length||0)],
+         ['Estratégias ativas',String(typeof model!=='undefined'&&model?.strategies?.filter(s=>s.enabled&&!s.archived).length||0)],
          ['Idade do lote mais antigo',seconds(j.oldest_age_ms)],
          ['Lotes processados desde V22',String(j.processed)],
          ['Lotes vencidos descartados para sinais',String(j.expired)],

@@ -115,7 +115,7 @@ function validateStrategy(input,previous){
  x.messages={};for(const e of E)x.messages[e]=textLimit(input.messages?.[e],1500);
  x.media={};for(const e of E){const m=input.media?.[e];x.media[e]={type:['text','sticker','gif'].includes(m?.type)?m.type:'text',assetId:idSafe(m?.assetId)?m.assetId:''};}
  x.enabled=input.enabled===true; x.archived=previous?.archived||false;
- x.updatedAt=now();return x;
+ x.updatedAt=now();x.revision=crypto.randomUUID();return x;
 }
 const recentR2=async(env,gameId)=>getDoc(env,'nexo-v1/games/'+gameId+'/latest.json',{items:[]});
 const list=async(env,prefix,limit=100)=>{let cursor;const rows=[];for(let k=0;k<5&&rows.length<limit;k++){const r=await env.R2.list({prefix,limit:Math.min(500,limit),...(cursor?{cursor}:{})});rows.push(...r.objects);if(!r.truncated||!r.cursor)break;cursor=r.cursor;}return rows.slice(0,limit)};
@@ -511,6 +511,13 @@ export async function resetAfterCatchup(env,game,records){
  const strategies=(await getDoc(env,K.strategies,[])).filter(s=>!s.archived&&s.gameId===game.id);
  const prior=await getDoc(env,v11GameKey(game.id),null);
  if(prior&&maxSeq<=Number(prior.lastSeq||0))return;
+ // V24: com dezenas de estrategias, uma unica marcacao de cursor basta.
+ // O snapshot consolidado invalida ciclos antigos na proxima rodada nova.
+ // Nenhum evento antigo e reemitido; a lista de resultados R2 nao e tocada.
+ if(strategies.length>64||(await getDoc(env,v24SnapshotKey(game.id),null))?.version===24){
+  await putDoc(env,v11GameKey(game.id),{ownerId:null,lastSeq:maxSeq,rebaseSeq:maxSeq,reason:'catchup',updatedAt:now()});
+  return;
+ }
  // V23: recuperar estados independentes em paralelismo limitado.
  // Cada estrategia tem chave propria, e o cursor do jogo so avanca APOS todas.
  let position=0;
@@ -529,10 +536,110 @@ export async function resetAfterCatchup(env,game,records){
  // Importacao historica nao abre nem continua sinais; nunca apagar rodadas.
  await putDoc(env,v11GameKey(game.id),{ownerId:null,lastSeq:maxSeq,updatedAt:now(),reason:'catchup'});
 }
+// NEXO V24: estado consolidado para muitas estrategias. Persistencia no R2,
+// sem depender de RAM do Worker. Compatibilidade com runtime individual V23.
+const v24SnapshotKey=gameId=>ROOT+'runtime/v24/'+gameId+'.json';
+async function v24Each(items,max,work){
+ let index=0;
+ const runner=async()=>{while(index<items.length){const i=index++;await work(items[i],i)}};
+ await Promise.all(Array.from({length:Math.min(max,items.length)},()=>runner()));
+}
+const v24Sig=s=>JSON.stringify([s.enabled,s.updatedAt,s.pattern,s.target,s.maxGale,s.jokerWhite,s.revision||'']);
+const v24Compact=rows=>(rows||[]).map(r=>({number:r.number,color:r.color}));
+async function v24ProcessMany(env,game,records,deadlineAtMs,strategies,snapshot){
+ const ordered=[...records].filter(r=>Number.isInteger(r.seq)).sort((a,b)=>a.seq-b.seq);
+ if(!ordered.length)return;
+ const gameState=await getDoc(env,v11GameKey(game.id),{ownerId:null,lastSeq:0});
+ const fresh=ordered.filter(r=>r.seq>Number(gameState.lastSeq||0));
+ if(!fresh.length)return;
+ const settings=await getDoc(env,K.settings,settingsDefault);
+ const global=await globalDoc(env);
+ const rebaseSeq=Math.max(0,Number(gameState.rebaseSeq)||0);
+ const states=new Map(),sigs=new Map(),scoreMap=new Map(),refreshed=new Set();
+ const maxSeq=Math.max(...fresh.map(r=>r.seq));
+ await v24Each(strategies,6,async s=>{
+  const sig=v24Sig(s),cached=snapshot?.states?.[s.id];let st;
+  if(cached&&cached.sig===sig){st={...cached.state};}
+  else{
+   st=await getDoc(env,runtimeKey(s.id),null);
+  }
+  if(!st){
+   // Como no motor V23, nao disparar um cadastro sem cursor confirmado.
+   st={lastSeq:maxSeq,recent:[],active:null,attentionEventId:null};
+  }
+  if(rebaseSeq>Number(st.lastSeq||0)){
+   if(st.active||st.attentionEventId)refreshed.add(s.id);
+   st={lastSeq:rebaseSeq,recent:[],active:null,attentionEventId:null};
+  }
+  st.recent=v24Compact(st.recent).slice(-Math.max(1,s.pattern.length-1));
+  states.set(s.id,st);sigs.set(s.id,sig);
+ });
+ const scoreFor=async(s)=>{
+  if(!scoreMap.has(s.id))scoreMap.set(s.id,await scoreRead(env,s.id));
+  return scoreMap.get(s.id);
+ };
+ let ownerId=states.has(gameState.ownerId)?gameState.ownerId:null;
+ let attentionOwnerId=strategies.find(s=>states.get(s.id)?.attentionEventId)?.id||null;
+ if(!ownerId){const oldOwner=strategies.find(s=>states.get(s.id)?.active);if(oldOwner)ownerId=oldOwner.id;}
+ for(const s of strategies){const st=states.get(s.id);if(st?.active&&s.id!==ownerId){st.active=null;refreshed.add(s.id)}}
+ for(const r of fresh){
+  let closedInThisRound=false;
+  const preferred=!ownerId?strategies.find(s=>{const st=states.get(s.id);return st&&r.seq>Number(st.lastSeq||0)&&matchPat([...(st.recent||[]),r],s.pattern,s.jokerWhite)}):null;
+  const events=[],scoreDirty=new Set(),runtimeDirty=new Set();
+  for(const s of strategies){
+   const st=states.get(s.id);if(!st||r.seq<=Number(st.lastSeq||0))continue;
+   const history=[...(st.recent||[]),r],full=matchPat(history,s.pattern,s.jokerWhite);
+   const almost=global.templates?.attention?.saved===true&&s.pattern.length>=2&&matchPat(history,s.pattern.slice(0,-1),s.jokerWhite);
+   if(st.attentionEventId&&(full||!almost||ownerId||preferred||!settings.botEnabled)){
+    try{await dismissAttention(env,s.id,st.attentionEventId)}
+    catch(e){console.warn('V24 attention cleanup:',String(e.message||e).slice(0,100))}
+    st.attentionEventId=null;runtimeDirty.add(s.id);if(attentionOwnerId===s.id)attentionOwnerId=null;
+   }
+   if((ownerId&&ownerId!==s.id)||(preferred&&preferred.id!==s.id)){
+    if(st.active){st.active=null;runtimeDirty.add(s.id)}
+   }else if(st.active){
+    const a=st.active;let type;
+    if(r.color==='white'){type='win_white';(await scoreFor(s)).white++}
+    else if(r.color===s.target){type=s.target==='red'?'win_red':'win_black';(await scoreFor(s)).green++}
+    else if(a.step<s.maxGale){a.step++;type='gale'+a.step;(await scoreFor(s))[type]++}
+    else{type='red';(await scoreFor(s)).red++}
+    scoreDirty.add(s.id);runtimeDirty.add(s.id);
+    events.push({s,r,type,step:a.step});
+    if(['red','win_white','win_red','win_black'].includes(type)){st.active=null;ownerId=null;closedInThisRound=true;}
+   }else if(!ownerId&&!closedInThisRound&&full&&(!preferred||preferred.id===s.id)){
+    st.active={step:0,roundId:r.id};ownerId=s.id;
+    (await scoreFor(s)).entries++;scoreDirty.add(s.id);runtimeDirty.add(s.id);
+    events.push({s,r,type:s.target==='red'?'entry_red':s.target==='white'?'entry_white':'entry_black',step:0});
+   }else if(!ownerId&&!preferred&&!closedInThisRound&&!attentionOwnerId&&settings.botEnabled&&almost&&!st.attentionEventId){
+    st.attentionEventId=s.id+'_'+r.id+'_attention';attentionOwnerId=s.id;runtimeDirty.add(s.id);
+    events.push({s,r,type:'attention',step:0});
+   }
+   st.recent=v24Compact(history).slice(-Math.max(1,s.pattern.length-1));st.lastSeq=r.seq;
+  }
+  // Um documento R2 por jogo, em vez de ler e escrever estado e placar de
+  // centenas de estrategias em toda rodada sem mudanca de pontuacao.
+  const values={};for(const s of strategies){const st=states.get(s.id);if(st)values[s.id]={sig:sigs.get(s.id),state:st};}
+  await putDoc(env,v24SnapshotKey(game.id),{version:24,gameId:game.id,lastSeq:r.seq,states:values,updatedAt:now()});
+  await Promise.all([
+   v24Each([...new Set([...runtimeDirty,...refreshed])],6,async id=>putDoc(env,runtimeKey(id),states.get(id))),
+   v24Each([...scoreDirty],6,async id=>{const score=scoreMap.get(id);score.updatedAt=now();await putDoc(env,scoreKey(id),score)})
+  ]);
+  refreshed.clear();
+  for(const e of events)await fireEvent(env,settings,e.s,e.r,e.type,e.step,deadlineAtMs,global);
+  await putDoc(env,v11GameKey(game.id),{ownerId,lastSeq:r.seq,updatedAt:now()});
+ }
+}
+
 export async function processNewRounds(env,game,records,deadlineAtMs=0){
  if(!env.R2||!records.length)return;
- const strategies=(await getDoc(env,K.strategies,[])).filter(s=>s.enabled&&!s.archived&&s.gameId===game.id);
+ const allStrategies=await getDoc(env,K.strategies,[]);
+ const strategies=allStrategies.filter(s=>s.enabled&&!s.archived&&s.gameId===game.id);
  if(!strategies.length)return;
+ // V24: snapshot persistente para bases grandes. O modo rapido, uma vez
+ // iniciado, continua valido mesmo apos pausar diversas estrategias.
+ const fastSnapshot=await getDoc(env,v24SnapshotKey(game.id),null);
+ if(allStrategies.length>64||strategies.length>48||fastSnapshot?.version===24)
+  return v24ProcessMany(env,game,records,deadlineAtMs,strategies,fastSnapshot);
  const settings=await getDoc(env,K.settings,settingsDefault);
  const ordered=[...records].filter(x=>Number.isInteger(x.seq)).sort((a,b)=>a.seq-b.seq);
  if(!ordered.length)return;
@@ -745,7 +852,7 @@ export async function routeAdmin(req,env,url){
        const max=Math.max(0,...(latest.items||[]).map(x=>Number(x.seq)||0));
        await Promise.all(changed.map(s=>putDoc(env,runtimeKey(s.id),{lastSeq:max,recent:[],active:null})));
      }
-     await putDoc(env,K.strategies,all.map(s=>idSet.has(s.id)&&!s.archived&&s.enabled!==desired?{...s,enabled:desired,updatedAt:now()}:s));
+     await putDoc(env,K.strategies,all.map(s=>idSet.has(s.id)&&!s.archived&&s.enabled!==desired?{...s,enabled:desired,updatedAt:now(),revision:crypto.randomUUID()}:s));
      const warnings=[];
      if(!desired){
        // Persistir o estado pausado primeiro; depois limpar avisos/bloqueios.
@@ -1060,7 +1167,14 @@ async function runPurgeQueue(env){
 export async function scheduledAdmin(env){
  if(!env.R2)return;
  const st=await getDoc(env,K.settings,settingsDefault),strategies=await getDoc(env,K.strategies,[]);
- if(st.resetMidnight){for(const s of strategies.filter(x=>!x.archived)){const score=await getDoc(env,scoreKey(s.id),scoreDefault(dayBR()));if(score.day!==dayBR())await resetScore(env,s.id);}}
+ // V24: sem leitura de centenas de placares a CADA MINUTO.
+ // scoreRead() ja devolve placar zerado quando o dia muda; no proximo
+ // evento o placar do dia e persistido. Sem apagar placares anteriores.
+ if(st.resetMidnight){
+  const today=dayBR(),k=ROOT+'maintenance/last-score-day-v24.json';
+  const previous=await getDoc(env,k,null);
+  if(previous?.day!==today)await putDoc(env,k,{day:today,checkedAt:now()});
+ }
  await cleanupOldAttention(env);
  await runPurgeQueue(env);
  if(!st.botEnabled||!await hasBot(env))return;
