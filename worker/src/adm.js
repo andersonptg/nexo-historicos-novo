@@ -148,7 +148,7 @@ async function tgUsing(token,method,body){
 }
 async function tg(env,method,body){return tgUsing(await botToken(env),method,body)}
 
-async function botAdmin(env,chatId){try{const me=await tg(env,'getMe',{});const item=await tg(env,'getChatMember',{chat_id:chatId,user_id:me.id});return ['administrator','creator'].includes(item.status)&&item.can_post_messages!==false}catch{return false}}
+async function botAdmin(env,chatId,sharedToken='',identity=null){try{const me=identity?await identity():(sharedToken?await tgUsing(sharedToken,'getMe',{}):await tg(env,'getMe',{}));const item=sharedToken?await tgUsing(sharedToken,'getChatMember',{chat_id:chatId,user_id:me.id}):await tg(env,'getChatMember',{chat_id:chatId,user_id:me.id});return ['administrator','creator'].includes(item.status)&&item.can_post_messages!==false}catch{return false}}
 const normChat=c=>c&&String(c.id).match(/^-?\d{1,20}$/)&&['group','supergroup','channel'].includes(c.type);
 async function discoverChat(env,chat,{force=false}={}){
   if(!normChat(chat))return false;
@@ -336,24 +336,24 @@ const v11ChatTag=id=>String(id).replace(/[^\d-]/g,'').replace('-','m');
 const v11StageKey=(evt,chatId)=>V11_STAGE_ROOT+evt.id+'_'+v11ChatTag(chatId)+'.json';
 const v11BlockKey=chatId=>V11_BLOCK_ROOT+v11ChatTag(chatId)+'.json';
 const V11_ADMIN_CACHE=new Map();
-async function v11IsAdmin(env,group){
+async function v11IsAdmin(env,group,sharedToken='',identity=null){
  if(group.private)return true;
  const id=String(group.id),old=V11_ADMIN_CACHE.get(id);
  if(old&&old.until>now())return old.ok;
- const ok=await botAdmin(env,id);
+ const ok=await botAdmin(env,id,sharedToken,identity);
  if(V11_ADMIN_CACHE.size>64)V11_ADMIN_CACHE.clear();
  V11_ADMIN_CACHE.set(id,{ok,until:now()+(ok?180:5)});
  return ok;
 }
-async function transmit(env,group,evt){
- if(!await v11IsAdmin(env,group))throw Error('Bot nao e administrador deste grupo');
+async function transmit(env,group,evt,sharedToken='',identity=null){
+ if(!await v11IsAdmin(env,group,sharedToken,identity))throw Error('Bot nao e administrador deste grupo');
  // Testes manuais e placares nao compartilham estado com os sinais.
  const tracked=!!evt.id;
  const stageKey=tracked?v11StageKey(evt,group.id):null;
  const initial={eventId:evt.id||'',chatId:String(group.id),confirmed:{},uncertain:null,completed:false,updatedAt:now()};
  const progress=tracked?await getDoc(env,stageKey,initial):initial;
  // V12.2: resolver o token uma única vez por evento, não em cada balão.
- const deliveryToken=await botToken(env);
+ const deliveryToken=sharedToken||await botToken(env);
  const gate=tracked?await getDoc(env,v11BlockKey(group.id),null):null;
  if(tracked&&gate&&gate.eventId!==evt.id)throw Error('Chat aguardando revisao do ciclo '+gate.eventId);
  if(tracked&&progress.inFlight&&!progress.confirmed[progress.inFlight]){
@@ -427,6 +427,11 @@ async function dispatch(env,config,evt,{privateOnly=false}={}){
  const all=privateOnly?[]:await getDoc(env,K.groups,[]);
  const candidates=[...privateChat,...all.filter(x=>x.selected&&x.admin).slice(0,5)];
  const targets=candidates.filter((g,i)=>candidates.findIndex(x=>String(x.id)===String(g.id))===i);
+ // V25: um token e uma consulta getMe compartilhados por evento.
+ // Mantem getChatMember por grupo, etapas duraveis e ordem dentro de cada chat.
+ const sharedDeliveryToken=targets.length?await botToken(env):'';
+ let sharedBotIdentityPromise;
+ const sharedBotIdentity=()=>sharedBotIdentityPromise||(sharedBotIdentityPromise=tgUsing(sharedDeliveryToken,'getMe',{}));
  await Promise.allSettled(targets.map(async(group)=>{
    if(evt.type==='attention'){
     const tracked=await getDoc(env,attentionKey(evt.strategyId,evt.id),null);
@@ -443,7 +448,7 @@ async function dispatch(env,config,evt,{privateOnly=false}={}){
        const tracked=await getDoc(env,attentionKey(evt.strategyId,evt.id),null);
        if(!tracked?.active){await env.R2.delete?.(key);return}
      }
-     await transmit(env,group,evt);
+     await transmit(env,group,evt,sharedDeliveryToken,sharedBotIdentity);
      await putDoc(env,sentKey(uid),{id:uid,sentAt:now()});
      await env.R2.delete?.(key);
    }catch(e){
@@ -454,7 +459,7 @@ async function dispatch(env,config,evt,{privateOnly=false}={}){
  }));
 }
 
-async function fireEvent(env,settings,strategy,r,type,step,deadlineAtMs=0,globalCache=null){
+async function fireEvent(env,settings,strategy,r,type,step,deadlineAtMs=0,globalCache=null,numberLookup=null){
  // O estado/placar continua correto, mas notificacoes velhas nao serao enviadas.
  if(deadlineAtMs&&Date.now()>=deadlineAtMs){console.warn('V22: evento vencido nao enviado',type,r.seq);return;}
  const global=globalCache||await globalDoc(env),key=GLOBAL_MAP[type],template=global?.templates?.[key];
@@ -478,8 +483,8 @@ async function fireEvent(env,settings,strategy,r,type,step,deadlineAtMs=0,global
    evt.stoneAfter=formatMessage(stoneTemplate,r,strategy,step);
   }
  if(['entry_black','entry_red','entry_white'].includes(type)&&String(media.type||'text')==='text'){
-    const ordered=(await getDoc(env,K.strategies,[])).filter(x=>!x.archived);
-    const number=ordered.findIndex(x=>x.id===strategy.id)+1;
+    // V25: no caminho de alta carga, evita reler todo o catalogo no evento.
+    const number=numberLookup?.get(strategy.id)||((await getDoc(env,K.strategies,[])).filter(x=>!x.archived).findIndex(x=>x.id===strategy.id)+1);
     if(number>0){const digits=String(number).replace(/[0-9]/g,c=>'⁰¹²³⁴⁵⁶⁷⁸⁹'[Number(c)]);evt.message+='\n\nᵉˢᵗ '+digits;}
   }
  await putDoc(env,eventKey(evt.id),evt);
@@ -546,7 +551,7 @@ async function v24Each(items,max,work){
 }
 const v24Sig=s=>JSON.stringify([s.enabled,s.updatedAt,s.pattern,s.target,s.maxGale,s.jokerWhite,s.revision||'']);
 const v24Compact=rows=>(rows||[]).map(r=>({number:r.number,color:r.color}));
-async function v24ProcessMany(env,game,records,deadlineAtMs,strategies,snapshot){
+async function v24ProcessMany(env,game,records,deadlineAtMs,strategies,snapshot,allStrategies=[],diagnostics=null){
  const ordered=[...records].filter(r=>Number.isInteger(r.seq)).sort((a,b)=>a.seq-b.seq);
  if(!ordered.length)return;
  const gameState=await getDoc(env,v11GameKey(game.id),{ownerId:null,lastSeq:0});
@@ -554,6 +559,9 @@ async function v24ProcessMany(env,game,records,deadlineAtMs,strategies,snapshot)
  if(!fresh.length)return;
  const settings=await getDoc(env,K.settings,settingsDefault);
  const global=await globalDoc(env);
+ // V25: manter a mesma numeracao exibida no Telegram sem nova leitura R2.
+ const strategyNumbers=new Map(allStrategies.filter(s=>!s.archived).map((s,i)=>[s.id,i+1]));
+ let analysisStarted=Date.now();
  const rebaseSeq=Math.max(0,Number(gameState.rebaseSeq)||0);
  const states=new Map(),sigs=new Map(),scoreMap=new Map(),refreshed=new Set();
  const maxSeq=Math.max(...fresh.map(r=>r.seq));
@@ -583,13 +591,25 @@ async function v24ProcessMany(env,game,records,deadlineAtMs,strategies,snapshot)
  if(!ownerId){const oldOwner=strategies.find(s=>states.get(s.id)?.active);if(oldOwner)ownerId=oldOwner.id;}
  for(const s of strategies){const st=states.get(s.id);if(st?.active&&s.id!==ownerId){st.active=null;refreshed.add(s.id)}}
  for(const r of fresh){
+  // V25: mesmo resultado, padrao e historico geram a mesma verificacao.
+  // Compartilhar a verificacao evita milhares de repeticoes em regras iguais.
+  const patternCache=new Map();
+  const matches=(st,s,almost=false)=>{
+   const pattern=almost?s.pattern.slice(0,-1):s.pattern;
+   const tail=pattern.length>1?(st.recent||[]).slice(-(pattern.length-1)):[];
+   const key=pattern.join('\u001f')+'|'+(s.jokerWhite?'1':'0')+'|'+[...tail,r].map(x=>String(x.number)+':'+x.color).join(',');
+   if(patternCache.has(key))return patternCache.get(key);
+   const ok=matchPat([...tail,r],pattern,s.jokerWhite);
+   patternCache.set(key,ok);
+   return ok;
+  };
   let closedInThisRound=false;
-  const preferred=!ownerId?strategies.find(s=>{const st=states.get(s.id);return st&&r.seq>Number(st.lastSeq||0)&&matchPat([...(st.recent||[]),r],s.pattern,s.jokerWhite)}):null;
+  const preferred=!ownerId?strategies.find(s=>{const st=states.get(s.id);return st&&r.seq>Number(st.lastSeq||0)&&matches(st,s)}):null;
   const events=[],scoreDirty=new Set(),runtimeDirty=new Set();
   for(const s of strategies){
    const st=states.get(s.id);if(!st||r.seq<=Number(st.lastSeq||0))continue;
-   const history=[...(st.recent||[]),r],full=matchPat(history,s.pattern,s.jokerWhite);
-   const almost=global.templates?.attention?.saved===true&&s.pattern.length>=2&&matchPat(history,s.pattern.slice(0,-1),s.jokerWhite);
+   const history=[...(st.recent||[]),r],full=matches(st,s);
+   const almost=global.templates?.attention?.saved===true&&s.pattern.length>=2&&matches(st,s,true);
    if(st.attentionEventId&&(full||!almost||ownerId||preferred||!settings.botEnabled)){
     try{await dismissAttention(env,s.id,st.attentionEventId)}
     catch(e){console.warn('V24 attention cleanup:',String(e.message||e).slice(0,100))}
@@ -624,13 +644,17 @@ async function v24ProcessMany(env,game,records,deadlineAtMs,strategies,snapshot)
    v24Each([...new Set([...runtimeDirty,...refreshed])],6,async id=>putDoc(env,runtimeKey(id),states.get(id))),
    v24Each([...scoreDirty],6,async id=>{const score=scoreMap.get(id);score.updatedAt=now();await putDoc(env,scoreKey(id),score)})
   ]);
+  if(diagnostics)diagnostics.analysisMs=(diagnostics.analysisMs||0)+Date.now()-analysisStarted;
   refreshed.clear();
-  for(const e of events)await fireEvent(env,settings,e.s,e.r,e.type,e.step,deadlineAtMs,global);
+  const deliveryStarted=Date.now();
+  for(const e of events)await fireEvent(env,settings,e.s,e.r,e.type,e.step,deadlineAtMs,global,strategyNumbers);
+  if(diagnostics)diagnostics.deliveryMs=(diagnostics.deliveryMs||0)+Date.now()-deliveryStarted;
   await putDoc(env,v11GameKey(game.id),{ownerId,lastSeq:r.seq,updatedAt:now()});
+  analysisStarted=Date.now();
  }
 }
 
-export async function processNewRounds(env,game,records,deadlineAtMs=0){
+export async function processNewRounds(env,game,records,deadlineAtMs=0,diagnostics=null){
  if(!env.R2||!records.length)return;
  const allStrategies=await getDoc(env,K.strategies,[]);
  const strategies=allStrategies.filter(s=>s.enabled&&!s.archived&&s.gameId===game.id);
@@ -639,7 +663,7 @@ export async function processNewRounds(env,game,records,deadlineAtMs=0){
  // iniciado, continua valido mesmo apos pausar diversas estrategias.
  const fastSnapshot=await getDoc(env,v24SnapshotKey(game.id),null);
  if(allStrategies.length>64||strategies.length>48||fastSnapshot?.version===24)
-  return v24ProcessMany(env,game,records,deadlineAtMs,strategies,fastSnapshot);
+  return v24ProcessMany(env,game,records,deadlineAtMs,strategies,fastSnapshot,allStrategies,diagnostics);
  const settings=await getDoc(env,K.settings,settingsDefault);
  const ordered=[...records].filter(x=>Number.isInteger(x.seq)).sort((a,b)=>a.seq-b.seq);
  if(!ordered.length)return;

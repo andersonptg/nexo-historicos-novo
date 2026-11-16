@@ -121,3 +121,53 @@ test('V24: codigo preserva caminhos de seguranca e o motor antigo para projetos 
  assert.match(src,/await Promise\.all\(\[putDoc\(env,runtimeKey\(s\.id\),state\)/,'caminho tradicional preservado');
  assert.match(src,/v22ExpiredEvent/,'sinais antigos continuam bloqueados');
 });
+
+
+test('V25: 265 regras de padrao repetido preservam so uma entrada e um WIN, com diagnostico',async()=>{
+ const h=harness(265);
+ h.put(names.owner,{ownerId:null,lastSeq:100});
+ await resetAfterCatchup(h.env,game,[h.round(101,4,'red')]);
+ await processNewRounds(h.env,game,[h.round(102,3,'red')]);
+ const diag={analysisMs:null,deliveryMs:null};
+ await processNewRounds(h.env,game,[h.round(103,5,'red')],0,diag);
+ assert.equal(h.get(ROOT+'scores/'+h.strategies[0].id+'.json').entries,1);
+ assert.ok(Number.isFinite(diag.analysisMs) && diag.analysisMs>=0);
+ assert.ok(Number.isFinite(diag.deliveryMs) && diag.deliveryMs>=0);
+ const before=h.raw.size;
+ await processNewRounds(h.env,game,[h.round(103,5,'red')]);
+ assert.equal(h.raw.size,before,'replay do resultado nao duplica estado/evento');
+ await processNewRounds(h.env,game,[h.round(104,11,'black')]);
+ assert.equal(h.get(ROOT+'scores/'+h.strategies[0].id+'.json').green,1);
+ assert.equal([...h.raw.keys()].filter(k=>k.startsWith(ROOT+'events/')).length,2);
+});
+
+test('V25: diagnostico, reutilizacao de token e atualizacao da aba preservados',()=>{
+ const adm=readFileSync(new URL('../worker/src/adm.js',import.meta.url),'utf8');
+ const index=readFileSync(new URL('../worker/src/index.js',import.meta.url),'utf8');
+ const site=readFileSync(new URL('../worker/public/app.js',import.meta.url),'utf8');
+ assert.match(adm,/const patternCache=new Map\(\)/);
+ assert.match(adm,/sharedDeliveryToken,sharedBotIdentity/);
+ assert.match(index,/last_analysis_ms/);
+ assert.match(index,/last_delivery_ms/);
+ assert.match(site,/visibilitychange/);
+ assert.match(site,/pageshow/);
+});
+
+
+test('V25.2: busca por numero e exclusao confirmada preservam API protegida',()=>{
+ const fs=readFileSync;
+ const js=fs(new URL('../worker/public/adm-v17.js',import.meta.url),'utf8');
+ const css=fs(new URL('../worker/public/adm-v17.css',import.meta.url),'utf8');
+ const backend=fs(new URL('../worker/src/adm.js',import.meta.url),'utf8');
+ const html=fs(new URL('../worker/public/adm.html',import.meta.url),'utf8');
+ assert.match(js,/function v25MatchesSearch\(/);
+ assert.match(js,/const visible=items\.map\(/);
+ assert.match(js,/v25-strategy-search/);
+ assert.match(js,/\/purge'/);
+ assert.match(js,/id:s\.id,confirm:true/);
+ assert.match(js,/v25ConfirmDelete/);
+ assert.match(css,/\.v25-rule-delete/);
+ assert.match(css,/\.v25-delete-overlay/);
+ assert.match(html,/adm-v17\.js\?v=25\.2\.0/);
+ assert.match(backend,/match\[2\]==='purge'/);
+});

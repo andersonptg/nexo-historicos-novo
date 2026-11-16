@@ -113,7 +113,7 @@ const V22_SIGNAL_TTL_MS=14000;
 const v22IsStale=job=>!Number.isSafeInteger(job?.enqueuedAtMs)||job.enqueuedAtMs<=0||Date.now()-job.enqueuedAtMs>=V22_SIGNAL_TTL_MS;
 // NEXO_V18_1_DURABLE_QUEUE: processar sinais DEPOIS do ACK R2, na ordem dos lotes.
 // O job foi persistido no storage do Durable Object ANTES da resposta HTTP 200.
-async function v18_1ProcessQueuedSignal(env,job){
+async function v18_1ProcessQueuedSignal(env,job,diagnostics=null){
  const game=gameById(job.gameId);
  if(!game||!Array.isArray(job.rows)||!job.rows.length)throw Error('Job de sinais invalido');
  const rows=job.rows,expired=v22IsStale(job);
@@ -123,7 +123,7 @@ async function v18_1ProcessQueuedSignal(env,job){
   if(!V17_WHITE_PAUSED)await resetWhiteAfterCatchup(env,game,rows);
  }else{
   if(!V17_WHITE_PAUSED&&await whiteShouldBlockLegacy(env))await resetAfterCatchup(env,game,rows);
-  else await processNewRounds(env,game,rows,job.enqueuedAtMs+V22_SIGNAL_TTL_MS);
+  else await processNewRounds(env,game,rows,job.enqueuedAtMs+V22_SIGNAL_TTL_MS,diagnostics);
   if(!V17_WHITE_PAUSED)await processWhiteRounds(env,game,rows);
  }
 }
@@ -164,6 +164,8 @@ export class NexoCoordinator {
    }
    const first=jobs.entries().next().value;
    const started=Date.now(),batchSize=old.length||1;
+   // V25: medir analise/persistencia separadamente de eventos e Telegram.
+   const diagnostics={analysisMs:null,deliveryMs:null};
    const ageRef=old.length?old[0][1]:first[1];
    const age=Number(ageRef?.enqueuedAtMs)>0?Math.max(0,started-ageRef.enqueuedAtMs):null;
    try{
@@ -189,7 +191,7 @@ export class NexoCoordinator {
      console.warn('NEXO V23: lotes antigos agrupados sem sinais',old.length);
     }else{
      const [key,job]=first;
-     await v18_1ProcessQueuedSignal(this.env,job);
+     await v18_1ProcessQueuedSignal(this.env,job,diagnostics);
      await st.delete(key);
     }
     try{
@@ -201,6 +203,8 @@ export class NexoCoordinator {
       lastBatchSize:batchSize,
       lastDurationMs:Date.now()-started,
       lastQueueAgeMs:age,
+      lastAnalysisMs:diagnostics.analysisMs,
+      lastDeliveryMs:diagnostics.deliveryMs,
       lastAtMs:Date.now()
      });
     }catch(e){console.warn('V23 metricas:',String(e?.message||e).slice(0,80));}
@@ -221,7 +225,7 @@ export class NexoCoordinator {
       const pending=await this.state.storage.list({prefix:'nexo-v18-job/',limit:100});
       const first=pending.values().next().value;
       const metrics=await this.state.storage.get('nexo-v22-metrics')||{};
-      return out({ok:true,version:22,pending_jobs:pending.size,pending_capped:pending.size>=100,oldest_age_ms:first?.enqueuedAtMs?Math.max(0,Date.now()-first.enqueuedAtMs):null,processed:Number(metrics.processed||0),expired:Number(metrics.expired||0),last_duration_ms:metrics.lastDurationMs??null,last_queue_age_ms:metrics.lastQueueAgeMs??null,last_processed_at:metrics.lastAtMs??null,last_batch_size:metrics.lastBatchSize??null,coalesced:Number(metrics.coalesced||0)});
+      return out({ok:true,version:22,pending_jobs:pending.size,pending_capped:pending.size>=100,oldest_age_ms:first?.enqueuedAtMs?Math.max(0,Date.now()-first.enqueuedAtMs):null,processed:Number(metrics.processed||0),expired:Number(metrics.expired||0),last_duration_ms:metrics.lastDurationMs??null,last_queue_age_ms:metrics.lastQueueAgeMs??null,last_processed_at:metrics.lastAtMs??null,last_batch_size:metrics.lastBatchSize??null,last_analysis_ms:metrics.lastAnalysisMs??null,last_delivery_ms:metrics.lastDeliveryMs??null,coalesced:Number(metrics.coalesced||0)});
     }
    if(path==='/v11/cron'){await Promise.allSettled(V17_WHITE_PAUSED?[scheduledAdmin(this.env)]:[scheduledAdmin(this.env),scheduledWhite(this.env)]);return out({ok:true});}
    return out({error:'Rota interna invalida'},404);

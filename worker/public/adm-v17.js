@@ -8,6 +8,7 @@
  const tokenColor=t=>t==='red'||t==='black'||t==='white'?t:t==='*'?'any':t.startsWith('n:')?(+t.slice(2)===0?'white':+t.slice(2)<=7?'red':'black'):'any';
  const label=t=>t==='red'?'🔴':t==='black'?'⚫':t==='white'?'⚪':t==='*'?'★':t.startsWith('n:')?t.slice(2):'?';
  let analysis=null,searching=false,pageIndex=0,visibleTarget='all',selectedScore='__all__',touched=false;
+ let v25RuleSearch='',v25Deleting=false;
  function stoneRow(tokens){const row=el('div','v17-stones');for(const t of tokens){const x=el('span','v17-stone '+tokenColor(t),label(t));x.title=t;x.setAttribute('aria-label',t);row.append(x)}return row}
  function notice(text,bad=false){const x=$('v17-status');if(x){x.textContent=text;x.style.color=bad?'#ffb0bf':'#83dfc2'}if(typeof pop==='function')pop(text,bad)}
  const wrapper=(title,desc)=>{const root=el('section','v17-section');root.append(el('h3','',title));if(desc)root.append(el('p','v17-muted',desc));return root};
@@ -22,6 +23,16 @@
   const startAll=btn('▶ Ativar todas',()=>void toggleAll(true),'primary');startAll.id='v21-activate-all';
   const stopAll=btn('Ⅱ Desativar todas',()=>void toggleAll(false),'danger');stopAll.id='v21-disable-all';
   a.append(btn('＋ Nova estratégia',()=>showEditor(null),'primary'),startAll,stopAll,btn('↻ Atualizar',()=>void safeReload()));root.append(h);
+  // V25.2: somente filtrar cards na interface; nao reordenar prioridades do motor.
+  const bar=el('div','v25-rule-search-bar');
+  const search=el('input','v25-rule-search');search.id='v25-strategy-search';
+  search.type='search';search.autocomplete='off';search.inputMode='search';
+  search.placeholder='Buscar por número (ex.: 25) ou nome';
+  search.setAttribute('aria-label','Procurar estratégia pelo número ou nome');
+  search.addEventListener('input',()=>{v25RuleSearch=search.value;paintRules()});
+  const clear=btn('✕ Limpar',()=>{search.value='';v25RuleSearch='';paintRules();search.focus()});
+  const count=el('small','v25-rule-search-count','');count.id='v25-strategy-search-count';
+  bar.append(search,clear,count);root.append(bar);
   const wrap=wrapper('Regras disponíveis','Toque em Editar apenas quando quiser alterar o padrão ou as mensagens. Os sinais são executados somente após ativar o robô.');const cards=el('div','v17-strategies');cards.id='v17-cards';wrap.append(cards);root.append(wrap);
   root.append(el('p','v17-muted','A cor e os números de cada pedra são exibidos como cadastrados. Se a fonte atrasar, o NEXO não pode antecipar resultados.'));
   page.querySelector('.pagehead')?.insertAdjacentElement('afterend',root);
@@ -30,16 +41,60 @@
  function scoreTotals(scores){const x={entries:0,green:0,white:0,red:0,gale1:0,gale2:0};for(const row of scores||[])for(const k of Object.keys(x))x[k]+=Number(row[k]||0);return x}
  function fillScoreCard(host,title,value,cls=''){const a=el('div','v17-score '+cls);a.append(el('small','',title),el('strong','',value));host.append(a)}
  function showScore(s){selectedScore=s?.id||'__all__';page('placares');renderPremiumScores();$('v17-scoreboard')?.scrollIntoView({behavior:'smooth',block:'start'})}
+ function v25MatchesSearch(s,index,input){
+  const query=String(input||'').trim().toLocaleLowerCase('pt-BR');
+  if(!query)return true;
+  const asNumber=query.replace(/^(?:estrat[eé]gia|n[º°o.]?|#)\s*/i,'').trim();
+  if(/^\d+$/.test(asNumber))return Number(asNumber)===index+1;
+  return String(s.name||'').toLocaleLowerCase('pt-BR').includes(query);
+ }
  function paintRules(){const host=$('v17-cards');if(!host||!model)return;host.replaceChildren();const items=model.strategies||[];
   if(!items.length){host.append(el('p','v17-blank','Nenhuma regra cadastrada. Utilize Nova estratégia ou exporte um padrão da análise histórica.'));return}
-  for(const [index,s] of items.entries()){
+  const visible=items.map((s,index)=>({s,index})).filter(({s,index})=>v25MatchesSearch(s,index,v25RuleSearch));
+  const count=$('v25-strategy-search-count');if(count)count.textContent=visible.length+' de '+items.length+' estratégias';
+  if(!visible.length){host.append(el('p','v17-blank','Nenhuma estratégia corresponde à busca. Toque em Limpar para ver todas.'));return}
+  for(const {index,s} of visible){
    const card=el('article','v17-rule');const top=el('div','v17-rule-top');const left=el('div');left.append(el('span','v17-idx','ESTRATÉGIA '+String(index+1).padStart(2,'0')),el('div','v17-rule-title',s.name||'Regra sem nome'));
    top.append(left,el('span','v17-pill '+(s.enabled?'on':'off'),s.enabled?'● ATIVA':'○ PAUSADA'));card.append(top,stoneRow(s.pattern||[]));
    card.append(el('small','v17-muted',(s.target==='white'?'⚪ SOMENTE BRANCO':s.target==='red'?'🔴 VERMELHO + BRANCO':'⚫ PRETO + BRANCO')+' • até Gale '+(s.maxGale||0)));
    const actions=labelButtons(card);
-   actions.append(btn('✎ Editar',()=>showEditor(s)),btn('▥ Placar',()=>showScore(s)),btn(s.enabled?'Ⅱ Pausar':'▶ Ativar',()=>void toggle(s),s.enabled?'danger':'primary'));
+   actions.append(btn('✎ Editar',()=>showEditor(s)),btn('▥ Placar',()=>showScore(s)),btn(s.enabled?'Ⅱ Pausar':'▶ Ativar',()=>void toggle(s),s.enabled?'danger':'primary'),btn('🗑 Excluir',()=>void v25DeleteRule(s,index+1),'v25-rule-delete'));
    host.append(card);
   }
+ }
+ // V25.2: confirma a operacao pelo numero mostrado; backend confirma o ID real.
+ function v25ConfirmDelete(s,number){return new Promise(resolve=>{
+  const overlay=el('div','v25-delete-overlay');overlay.setAttribute('role','dialog');overlay.setAttribute('aria-modal','true');
+  const modal=el('div','v25-delete-modal'),symbol=el('div','v25-delete-symbol','🗑');
+  const head=el('h3','','Excluir estratégia '+number+'?');head.id='v25-delete-heading';overlay.setAttribute('aria-labelledby',head.id);
+  const name=el('p','v25-delete-name',s.name||'Estratégia sem nome');
+  const desc=el('p','v25-delete-description','Exclusão permanente: apaga o cadastro e placar desta estratégia. O histórico geral e as demais estratégias permanecem.');
+  const hint=el('label','v25-delete-hint','Para confirmar, digite o número '+number+':');
+  const input=el('input','v25-delete-input');input.type='text';input.inputMode='numeric';input.autocomplete='off';
+  input.placeholder=String(number);hint.append(input);
+  const buttons=el('div','v25-delete-actions');
+  let settled=false;
+  const done=value=>{if(settled)return;settled=true;document.removeEventListener('keydown',esc);overlay.remove();resolve(value)};
+  const esc=ev=>{if(ev.key==='Escape')done(false)};
+  const cancel=btn('Cancelar',()=>done(false));
+  const accept=btn('🗑 Excluir definitivamente',()=>done(true),'v25-delete-accept');accept.disabled=true;
+  input.addEventListener('input',()=>{accept.disabled=input.value.trim()!==String(number)});
+  input.addEventListener('keydown',ev=>{if(ev.key==='Enter'){ev.preventDefault();if(!accept.disabled)done(true)}});
+  overlay.addEventListener('click',ev=>{if(ev.target===overlay)done(false)});
+  buttons.append(cancel,accept);modal.append(symbol,head,name,desc,hint,buttons);overlay.append(modal);
+  document.body.append(overlay);document.addEventListener('keydown',esc);input.focus();
+ })}
+ async function v25DeleteRule(s,number){
+  if(v25Deleting)return;
+  const present=(model?.strategies||[]).some(x=>x.id===s.id);if(!present)return;
+  if(!await v25ConfirmDelete(s,number))return;
+  v25Deleting=true;
+  try{
+   await api('strategies/'+s.id+'/purge',payload('POST',{id:s.id,confirm:true}));
+   if(typeof selected!=='undefined'&&selected===s.id)selected='';
+   await safeReload();notice('Estratégia '+number+' excluída. Histórico geral preservado.');
+  }catch(e){notice('Falha ao excluir: '+String(e.message||e),true)}
+  finally{v25Deleting=false}
  }
  async function toggle(s){if(!s.enabled&&!confirm('Ativar a regra '+s.name+' para as próximas rodadas?'))return;
   const payloadData={...s,enabled:!s.enabled};await api('strategies/'+s.id,payload('PUT',payloadData));await safeReload();notice(s.enabled?'Regra pausada.':'Regra ativada.');}

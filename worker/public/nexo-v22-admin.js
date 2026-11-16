@@ -30,6 +30,8 @@
          ['Lotes liberados por agrupamento V23',String(j.coalesced??0)],
          ['Tamanho do ultimo lote tratado',String(j.last_batch_size??'—')],
          ['Duração do último lote',seconds(j.last_duration_ms)],
+         ['Análise e gravação do último lote',seconds(j.last_analysis_ms)],
+         ['Eventos e Telegram do último lote',seconds(j.last_delivery_ms)],
          ['Espera anterior ao último lote',seconds(j.last_queue_age_ms)]
        ]){const row=el('div','v22-line');row.append(el('span','',lab),el('strong','',val));data.append(row);}
        data.append(el('p','v22-muted','Um lote vencido continua no histórico R2, mas não gera sinais antigos. Atrasos da fonte e da rede precisam de medição separada.'));

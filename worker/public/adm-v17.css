@@ -43,3 +43,32 @@
 .v17-example{color:#8fb19f;font-size:12px;padding-top:6px;line-height:1.4}
 .v17-blank{padding:20px;text-align:center;color:#a3b8c6}
 @media(max-width:660px){.v17-score-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.v17-hero{padding:17px}.v17-section{padding:14px}.v17-wrap{margin-top:12px}}
+
+
+/* NEXO V25.2 — busca por numero e exclusao protegida nas estrategias */
+.v25-rule-search-bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:13px 15px;background:linear-gradient(105deg,#132d37,#0e202e);border:1px solid #315c68;border-radius:15px}
+.v25-rule-search{flex:1 1 230px;min-width:150px;height:45px;padding:0 16px;border-radius:11px;border:1px solid #477b83;background:#091c27;color:#f5ffff;font-size:14px;outline:none;box-shadow:inset 0 1px 4px #0004}
+.v25-rule-search::placeholder{color:#a2c4d0}
+.v25-rule-search:focus{border-color:#3ee7b9;box-shadow:0 0 0 3px #3ee7b929}
+.v25-rule-search-count{color:#94d6cb;font-weight:750;font-variant-numeric:tabular-nums}
+.v17-btn.v25-rule-delete{background:linear-gradient(125deg,#742837,#3b1b2a);border:1px solid #c75c76;color:#ffe3e9;border-radius:11px;box-shadow:inset 0 1px 1px #ffffff20;font-weight:850}
+.v17-btn.v25-rule-delete:hover{background:linear-gradient(125deg,#a6364a,#652334);border-color:#f17e97;color:#fff}
+.v17-btn.v25-rule-delete:focus-visible{outline:3px solid #ff8eaa;outline-offset:2px}
+.v25-delete-overlay{position:fixed;inset:0;z-index:99999;display:grid;place-items:center;overflow:auto;background:#050d17d9;padding:16px;backdrop-filter:blur(7px)}
+.v25-delete-modal{width:min(100%,440px);background:linear-gradient(145deg,#1a293a,#111b2b);border:1px solid #aa4e66;border-radius:22px;padding:24px;box-shadow:0 22px 75px #000a;color:#f2f8ff}
+.v25-delete-symbol{width:52px;height:52px;display:grid;place-items:center;border-radius:15px;background:#762b40;color:#ffe0e6;font-size:26px;margin-bottom:10px}
+.v25-delete-modal h3{font-size:22px;margin:4px 0 11px;color:#fff}
+.v25-delete-name{padding:10px 12px;background:#21374c;border:1px solid #476779;border-radius:10px;font-weight:800;overflow-wrap:anywhere}
+.v25-delete-description{font-size:13px;color:#c8d8e7;line-height:1.6;margin:12px 0}
+.v25-delete-hint{display:grid;gap:8px;color:#f6ced8;font-weight:800;margin-top:16px}
+.v25-delete-input{height:46px;border:1px solid #647e8f;border-radius:11px;background:#071721;color:#fff;font-size:18px;padding:0 13px;width:100%;outline:none}
+.v25-delete-input:focus{border-color:#ff87a0;box-shadow:0 0 0 3px #ff87a029}
+.v25-delete-actions{display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;margin-top:20px}
+.v25-delete-actions .v17-btn{min-height:46px}
+.v25-delete-accept{background:#b22b49!important;color:#fff!important;border:1px solid #e35a74!important}
+.v25-delete-accept:disabled{opacity:.45;cursor:not-allowed}
+html[data-nexo-theme="light"] .v25-rule-search-bar{background:#f1f8fa;border-color:#b7d3d9}
+html[data-nexo-theme="light"] .v25-rule-search{background:#fff;color:#142c3c;border-color:#7fa6b1}
+html[data-nexo-theme="light"] .v25-rule-search::placeholder{color:#5b7682}
+html[data-nexo-theme="light"] .v25-rule-search-count{color:#205e60}
+@media(max-width:600px){.v25-rule-search-bar{padding:11px}.v25-rule-search{flex:1 1 100%}.v25-delete-modal{padding:18px}.v25-delete-actions .v17-btn{flex:1 1 auto}}
