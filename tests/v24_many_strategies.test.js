@@ -171,3 +171,27 @@ test('V25.2: busca por numero e exclusao confirmada preservam API protegida',()=
  assert.match(html,/adm-v17\.js\?v=25\.2\.0/);
  assert.match(backend,/match\[2\]==='purge'/);
 });
+
+
+test('V25.3: ownerId sem ciclo ativo nao bloqueia novos sinais', async()=>{
+ const h=harness(165),id=h.strategies[0].id;
+ // Uma regra foi editada/reinicializada e o antigo dono ficou salvo no jogo.
+ // As 165 regras mantem cursor 100, nenhuma com ciclo ativo.
+ h.put(names.owner,{ownerId:id,lastSeq:100});
+ await processNewRounds(h.env,game,[h.round(101,5,'red')]);
+ const savedOwner=h.get(names.owner);
+ assert.equal(savedOwner.lastSeq,101);
+ assert.equal(savedOwner.ownerId,id,'a regra deve abrir um novo ciclo valido');
+ assert.equal(h.get(ROOT+'scores/'+id+'.json').entries,1,'deve gerar exatamente uma entrada');
+ const snapshot=h.get(names.snapshot);
+ assert.equal(snapshot.states[id].state.active.step,0);
+});
+
+test('V25.3: ownerId ativo continua ate resolver a rodada', async()=>{
+ const h=harness(165),id=h.strategies[0].id;
+ h.put(names.owner,{ownerId:id,lastSeq:100});
+ h.put(ROOT+'runtime/'+id+'.json',{lastSeq:100,recent:[h.round(100,5,'red')],active:{step:0,roundId:'round-before'}});
+ await processNewRounds(h.env,game,[h.round(101,11,'black')]);
+ assert.equal(h.get(ROOT+'scores/'+id+'.json').green,1);
+ assert.equal(h.get(names.owner).ownerId,null);
+});

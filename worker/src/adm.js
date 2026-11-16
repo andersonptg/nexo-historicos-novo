@@ -586,7 +586,7 @@ async function v24ProcessMany(env,game,records,deadlineAtMs,strategies,snapshot,
   if(!scoreMap.has(s.id))scoreMap.set(s.id,await scoreRead(env,s.id));
   return scoreMap.get(s.id);
  };
- let ownerId=states.has(gameState.ownerId)?gameState.ownerId:null;
+ let ownerId=states.get(gameState.ownerId)?.active?gameState.ownerId:null;
  let attentionOwnerId=strategies.find(s=>states.get(s.id)?.attentionEventId)?.id||null;
  if(!ownerId){const oldOwner=strategies.find(s=>states.get(s.id)?.active);if(oldOwner)ownerId=oldOwner.id;}
  for(const s of strategies){const st=states.get(s.id);if(st?.active&&s.id!==ownerId){st.active=null;refreshed.add(s.id)}}
@@ -676,7 +676,7 @@ export async function processNewRounds(env,game,records,deadlineAtMs=0,diagnosti
   states.set(s.id,state);scoreMap.set(s.id,await scoreRead(env,s.id));
  }
  const gameState=await getDoc(env,v11GameKey(game.id),{ownerId:null,lastSeq:0});
- let ownerId=states.has(gameState.ownerId)?gameState.ownerId:null;
+ let ownerId=states.get(gameState.ownerId)?.active?gameState.ownerId:null;
  let attentionOwnerId=strategies.find(s=>states.get(s.id)?.attentionEventId)?.id||null;
  // Compatibilidade: uma entrada ativa na V10 continua sendo dona do ciclo.
  if(!ownerId){const oldOwner=strategies.find(s=>states.get(s.id)?.active);if(oldOwner)ownerId=oldOwner.id}
