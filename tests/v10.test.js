@@ -150,8 +150,13 @@ test('V10: exclusão definitiva exige nome exato e preserva banco do jogo, outro
   assert.equal(r.status,200);
   const remaining=h.get('nexo-v3/admin/strategies.json');
   assert.equal(remaining.length,1);assert.equal(remaining[0].id,b.id);
-  assert.equal(h.get('nexo-v3/runtime/'+a.id+'.json'),null);
+  // V25.4: remocao do cadastro e imediata; arquivos da regra sao limpos
+  // pelo cron. Conferir ambas as fases sem perder a protecao do teste.
+  assert.ok(h.get('nexo-v3/maintenance/purge/'+a.id+'.json'));
+  assert.ok(h.get('nexo-v3/runtime/'+a.id+'.json'));
   assert.deepEqual(h.get('nexo-v1/games/brabet-double/latest.json'),{items:[{number:2}]});
+  await scheduledAdmin(h.env);
+  assert.equal(h.get('nexo-v3/runtime/'+a.id+'.json'),null);
   assert.equal(h.get('nexo-v3/events/'+a.id+'_abc_entry_black.json'),null);
   assert.ok(h.get('nexo-v3/runtime/'+b.id+'.json'));
  }finally{h.restore()}

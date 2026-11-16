@@ -9,6 +9,7 @@
  const label=t=>t==='red'?'🔴':t==='black'?'⚫':t==='white'?'⚪':t==='*'?'★':t.startsWith('n:')?t.slice(2):'?';
  let analysis=null,searching=false,pageIndex=0,visibleTarget='all',selectedScore='__all__',touched=false;
  let v25RuleSearch='',v25Deleting=false;
+ const v26SelectedIds=new Set();let v26BulkBusy=false;
  function stoneRow(tokens){const row=el('div','v17-stones');for(const t of tokens){const x=el('span','v17-stone '+tokenColor(t),label(t));x.title=t;x.setAttribute('aria-label',t);row.append(x)}return row}
  function notice(text,bad=false){const x=$('v17-status');if(x){x.textContent=text;x.style.color=bad?'#ffb0bf':'#83dfc2'}if(typeof pop==='function')pop(text,bad)}
  const wrapper=(title,desc)=>{const root=el('section','v17-section');root.append(el('h3','',title));if(desc)root.append(el('p','v17-muted',desc));return root};
@@ -33,6 +34,15 @@
   const clear=btn('✕ Limpar',()=>{search.value='';v25RuleSearch='';paintRules();search.focus()});
   const count=el('small','v25-rule-search-count','');count.id='v25-strategy-search-count';
   bar.append(search,clear,count);root.append(bar);
+  const bulk=el('div','v26-bulk-bar');
+  const selectVisible=btn('☑ Selecionar visíveis',()=>{
+   for(const s of (model?.strategies||[]).filter((s,i)=>v25MatchesSearch(s,i,v25RuleSearch)))v26SelectedIds.add(s.id);
+   paintRules();
+  });
+  const clearSelected=btn('✕ Desmarcar',()=>{v26SelectedIds.clear();paintRules()});
+  const counter=el('span','v26-bulk-count','0 selecionadas');counter.id='v26-bulk-count';
+  const bulkDelete=btn('🗑 Excluir selecionadas',()=>void v26DeleteSelected(),'v25-rule-delete');bulkDelete.id='v26-bulk-delete';bulkDelete.disabled=true;
+  bulk.append(selectVisible,clearSelected,counter,bulkDelete);root.append(bulk);
   const wrap=wrapper('Regras disponíveis','Toque em Editar apenas quando quiser alterar o padrão ou as mensagens. Os sinais são executados somente após ativar o robô.');const cards=el('div','v17-strategies');cards.id='v17-cards';wrap.append(cards);root.append(wrap);
   root.append(el('p','v17-muted','A cor e os números de cada pedra são exibidos como cadastrados. Se a fonte atrasar, o NEXO não pode antecipar resultados.'));
   page.querySelector('.pagehead')?.insertAdjacentElement('afterend',root);
@@ -48,17 +58,40 @@
   if(/^\d+$/.test(asNumber))return Number(asNumber)===index+1;
   return String(s.name||'').toLocaleLowerCase('pt-BR').includes(query);
  }
+ function v26Stats(score){
+  const win=Number(score?.green||0),white=Number(score?.white||0),red=Number(score?.red||0);
+  const closed=win+white+red;
+  const percent=closed?((win+white)*100/closed).toFixed(1).replace('.',',')+'%':'—';
+  const grid=el('div','v26-card-stats');grid.title='Acerto no placar do dia = (WIN + BRANCO) / (WIN + BRANCO + RED). Não indica garantia de sinais futuros.';
+  for(const [name,value,kind] of [['WIN',win,'win'],['BRANCO',white,'white'],['RED',red,'red'],['ACERTO',percent,'rate']]){
+   const item=el('div','v26-stat '+kind+(kind==='rate'&&closed&&red===0?' perfect':''));item.append(el('small','',name),el('strong','',value));grid.append(item);
+  }
+  const note=el('small','v26-card-stats-note',closed+' ciclos encerrados no placar do dia · não é previsão');
+  const container=el('div','v26-card-stats-wrap');container.append(grid,note);return container;
+ }
+ function v26UpdateSelection(){
+  const count=$('v26-bulk-count');if(count)count.textContent=v26SelectedIds.size+' selecionada(s)';
+  const button=$('v26-bulk-delete');if(button)button.disabled=!v26SelectedIds.size||v25Deleting||v26BulkBusy;
+ }
  function paintRules(){const host=$('v17-cards');if(!host||!model)return;host.replaceChildren();const items=model.strategies||[];
+  const present=new Set(items.map(s=>s.id));for(const id of v26SelectedIds)if(!present.has(id))v26SelectedIds.delete(id);
+  const scores=new Map((model.scores||[]).map(row=>[row.id,row]));v26UpdateSelection();
   if(!items.length){host.append(el('p','v17-blank','Nenhuma regra cadastrada. Utilize Nova estratégia ou exporte um padrão da análise histórica.'));return}
   const visible=items.map((s,index)=>({s,index})).filter(({s,index})=>v25MatchesSearch(s,index,v25RuleSearch));
   const count=$('v25-strategy-search-count');if(count)count.textContent=visible.length+' de '+items.length+' estratégias';
   if(!visible.length){host.append(el('p','v17-blank','Nenhuma estratégia corresponde à busca. Toque em Limpar para ver todas.'));return}
   for(const {index,s} of visible){
-   const card=el('article','v17-rule');const top=el('div','v17-rule-top');const left=el('div');left.append(el('span','v17-idx','ESTRATÉGIA '+String(index+1).padStart(2,'0')),el('div','v17-rule-title',s.name||'Regra sem nome'));
+   const card=el('article','v17-rule');if(v26SelectedIds.has(s.id))card.classList.add('v26-selected');
+   const top=el('div','v17-rule-top'),left=el('div');
+   const pick=el('label','v26-rule-select'),check=el('input');check.type='checkbox';check.checked=v26SelectedIds.has(s.id);check.setAttribute('aria-label','Selecionar estratégia '+(index+1)+' para exclusão');
+   check.addEventListener('change',()=>{if(check.checked)v26SelectedIds.add(s.id);else v26SelectedIds.delete(s.id);card.classList.toggle('v26-selected',check.checked);v26UpdateSelection()});
+   pick.append(check,el('span','','Selecionar'));
+   left.append(pick,el('span','v17-idx','ESTRATÉGIA '+String(index+1).padStart(2,'0')),el('div','v17-rule-title',s.name||'Regra sem nome'));
    top.append(left,el('span','v17-pill '+(s.enabled?'on':'off'),s.enabled?'● ATIVA':'○ PAUSADA'));card.append(top,stoneRow(s.pattern||[]));
    card.append(el('small','v17-muted',(s.target==='white'?'⚪ SOMENTE BRANCO':s.target==='red'?'🔴 VERMELHO + BRANCO':'⚫ PRETO + BRANCO')+' • até Gale '+(s.maxGale||0)));
    const actions=labelButtons(card);
    actions.append(btn('✎ Editar',()=>showEditor(s)),btn('▥ Placar',()=>showScore(s)),btn(s.enabled?'Ⅱ Pausar':'▶ Ativar',()=>void toggle(s),s.enabled?'danger':'primary'),btn('🗑 Excluir',()=>void v25DeleteRule(s,index+1),'v25-rule-delete'));
+   card.append(v26Stats(scores.get(s.id)));
    host.append(card);
   }
  }
@@ -90,11 +123,56 @@
   if(!await v25ConfirmDelete(s,number))return;
   v25Deleting=true;
   try{
-   await api('strategies/'+s.id+'/purge',payload('POST',{id:s.id,confirm:true}));
+   await api('strategies/purge-batch',payload('POST',{ids:[s.id],confirm:true}));
+   v26SelectedIds.delete(s.id);
    if(typeof selected!=='undefined'&&selected===s.id)selected='';
-   await safeReload();notice('Estratégia '+number+' excluída. Histórico geral preservado.');
+   try{await reload();notice('Estratégia '+number+' excluída do painel. Limpeza dos arquivos agendada.')}
+   catch(e){notice('Estratégia '+number+' excluída, mas o painel não atualizou: recarregue a página. '+String(e.message||e),true)}
   }catch(e){notice('Falha ao excluir: '+String(e.message||e),true)}
   finally{v25Deleting=false}
+ }
+ // Exclusão múltipla não envia Telegram e não altera as regras não selecionadas.
+ function v26ConfirmBulkDelete(chosen){return new Promise(resolve=>{
+  const overlay=el('div','v25-delete-overlay');overlay.setAttribute('role','dialog');overlay.setAttribute('aria-modal','true');
+  const modal=el('div','v25-delete-modal'),icon=el('div','v25-delete-symbol','🗑');
+  const title=el('h3','','Excluir '+chosen.length+' estratégias?');title.id='v26-delete-title';overlay.setAttribute('aria-labelledby',title.id);
+  const active=chosen.filter(x=>x.s.enabled).length;
+  const info=el('p','v25-delete-description',active+' ativa(s) incluída(s). A remoção é permanente e seus placares individuais serão limpos gradualmente. Histórico geral e demais regras permanecem.');
+  const sample=el('p','v25-delete-name',chosen.slice(0,6).map(x=>'#'+x.number+' '+x.s.name).join(' · ')+(chosen.length>6?' · ...':''));
+  const phrase='EXCLUIR '+chosen.length;
+  const label=el('label','v25-delete-hint','Digite '+phrase+' para confirmar:');
+  const input=el('input','v25-delete-input');input.type='text';input.autocomplete='off';input.placeholder=phrase;label.append(input);
+  const actions=el('div','v25-delete-actions');let resolved=false;
+  const finish=ok=>{if(resolved)return;resolved=true;document.removeEventListener('keydown',escape);overlay.remove();resolve(ok)};
+  const escape=e=>{if(e.key==='Escape')finish(false)};
+  const cancel=btn('Cancelar',()=>finish(false));
+  const accept=btn('🗑 Excluir definitivamente',()=>finish(true),'v25-delete-accept');accept.disabled=true;
+  input.addEventListener('input',()=>{accept.disabled=input.value.trim()!==phrase});
+  input.addEventListener('keydown',e=>{if(e.key==='Enter'&&!accept.disabled){e.preventDefault();finish(true)}});
+  overlay.addEventListener('click',e=>{if(e.target===overlay)finish(false)});
+  actions.append(cancel,accept);modal.append(icon,title,info,sample,label,actions);overlay.append(modal);document.body.append(overlay);document.addEventListener('keydown',escape);input.focus();
+ })}
+ async function v26DeleteSelected(){
+  if(v26BulkBusy||v25Deleting||!v26SelectedIds.size)return;
+  const chosen=(model?.strategies||[]).map((s,index)=>({s,number:index+1})).filter(x=>v26SelectedIds.has(x.s.id));
+  if(!chosen.length){v26SelectedIds.clear();v26UpdateSelection();return}
+  if(!await v26ConfirmBulkDelete(chosen))return;
+  v26BulkBusy=true;v26UpdateSelection();let removed=0;
+  try{
+   for(let i=0;i<chosen.length;i+=10){
+    const ids=chosen.slice(i,i+10).map(x=>x.s.id);
+    const result=await api('strategies/purge-batch',payload('POST',{ids,confirm:true}));
+    removed+=Number(result.deleted||0);
+    for(const id of ids)v26SelectedIds.delete(id);
+    notice('Excluídas '+removed+' de '+chosen.length+' estratégias. Aguarde a próxima confirmação de lote.');
+   }
+   if(typeof selected!=='undefined'&&chosen.some(x=>x.s.id===selected))selected='';
+   try{await reload();notice(removed+' estratégias excluídas. Limpeza em segundo plano.')}
+   catch(e){notice(removed+' exclusões confirmadas, mas o painel não atualizou: recarregue a página. '+String(e.message||e),true)}
+  }catch(e){
+   try{await reload()}catch(_){}
+   notice('Exclusão parcial: '+removed+' de '+chosen.length+' confirmadas. '+String(e.message||e)+' · Não repita sem revisar a lista.',true);
+  }finally{v26BulkBusy=false;v26UpdateSelection()}
  }
  async function toggle(s){if(!s.enabled&&!confirm('Ativar a regra '+s.name+' para as próximas rodadas?'))return;
   const payloadData={...s,enabled:!s.enabled};await api('strategies/'+s.id,payload('PUT',payloadData));await safeReload();notice(s.enabled?'Regra pausada.':'Regra ativada.');}

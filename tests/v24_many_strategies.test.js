@@ -163,12 +163,12 @@ test('V25.2: busca por numero e exclusao confirmada preservam API protegida',()=
  assert.match(js,/function v25MatchesSearch\(/);
  assert.match(js,/const visible=items\.map\(/);
  assert.match(js,/v25-strategy-search/);
- assert.match(js,/\/purge'/);
- assert.match(js,/id:s\.id,confirm:true/);
+ assert.match(js,/strategies\/purge-batch/);
+ assert.match(js,/v26ConfirmBulkDelete/);
  assert.match(js,/v25ConfirmDelete/);
  assert.match(css,/\.v25-rule-delete/);
  assert.match(css,/\.v25-delete-overlay/);
- assert.match(html,/adm-v17\.js\?v=25\.2\.0/);
+ assert.match(html,/adm-v17\.js\?v=25\.4\.0/);
  assert.match(backend,/match\[2\]==='purge'/);
 });
 

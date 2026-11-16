@@ -767,6 +767,32 @@ async function createPairing(env){
 
 function fileOk(bytes,kind){const a=new Uint8Array(bytes);if(kind==='gif')return a.length>=10&&String.fromCharCode(...a.slice(0,6)).match(/^GIF8[79]a$/);
  return (a.length>=24&&a.slice(0,8).join(',')==='137,80,78,71,13,10,26,10')||(a.length>=12&&String.fromCharCode(...a.slice(0,4))==='RIFF'&&String.fromCharCode(...a.slice(8,12))==='WEBP');}
+// V25.4: exclusao rapida e em lotes. Nunca executar limpeza R2 pesada
+// dentro da solicitacao HTTP; o cron faz a remocao por ID, com limite.
+async function v26ScheduleStrategyPurge(env,ids){
+ const all=await getDoc(env,K.strategies,[]),wanted=new Set(ids);
+ if(wanted.size!==ids.length||!ids.length||ids.length>10||ids.some(id=>!/^[a-f0-9]{32}$/.test(id)))
+  return err('Escolha entre 1 e 10 estrategias validas e diferentes.',400);
+ const found=all.filter(s=>wanted.has(s.id)&&!s.archived);
+ if(found.length!==ids.length)return err('Uma ou mais estrategias nao existem ou ja foram excluidas. Atualize a pagina.',409);
+ // Enfileirar a limpeza ANTES de ocultar as regras. O cron sempre valida que
+ // a regra nao esteja ativa no catalogo: falha parcial nao apaga regra valida.
+ for(const s of found)await putDoc(env,purgeTaskKey(s.id),{id:s.id,queuedAt:now(),pending:true,version:26});
+ // Um unico update do catalogo remove todos os IDs sem tocar nos demais.
+ await putDoc(env,K.strategies,all.filter(s=>!wanted.has(s.id)));
+ // Liberar imediatamente o ciclo se o dono foi excluido. Nao zerar o cursor.
+ // Se esta escrita complementar falhar, a remocao confirmada nao pode
+ // ser reportada como falha: V25.3 tambem saneia dono inativo na proxima rodada.
+ for(const gameId of new Set(found.map(s=>s.gameId||'brabet-double'))){
+  const gameKey=v11GameKey(gameId);
+  try{
+   const owner=await getDoc(env,gameKey,null);
+   if(owner&&wanted.has(owner.ownerId))await putDoc(env,gameKey,{...owner,ownerId:null,updatedAt:now(),reason:'owner-strategy-deleted'});
+  }catch(e){console.warn('V25.4.1: limpeza do dono pendente',String(e?.message||e).slice(0,100));}
+ }
+ return json({ok:true,deleted:found.length,ids:found.map(s=>s.id),cleanup:'scheduled'});
+}
+
 export async function routeAdmin(req,env,url){
  const path=url.pathname;
  if(path==='/api/telegram/webhook'&&req.method==='POST')return telegramWebhook(req,env);
@@ -890,6 +916,11 @@ export async function routeAdmin(req,env,url){
      }
      return json({ok:true,changed:changed.length,unchanged:ids.length-changed.length,enabled:desired,cleanupWarnings:warnings.length});
    }
+  if(path==='/api/adm/strategies/purge-batch'&&req.method==='POST'){
+   const b=await req.json();
+   if(b?.confirm!==true||!Array.isArray(b.ids))return err('Confirmacao e IDs obrigatorios.',400);
+   return await v26ScheduleStrategyPurge(env,b.ids);
+  }
   if(path==='/api/adm/strategies'&&req.method==='POST'){
    const b=await req.json();const all=await strategies();/* V10: sem limite artificial de 30 estratégias; o armazenamento e as cotas do Worker continuam valendo. */
    if(b&&typeof b==='object'&&!String(b.name||'').trim()){let n=1;const existing=new Set(all.filter(x=>!x.archived).map(x=>x.name));while(existing.has('Estratégia '+n))n++;b.name='Estratégia '+n;}
@@ -903,16 +934,8 @@ export async function routeAdmin(req,env,url){
    if(match[2]==='simulate'&&req.method==='POST'){const hist=await recentR2(env,all[idx].gameId);return json({ok:true,...await simulate(all[idx],hist.items||[])});}
    if(match[2]==='purge'&&req.method==='POST'){
     const b=await req.json(),s=all[idx];
-    if(b?.confirm!==true||(b?.id!==s.id&&b?.name!==s.name))return err('Confirme a exclusão da estratégia selecionada pelo ID.',400);
-    const runtime=await getDoc(env,runtimeKey(s.id),null);
-    if(runtime?.attentionEventId)await dismissAttention(env,s.id,runtime.attentionEventId);
-    // Primeiro impedir novos sinais; depois apagar somente dados da estratégia escolhida.
-    all.splice(idx,1);await putDoc(env,K.strategies,all);
-    await env.R2.delete?.(runtimeKey(s.id));await env.R2.delete?.(scoreKey(s.id));
-    // Limpeza assíncrona segura: arquivos com prefixo exclusivo do ID da estratégia.
-    await putDoc(env,purgeTaskKey(s.id),{id:s.id,startedAt:now()});
-     const owner=await getDoc(env,v11GameKey(s.gameId),null);if(owner?.ownerId===s.id)await putDoc(env,v11GameKey(s.gameId),{...owner,ownerId:null,updatedAt:now(),reason:'strategy-purged'});await v11DropStrategyBlocks(env,s.id);await purgeStrategyFiles(env,s.id,35);
-    return json({ok:true,deletedId:s.id,notice:'Estratégia apagada. Limpeza dos arquivos associados em andamento.'});
+    if(b?.confirm!==true||(b?.id!==s.id&&b?.name!==s.name))return err('Confirme o ID ou nome da estrategia selecionada.',400);
+    return await v26ScheduleStrategyPurge(env,[id]);
    }
    if(req.method==='PUT'&&!match[2]){
     const b=await req.json();const was=all[idx].enabled;const previous=all[idx],s=validateStrategy(b,previous);
@@ -1182,10 +1205,21 @@ async function purgeStrategyFiles(env,id,limit=35){
  await putDoc(env,purgeTaskKey(id),{id,lastPass:now(),pending:true});
 }
 async function runPurgeQueue(env){
- const pending=await list(env,ROOT+'maintenance/purge/',4);
+ const pending=await list(env,ROOT+'maintenance/purge/',6);
+ if(!pending.length)return;
+ const current=await getDoc(env,K.strategies,[]);
+ // Limite pequeno por minuto: a fila Telegram continua prioritária.
  for(const task of pending.slice(0,1)){
   const id=/\/([a-f0-9]{32})\.json$/.exec(task.key)?.[1];
-  if(id)await purgeStrategyFiles(env,id,40);
+  if(!id||current.some(s=>s.id===id&&!s.archived))continue;
+  try{
+   const runtime=await getDoc(env,runtimeKey(id),null);
+   if(runtime?.attentionEventId)await dismissAttention(env,id,runtime.attentionEventId);
+   await env.R2.delete?.(runtimeKey(id));
+   await env.R2.delete?.(scoreKey(id));
+   await v11DropStrategyBlocks(env,id);
+   await purgeStrategyFiles(env,id,8);
+  }catch(e){console.warn('V25.4: limpeza em background pendente',String(e?.message||e).slice(0,110));}
  }
 }
 export async function scheduledAdmin(env){
