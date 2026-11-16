@@ -42,7 +42,7 @@ function tokenOK(request,env){
 }
 // V11 - chamadas internas serializadas pelo Durable Object SQLite (plano Free compatível).
 // A autenticação pública continua no Worker; o DO recebe somente requisições internas.
-async function v11Ingest(request,env,trusted=false){
+async function v11Ingest(request,env,trusted=false,queueSignalJob=null,queuedMaxSeq=0){
  if(!trusted&&!tokenOK(request,env))return out({error:'Credencial ausente ou invalida'},401);
  if(!env.R2)return out({error:'Binding R2 indisponivel'},503);
  let textBody;
@@ -73,10 +73,21 @@ async function v11Ingest(request,env,trusted=false){
  // nao fingimos saber quando o giro fisico terminou.
  const sourceAge=now()-Math.max(...rows.map(r=>r.minute_epoch));
  const ownerCursor=await jsonGet(env.R2,'nexo-v3/runtime/game-owner/'+game.id+'.json');
- const observed=rows.filter(r=>Number.isInteger(r.seq)&&r.seq>Number(ownerCursor?.lastSeq||0));
- const seqGap=ownerCursor?.lastSeq>0&&observed.length&&Math.max(...observed.map(r=>r.seq))-Number(ownerCursor.lastSeq)>3;
+ const ingestBaseSeq=Math.max(Number(ownerCursor?.lastSeq||0),Number(queuedMaxSeq||0));
+  const observed=rows.filter(r=>Number.isInteger(r.seq)&&r.seq>ingestBaseSeq);
+ const seqGap=ingestBaseSeq>0&&observed.length&&Math.max(...observed.map(r=>r.seq))-ingestBaseSeq>3;
  const surge=observed.length>3;
  const catchup=payload.catchup===true||sourceAge>150||surge||seqGap;
+  if(queueSignalJob){
+    try{
+      // As pedras ja foram gravadas no R2. O job do Telegram sera duravel
+      // no Durable Object antes de confirmar HTTP 200 ao Termux.
+      await queueSignalJob(observed.length?{gameId:game.id,rows:observed,catchup}:null);
+    }catch(e){
+      console.error('NEXO V18.1: fila nao persistida:',String(e?.message||e).slice(0,140));
+      return out({error:'Historico salvo, mas fila nao confirmada; repetir mesmo lote'},503);
+    }
+  }else{
  if(catchup){
   try{await resetAfterCatchup(env,game,rows)}catch(e){console.error('V12 catchup runtime:',String(e.message||e).slice(0,100));return out({error:'Historico salvo; falha ao redefinir estado de sinais'},503)}
    if(!V17_WHITE_PAUSED){try{await resetWhiteAfterCatchup(env,game,rows)}catch(e){console.warn('V13 branco: catchup falhou',String(e.message||e).slice(0,100))}}
@@ -87,15 +98,71 @@ async function v11Ingest(request,env,trusted=false){
    }catch(e){console.error('V12 rules:',String(e.message||e).slice(0,120));return out({error:'Historico salvo; falha ao processar regras'},503)}
    if(!V17_WHITE_PAUSED){try{await processWhiteRounds(env,game,rows)}catch(e){console.warn('V13 branco: processamento falhou',String(e.message||e).slice(0,130))}}
  }
- return out({ok:true,accepted:rows.length,game_id:game.id,catchup,age_seconds:sourceAge,skipped_signal_burst:surge||!!seqGap});
+   }
+return out({ok:true,accepted:rows.length,game_id:game.id,catchup,age_seconds:sourceAge,skipped_signal_burst:surge||!!seqGap});
 
 }
+// NEXO_V18_1_DURABLE_QUEUE: processar sinais DEPOIS do ACK R2, na ordem dos lotes.
+// O job foi persistido no storage do Durable Object ANTES da resposta HTTP 200.
+async function v18_1ProcessQueuedSignal(env,job){
+ const game=gameById(job.gameId);
+ if(!game||!Array.isArray(job.rows)||!job.rows.length)throw Error('Job de sinais invalido');
+ const rows=job.rows;
+ if(job.catchup){
+  await resetAfterCatchup(env,game,rows);
+  if(!V17_WHITE_PAUSED)await resetWhiteAfterCatchup(env,game,rows);
+ }else{
+  if(!V17_WHITE_PAUSED&&await whiteShouldBlockLegacy(env))await resetAfterCatchup(env,game,rows);
+  else await processNewRounds(env,game,rows);
+  if(!V17_WHITE_PAUSED)await processWhiteRounds(env,game,rows);
+ }
+}
+
 export class NexoCoordinator {
  constructor(state,env){this.state=state;this.env=env;this.serial=Promise.resolve()}
+  // Enfileiramento transacional: nao reconhecer uma pedra sem guardar o job.
+  async v18_1Enqueue(job){
+    const st=this.state.storage;
+    if(job&&Array.isArray(job.rows)&&job.rows.length){
+      await st.transaction(async tx=>{
+        const seq=Math.max(...job.rows.map(r=>Number(r.seq)||0));
+        const old=Number(await tx.get('nexo-v18-queued-max')||0);
+        if(seq<=old)return;
+        const next=Number(await tx.get('nexo-v18-next-job')||0)+1;
+        await tx.put('nexo-v18-next-job',next);
+        await tx.put('nexo-v18-queued-max',seq);
+        await tx.put('nexo-v18-job/'+String(next).padStart(12,'0'),job);
+      });
+    }
+    // Repetir o POST nao cria outro job; e se o agendamento anterior falhou,
+    // faz nova tentativa de iniciar o processamento persistido.
+    const pending=await st.list({prefix:'nexo-v18-job/',limit:1});
+    if(pending.size)await st.setAlarm(Date.now()+250);
+  }
+  // A entrega pode levar varios segundos, mas nao bloqueia a gravacao da pedra.
+  async alarm(){
+    const st=this.state.storage;
+    const jobs=await st.list({prefix:'nexo-v18-job/',limit:1});
+    if(!jobs.size)return;
+    const [key,job]=jobs.entries().next().value;
+    try{
+      await v18_1ProcessQueuedSignal(this.env,job);
+      await st.delete(key);
+      // Proximo lote apenas depois do atual; evita inversao de eventos.
+      const pending=await st.list({prefix:'nexo-v18-job/',limit:1});
+      if(pending.size)await st.setAlarm(Date.now()+250);
+    }catch(e){
+      console.error('NEXO V18.1 fila: tentativa pendente',String(e?.message||e).slice(0,150));
+      await st.setAlarm(Date.now()+7000);
+    }
+  }
  fetch(request){
   const run=this.serial.then(async()=>{
    const path=new URL(request.url).pathname;
-   if(path==='/v11/ingest')return v11Ingest(request,this.env,true);
+   if(path==='/v11/ingest'){
+      const queued=Number(await this.state.storage.get('nexo-v18-queued-max')||0);
+      return v11Ingest(request,this.env,true,job=>this.v18_1Enqueue(job),queued);
+    }
    if(path==='/v11/cron'){await Promise.allSettled(V17_WHITE_PAUSED?[scheduledAdmin(this.env)]:[scheduledAdmin(this.env),scheduledWhite(this.env)]);return out({ok:true});}
    return out({error:'Rota interna invalida'},404);
   });

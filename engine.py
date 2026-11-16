@@ -117,14 +117,59 @@ def snapshot_match(previous, current):
     return ids
 
 
+# NEXO_AUTO_DAY_V1 - recuperação conservadora após reinício diário da janela
+def safe_new_day_window(previous, records, now):
+    """Reconecta apenas após uma janela NOVA, atual e inteiramente de hoje.
+
+    Jamais cria rodadas para o período perdido, altera datas ou ignora erros 503.
+    Se o dia não mudou, uma ausência de sobreposição segue sendo erro.
+    """
+    if not previous or len(records)<8:
+        return False
+    try:
+        previous_latest=max(int(x['minute_epoch']) for x in previous)
+        current_oldest=min(int(x['minute_epoch']) for x in records)
+        current_latest=max(int(x['minute_epoch']) for x in records)
+        day=dt.datetime.fromtimestamp(now,TZ).date()
+        return (
+            dt.datetime.fromtimestamp(previous_latest,TZ).date()<day
+            and dt.datetime.fromtimestamp(current_oldest,TZ).date()==day
+            and previous_latest<current_oldest
+            and 0<=now-current_latest<=180
+        )
+    except (ValueError,KeyError,TypeError,OverflowError, OSError):
+        return False
+
+# NEXO V18: reutiliza conexao HTTPS quando requests ja estiver instalada.
+# Se nao estiver, usa urllib da biblioteca padrao, sem dependencia obrigatoria.
+_SOURCE_SESSION=None
+
 def fetch_public(url):
-    req=Request(url,headers={'User-Agent':'Mozilla/5.0 (compatible; NexoHistoricosV1/1.0; public monitoring)',
-                             'Accept':'text/html','Cache-Control':'no-cache'})
-    with urlopen(req,timeout=18) as resp:
-        if resp.status!=200:raise RuntimeError(f'Fonte HTTP {resp.status}')
-        b=resp.read(2_000_001)
-        if len(b)>2_000_000:raise RuntimeError('Pagina publica muito grande')
-        return b.decode('utf-8','replace')
+    global _SOURCE_SESSION
+    headers={'User-Agent':'Mozilla/5.0 (compatible; NexoHistoricosV18/1.0; public monitoring)',
+             'Accept':'text/html', 'Cache-Control':'no-cache', 'Pragma':'no-cache'}
+    try:
+        import requests as _requests
+    except ImportError:
+        _requests=None
+    if _requests is not None:
+        if _SOURCE_SESSION is None:_SOURCE_SESSION=_requests.Session()
+        try:
+            response=_SOURCE_SESSION.get(url,headers=headers,timeout=(3.5,8),allow_redirects=True)
+            if response.status_code!=200:raise RuntimeError(f'Fonte HTTP {response.status_code}')
+            b=response.content
+        except _requests.RequestException as exc:
+            try:_SOURCE_SESSION.close()
+            except Exception:pass
+            _SOURCE_SESSION=None
+            raise RuntimeError('Fonte indisponivel: '+type(exc).__name__) from exc
+    else:
+        req=Request(url,headers=headers)
+        with urlopen(req,timeout=10) as resp:
+            if resp.status!=200:raise RuntimeError(f'Fonte HTTP {resp.status}')
+            b=resp.read(2_000_001)
+    if len(b)>2_000_000:raise RuntimeError('Pagina publica muito grande')
+    return b.decode('utf-8','replace')
 
 
 def collect_one(db, game, source_html=None, now=None):
@@ -138,9 +183,13 @@ def collect_one(db, game, source_html=None, now=None):
         cache=db.execute('SELECT content FROM snapshots WHERE game_id=?',(key,)).fetchone()
         previous=json.loads(cache['content']) if cache else []
         matches=snapshot_match(previous,records)
-        # Se o antigo topo desapareceu, nao fingir continuidade. Nunca apagar dados.
+        # Reabre APENAS a janela do novo dia, sem reconstruir giros não observados.
+        reanchored=False
         if previous and not any(matches):
-            raise RuntimeError('Janela de coleta sem sobreposicao; preservar dados e revisar manualmente')
+            if safe_new_day_window(previous,records,now):
+                reanchored=True
+            else:
+                raise RuntimeError('Janela de coleta sem sobreposicao; preservar dados e revisar manualmente')
         latest=records[0]['minute_epoch'];new=[];mapped=[None]*len(records)
         cursor=int(db.execute('SELECT COALESCE(MAX(seq),0) FROM rounds WHERE game_id=?',(key,)).fetchone()[0])
         # A fonte vem do mais novo para o mais antigo. Novas linhas recebem seq
@@ -164,7 +213,7 @@ def collect_one(db, game, source_html=None, now=None):
             db.execute('INSERT INTO snapshots(game_id,content) VALUES(?,?) ON CONFLICT(game_id) DO UPDATE SET content=excluded.content',
                        (key,json.dumps(mapped,separators=(',',':'))))
             db.execute('UPDATE collection_state SET last_success=?,latest_minute=?,last_count=?,last_new=?,message=? WHERE game_id=?',
-                       (now,latest,len(mapped),len(new),f'OK · {len(new)} registros novos · horario da fonte em minutos',key))
+                       (now,latest,len(mapped),len(new),('OK · janela do novo dia retomada (sem inventar giros); '+str(len(new))+' registros observados' if reanchored else f'OK · {len(new)} registros novos · horario da fonte em minutos'),key))
         return {'ok':True,'game_id':key,'new':len(new),'count':len(mapped),'latest_minute':latest}
     except Exception as exc:
         with db:

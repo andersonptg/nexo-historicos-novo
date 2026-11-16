@@ -39,6 +39,28 @@ def prepare():
     print('Site Cloudflare remoto:','configurado' if SITE_URL.is_file() else 'nao configurado (preview local funciona)')
 
 
+
+# NEXO_V18_1_DURABLE_QUEUE - conferir por IDs, nunca por numero/minuto apenas.
+def _v18_1_confirm_ids(base, game_id, entries):
+    """So confirma um lote cujo ID e conteudo coincidam com o R2 publico."""
+    from urllib.parse import quote
+    try:
+        u=base+'/api/history?game_id='+quote(str(game_id),safe='')+'&limit=200'
+        request=Request(u,headers={'Accept':'application/json','Cache-Control':'no-store','User-Agent':'NEXO-V18.1-ack-check'})
+        with urlopen(request,timeout=6) as response:
+            if response.status!=200:return False
+            data=json.load(response)
+        if data.get('game_id')!=game_id:return False
+        have={str(r.get('id')):r for r in data.get('items',[]) if isinstance(r,dict)}
+        for row in entries:
+            other=have.get(str(row['id']))
+            if not other:return False
+            for k in ('minute_epoch','number','color','seq'):
+                if str(other.get(k))!=str(row.get(k)):return False
+        return bool(entries)
+    except Exception:
+        return False
+
 def sync(db):
     if not SITE_URL.is_file() or not TOKEN.is_file():return {'ok':False,'skipped':'site_ou_token_nao_configurado'}
     base=SITE_URL.read_text().strip().rstrip('/')
@@ -59,15 +81,29 @@ def sync(db):
             raw=json.dumps({'game_id':game['id'],'items':entries,'catchup':is_catchup},separators=(',',':')).encode()
             req=Request(base+'/api/ingest',data=raw,method='POST',headers={'Content-Type':'application/json','Authorization':'Bearer '+token,'User-Agent':'NEXO-V1-Termux'})
             try:
-                with urlopen(req,timeout=12) as resp:
+                # Prazo curto: o Worker V18.1 deve confirmar so apos gravar no R2
+                # e colocar a entrega Telegram na fila duravel do Durable Object.
+                with urlopen(req,timeout=9) as resp:
                     answer=json.load(resp)
                     if resp.status!=200 or answer.get('ok')!=True or answer.get('accepted')!=len(entries):
                         return {'ok':False,'error':'Resposta remota inesperada'}
                 with db:
                     db.executemany('UPDATE rounds SET synced=1 WHERE id=?',[(x['id'],) for x in entries])
                 sent+=len(entries)
-            except HTTPError as e:return {'ok':False,'error':f'Site HTTP {e.code}; nenhum token foi mostrado'}
-            except Exception as e:return {'ok':False,'error':f'Conexao: {type(e).__name__}'}
+            except HTTPError as e:
+                # Um HTTP 5xx pode significar que o job nao foi enfileirado;
+                # NAO marcar confirmado. Tentar depois sem apagar nenhum dado.
+                return {'ok':False,'error':f'Site HTTP {e.code}; nenhum token foi mostrado'}
+            except Exception as e:
+                # ACK de rede perdido: se cada ID/numero/minuto/seq ja esta no
+                # R2, nao retransmitir a mesma rodada. Checagem somente leitura.
+                if _v18_1_confirm_ids(base,game['id'],entries):
+                    with db:
+                        db.executemany('UPDATE rounds SET synced=1 WHERE id=?',[(x['id'],) for x in entries])
+                    sent+=len(entries)
+                    print('[NEXO V18.1] Resposta nao chegou; IDs confirmados no R2 por leitura.',flush=True)
+                else:
+                    return {'ok':False,'error':f'Conexao: {type(e).__name__}; confirmacao R2 pendente'}
         removed=prune_after_remote_ack(db,game['id'],400) if sent else 0
         # Sinal de vida com baixa frequencia, independente da chegada de rodadas.
         # Ajuda o painel a distinguir motor ativo de resultado novo.
@@ -98,62 +134,159 @@ def collect_once(quiet=False):
         return {'ok':all(x.get('ok') for x in results),'coleta':results,'sync':syn}
 
 
+
+# NEXO V18: a coleta nao aguarda o Telegram/Cloudflare responder.
+def collect_only():
+    """Busca apenas a fonte publica e persiste as rodadas confirmadas no SQLite."""
+    started=time.monotonic()
+    db=connection()
+    try:
+        results=[]
+        for game in get_games():
+            if game.get('enabled') and game.get('kind')=='double':
+                results.append(collect_one(db,game))
+        return {'ok':all(x.get('ok') for x in results),
+                'coleta':results,
+                'source_ms':round((time.monotonic()-started)*1000)}
+    finally:
+        db.close()
+
+
+def sync_only():
+    """Um unico enviador independente consulta a fila SQLite nao sincronizada."""
+    started=time.monotonic()
+    db=connection()
+    try:
+        result=sync(db)
+        result['upload_ms']=round((time.monotonic()-started)*1000)
+        return result
+    finally:
+        db.close()
+
+
+def fast_metrics(values):
+    """Status local sem token. Atualizado por substituicao atomica."""
+    try:
+        DATA.mkdir(parents=True,exist_ok=True)
+        destination=DATA/'velocidade.json'
+        temporary=DATA/('velocidade.'+str(os.getpid())+'.tmp')
+        temporary.write_text(json.dumps(values,ensure_ascii=False,sort_keys=True)+'\n',encoding='utf8')
+        os.replace(temporary,destination)
+    except OSError:
+        pass  # Falha de diagnostico nunca pode interromper o motor.
+
 def run_motor(interval=1.0):
-    """Aba 1: processo visivel, lock exclusivo, logs resumidos.
-    O intervalo e uma tentativa entre consultas, nao garantia de entrega imediata.
+    """NEXO V18: duas tarefas, uma busca a fonte e outra sincroniza o R2.
+
+    O navegador nao participa da coleta. A fonte so fornece minuto; nenhum
+    segundo oficial e inventado. Falhas nao geram entradas ficticias.
     """
     import fcntl
+    from concurrent.futures import ThreadPoolExecutor
     with open(DATA/'motor.lock','a+') as lock:
         try:fcntl.flock(lock.fileno(),fcntl.LOCK_EX|fcntl.LOCK_NB)
         except BlockingIOError:
-            print('Outro motor ja esta executando. Use a Aba 2 para interrompe-lo primeiro.',flush=True)
+            print('Outro motor ja esta executando. Nao inicie um segundo.',flush=True)
             return
         signal.signal(signal.SIGTERM,lambda *_:sys.exit(0))
         MOTOR_PID.write_text(str(os.getpid())+'\n')
         import atexit
         def cleanup_pid():
             try:
-                if MOTOR_PID.is_file() and MOTOR_PID.read_text().strip()==str(os.getpid()):MOTOR_PID.unlink()
+                if MOTOR_PID.is_file() and MOTOR_PID.read_text().strip()==str(os.getpid()):
+                    MOTOR_PID.unlink()
             except OSError:pass
         atexit.register(cleanup_pid)
-        print('NEXO V2 | MOTOR DE COLETA | TERMINAL 1',flush=True)
-        print(f'Intervalo alvo: {interval:g}s | Fonte publica pode atrasar | Ctrl+C para parar',flush=True)
-        print('Site remoto:', 'configurado' if SITE_URL.is_file() else 'AINDA NAO PUBLICADO (apenas local)',flush=True)
-        failures=0;last_heartbeat=0;last_sync_error=''
-        while True:
-            started=time.monotonic()
-            try:
-                out=collect_once(quiet=True)
-                ok=out['ok'];syn=out['sync']
-                failures=0 if ok else min(8,failures+1)
-                stamp=time.strftime('%H:%M:%S')
-                new=sum(x.get('new',0) for x in out['coleta'])
-                if new:
-                    print(f'[{stamp}] +{new} novas rodadas salvas no Termux',flush=True)
-                for x in out['coleta']:
-                    if not x.get('ok'):
-                        print(f'[{stamp}] Fonte {x.get("game_id")}: {x.get("error")}',flush=True)
-                uploaded=sum(x.get('enviados',0) for x in syn.get('resultados',[])) if syn.get('ok') else 0
-                removed=sum(x.get('limpos_confirmados',0) for x in syn.get('resultados',[])) if syn.get('ok') else 0
-                if uploaded:
-                    print(f'[{stamp}] R2 confirmado: {uploaded} | limpeza segura local: {removed}',flush=True)
-                if not syn.get('ok') and not syn.get('skipped'):
-                    err=str(syn.get('error','Falha remota'))
-                    if err!=last_sync_error:print(f'[{stamp}] SYNC: {err}',flush=True)
-                    last_sync_error=err
-                else:last_sync_error=''
-                if time.monotonic()-last_heartbeat>=30:
-                    print(f'[{stamp}] motor ativo | fonte: {"OK" if ok else "falha"} | envio: {"configurado" if SITE_URL.is_file() else "pendente"}',flush=True)
-                    last_heartbeat=time.monotonic()
-            except KeyboardInterrupt:
-                print('Motor interrompido pelo usuario, registros preservados.',flush=True)
-                break
-            except Exception as e:
-                failures=min(8,failures+1)
-                print('Falha do motor:',type(e).__name__,str(e)[:130],flush=True)
-            # Rate limit, queda da fonte e rede ruim: espera progressiva ate 60s.
-            wait=max(interval,min(20,2**failures)) if failures else interval
-            time.sleep(max(0.1,wait-(time.monotonic()-started)))
+        print('NEXO V18 | COLETA E ENVIO INDEPENDENTES',flush=True)
+        print(f'Intervalo alvo de fonte: {interval:g}s; sem antecipar resultado publicado.',flush=True)
+        print('Navegador pode fechar. Android pode suspender Termux; mantenha bateria irrestrita.',flush=True)
+        metrics={'version':18,'source_ok':False,'r2_ok':False,
+                 'aviso':'Tempos medidos pelo NEXO; a fonte publica so informa MINUTO, nao o segundo exato.'}
+        failures=0
+        next_sync=0.0
+        last_status=0.0
+        last_metrics=0.0
+        last_source_error=''
+        last_sync_error=''
+        future=None
+        with ThreadPoolExecutor(max_workers=1,thread_name_prefix='nexo-r2') as uploader:
+            while True:
+                started=time.monotonic()
+                dirty_metrics=False
+                # Recolhe somente um resultado por envio. Nunca dispara dois
+                # POSTs simultaneos do mesmo motor (R2 e Telegram idempotentes).
+                if future is not None and future.done():
+                    try:
+                        syn=future.result()
+                        metrics['r2_ok']=bool(syn.get('ok'))
+                        metrics['upload_ms']=syn.get('upload_ms')
+                        metrics['ultima_resposta_r2']=int(time.time())
+                        sent=sum(x.get('enviados',0) for x in syn.get('resultados',[])) if syn.get('ok') else 0
+                        metrics['ultimo_lote_enviado']=sent
+                        if sent:
+                            print('['+time.strftime('%H:%M:%S')+'] R2 confirmado: '+str(sent)+' rodada(s)',flush=True)
+                        if not syn.get('ok') and not syn.get('skipped'):
+                            error=str(syn.get('error','Falha na sincronizacao'))
+                            if error!=last_sync_error:print('['+time.strftime('%H:%M:%S')+'] SYNC: '+error,flush=True)
+                            last_sync_error=error
+                            next_sync=time.monotonic()+3.0
+                        else:
+                            last_sync_error=''
+                            next_sync=time.monotonic()+3.0
+                    except Exception as exc:
+                        metrics['r2_ok']=False
+                        error=type(exc).__name__+': '+str(exc)[:110]
+                        if error!=last_sync_error:print('SYNC: '+error,flush=True)
+                        last_sync_error=error
+                        next_sync=time.monotonic()+3.0
+                    future=None
+                    dirty_metrics=True
+                try:
+                    out=collect_only()
+                    ok=out['ok']
+                    failures=0 if ok else min(8,failures+1)
+                    new=sum(x.get('new',0) for x in out['coleta'])
+                    metrics['source_ok']=ok
+                    metrics['source_ms']=out['source_ms']
+                    metrics['ultima_consulta_fonte']=int(time.time())
+                    if ok:metrics['ultima_resposta_fonte_ok']=int(time.time())
+                    if new:
+                        metrics['ultima_pedra_observada_pelo_nexo']=int(time.time())
+                        metrics['quantidade_novas_pedras']=new
+                        print('['+time.strftime('%H:%M:%S')+'] +'+str(new)+' rodada(s) confirmada(s) na fonte.',flush=True)
+                        dirty_metrics=True
+                    source_error='; '.join(str(x.get('error','')) for x in out['coleta'] if not x.get('ok'))
+                    if source_error and source_error!=last_source_error:
+                        print('['+time.strftime('%H:%M:%S')+'] Fonte: '+source_error[:160],flush=True)
+                        dirty_metrics=True
+                    last_source_error=source_error
+                    # O envio nunca atrasa a proxima consulta da fonte.
+                    if future is None and (new or time.monotonic()>=next_sync):
+                        future=uploader.submit(sync_only)
+                        next_sync=time.monotonic()+5.0
+                except KeyboardInterrupt:
+                    print('Motor interrompido. Banco e fila de envio preservados.',flush=True)
+                    break
+                except Exception as exc:
+                    failures=min(8,failures+1)
+                    metrics['source_ok']=False
+                    print('Falha de coleta:',type(exc).__name__,str(exc)[:130],flush=True)
+                    dirty_metrics=True
+                now_m=time.monotonic()
+                if dirty_metrics or now_m-last_metrics>=30:
+                    fast_metrics(metrics)
+                    last_metrics=now_m
+                if now_m-last_status>=30:
+                    print('['+time.strftime('%H:%M:%S')+'] motor ativo | fonte: '+('OK' if metrics['source_ok'] else 'falha')+' | R2: '+('OK' if metrics['r2_ok'] else 'pendente/falha')+' | envio independente',flush=True)
+                    last_status=now_m
+                # Falhas repetidas nao martelam a fonte; HTTP 429 tem espera maior.
+                if not failures:
+                    delay=interval
+                elif '429' in last_source_error:
+                    delay=max(interval,min(30,3*(2**min(failures,4))))
+                else:
+                    delay=max(interval,min(8,2**max(0,failures-1)))
+                time.sleep(max(0.1,delay-(time.monotonic()-started)))
 
 
 def exclusive_manual(command):
@@ -267,6 +400,15 @@ def main():
     elif a=='status':
         with connection() as db:print(json.dumps(get_state(db),ensure_ascii=False,indent=2))
         print('Motor PID:',pid_alive(MOTOR_PID) or 'parado','Site PID:',pid_alive(SITE_PID) or 'parado')
+        status_file=DATA/'velocidade.json'
+        if status_file.is_file():
+            try:
+                dados=json.loads(status_file.read_text(encoding='utf8'))
+                print('NEXO V18 | Diagnostico de velocidade (segundos medidos pelo NEXO):')
+                for k in ('source_ok','r2_ok','source_ms','upload_ms','ultima_consulta_fonte',
+                          'ultima_pedra_observada_pelo_nexo','ultima_resposta_r2','ultimo_lote_enviado'):
+                    if k in dados:print(' ',k,':',dados[k])
+            except (OSError,ValueError):pass
         print('Arquivos em:',DATA)
     elif a=='comandos':
         print('Aba 1: python nexo.py motor --interval 1')
