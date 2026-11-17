@@ -346,15 +346,20 @@ async function v11IsAdmin(env,group,sharedToken='',identity=null){
  return ok;
 }
 async function transmit(env,group,evt,sharedToken='',identity=null){
- if(!await v11IsAdmin(env,group,sharedToken,identity))throw Error('Bot nao e administrador deste grupo');
+ // NEXO V26.5: leituras independentes em paralelo; barreiras de envio mantidas.
+ // A verificacao ADM, a etapa confirmada e o bloqueio sao conferidos ANTES do envio.
  // Testes manuais e placares nao compartilham estado com os sinais.
  const tracked=!!evt.id;
  const stageKey=tracked?v11StageKey(evt,group.id):null;
  const initial={eventId:evt.id||'',chatId:String(group.id),confirmed:{},uncertain:null,completed:false,updatedAt:now()};
- const progress=tracked?await getDoc(env,stageKey,initial):initial;
+ const [adminOk,progress,gate]=await Promise.all([
+  v11IsAdmin(env,group,sharedToken,identity),
+  tracked?getDoc(env,stageKey,initial):Promise.resolve(initial),
+  tracked?getDoc(env,v11BlockKey(group.id),null):Promise.resolve(null)
+ ]);
+ if(!adminOk)throw Error('Bot nao e administrador deste grupo');
  // V12.2: resolver o token uma única vez por evento, não em cada balão.
  const deliveryToken=sharedToken||await botToken(env);
- const gate=tracked?await getDoc(env,v11BlockKey(group.id),null):null;
  if(tracked&&gate&&gate.eventId!==evt.id)throw Error('Chat aguardando revisao do ciclo '+gate.eventId);
  if(tracked&&progress.inFlight&&!progress.confirmed[progress.inFlight]){
   progress.uncertain=progress.inFlight;progress.updatedAt=now();
@@ -432,10 +437,13 @@ async function transmit(env,group,evt,sharedToken='',identity=null){
 // Envio para privado + grupos em paralelo; a ordem dentro de cada chat é mantida.
 async function dispatch(env,config,evt,{privateOnly=false}={}){
  if(!config.botEnabled||v22ExpiredEvent(evt))return;
- const owner=await getDoc(env,K.owner,null);
+ // V26.5: ler privado e grupos juntos; decidir os destinos somente apos ambas as leituras.
+ const [owner,all]=await Promise.all([
+  getDoc(env,K.owner,null),
+  privateOnly?Promise.resolve([]):getDoc(env,K.groups,[])
+ ]);
  const privateChat=owner?.id&&/^[1-9][0-9]{4,19}$/.test(String(owner.id))
    ? [{id:String(owner.id),private:true}] : [];
- const all=privateOnly?[]:await getDoc(env,K.groups,[]);
  const candidates=[...privateChat,...all.filter(x=>x.selected&&x.admin).slice(0,5)];
  const targets=candidates.filter((g,i)=>candidates.findIndex(x=>String(x.id)===String(g.id))===i);
  // V25: um token e uma consulta getMe compartilhados por evento.
@@ -449,8 +457,13 @@ async function dispatch(env,config,evt,{privateOnly=false}={}){
     if(!tracked?.active)return;
    }
    const uid=evt.id+'_'+String(group.id).replace('-','m');
-   if(await getDoc(env,sentKey(uid),null))return;
-   const key=pendingKey(uid),existing=await getDoc(env,key,null);
+   // V26.5: apenas leituras em paralelo; checar enviado ANTES de gravar pendencia.
+   const key=pendingKey(uid);
+   const [sent,existing]=await Promise.all([
+    getDoc(env,sentKey(uid),null),
+    getDoc(env,key,null)
+   ]);
+   if(sent)return;
    const row={id:uid,groupId:String(group.id),evt,status:'pending',attempts:existing?.attempts||0,createdAt:existing?.createdAt||now(),updatedAt:now(),lastError:''};
    await putDoc(env,key,row);
    try{
@@ -571,8 +584,11 @@ async function v24ProcessMany(env,game,records,deadlineAtMs,strategies,snapshot,
  const gameState=await getDoc(env,v11GameKey(game.id),{ownerId:null,lastSeq:0});
  const fresh=ordered.filter(r=>r.seq>Number(gameState.lastSeq||0));
  if(!fresh.length)return;
- const settings=await getDoc(env,K.settings,settingsDefault);
- const global=await globalDoc(env);
+ // V26.5: configuracoes independentes lidas simultaneamente.
+ const [settings,global]=await Promise.all([
+  getDoc(env,K.settings,settingsDefault),
+  globalDoc(env)
+ ]);
  // V25: manter a mesma numeracao exibida no Telegram sem nova leitura R2.
  const strategyNumbers=new Map(allStrategies.filter(s=>!s.archived).map((s,i)=>[s.id,i+1]));
  let analysisStarted=Date.now();
