@@ -365,14 +365,23 @@ async function transmit(env,group,evt,sharedToken='',identity=null){
  if(progress.completed)return;
   const deliver=async(stage,method,body)=>{
   if(progress.confirmed[stage])return;
+  const v26StageStart=Date.now(); // NEXO V26.4 TELEMETRIA
    if(v22ExpiredEvent(evt)){console.warn('V22: etapa Telegram vencida, omitida',evt.type,stage);return;}
   if(tracked){
    progress.inFlight=stage;progress.updatedAt=now();
    await putDoc(env,stageKey,progress);
   }
   let result;
-  try{result=await tgUsing(deliveryToken,method,body)}
+  const v26TelegramStart=Date.now(); // NEXO V26.4 TELEMETRIA
+  let v26TelegramMs=0;
+  try{
+   result=await tgUsing(deliveryToken,method,body);
+   v26TelegramMs=Date.now()-v26TelegramStart;
+   console.log('NEXO V26.4 HTTP',JSON.stringify({type:evt.type,stage,private:!!group.private,ms:v26TelegramMs,ok:true}));
+  }
   catch(e){
+   v26TelegramMs=Date.now()-v26TelegramStart;
+   console.warn('NEXO V26.4 HTTP',JSON.stringify({type:evt.type,stage,private:!!group.private,ms:v26TelegramMs,ok:false}));
    if(tracked){
     progress.uncertain=stage;progress.updatedAt=now();
     await putDoc(env,stageKey,progress);
@@ -387,6 +396,8 @@ async function transmit(env,group,evt,sharedToken='',identity=null){
    progress.inFlight=null;progress.updatedAt=now();
    await putDoc(env,stageKey,progress);
   }
+  const v26StageMs=Date.now()-v26StageStart; // NEXO V26.4 TELEMETRIA
+  console.log('NEXO V26.4 ETAPA',JSON.stringify({type:evt.type,stage,private:!!group.private,totalMs:v26StageMs,telegramMs:v26TelegramMs,outrasOperacoesMs:Math.max(0,v26StageMs-v26TelegramMs)}));
  };
  // V12: somente UMA forma de mensagem por evento: TEXTO OU STICKER OU GIF.
  if(evt.message&&!['sticker','gif'].includes(evt.media?.type))await deliver('text','sendMessage',{chat_id:group.id,text:evt.message,disable_web_page_preview:true});
@@ -460,6 +471,7 @@ async function dispatch(env,config,evt,{privateOnly=false}={}){
 }
 
 async function fireEvent(env,settings,strategy,r,type,step,deadlineAtMs=0,globalCache=null,numberLookup=null){
+ const v26FireStart=Date.now(); // NEXO V26.4 TELEMETRIA
  // O estado/placar continua correto, mas notificacoes velhas nao serao enviadas.
  if(deadlineAtMs&&Date.now()>=deadlineAtMs){console.warn('V22: evento vencido nao enviado',type,r.seq);return;}
  const global=globalCache||await globalDoc(env),key=GLOBAL_MAP[type],template=global?.templates?.[key];
@@ -488,8 +500,10 @@ async function fireEvent(env,settings,strategy,r,type,step,deadlineAtMs=0,global
     if(number>0){const digits=String(number).replace(/[0-9]/g,c=>'⁰¹²³⁴⁵⁶⁷⁸⁹'[Number(c)]);evt.message+='\n\nᵉˢᵗ '+digits;}
   }
  await putDoc(env,eventKey(evt.id),evt);
+ const v26EventSavedAt=Date.now(); // NEXO V26.4 TELEMETRIA
  if(type==='attention'&&settings.botEnabled)await beginAttention(env,evt);
  await dispatch(env,settings,evt);
+ console.log('NEXO V26.4 EVENTO',JSON.stringify({type,seq:r.seq,totalMs:Date.now()-v26FireStart,preDespachoMs:v26EventSavedAt-v26FireStart,despachoMs:Date.now()-v26EventSavedAt}));
 }
 async function simulate(s,rows){const state={recent:[],active:null};const score=scoreDefault(dayBR());const events=[];
  for(const r of [...rows].sort((a,b)=>(a.seq||0)-(b.seq||0)||a.minute_epoch-b.minute_epoch)){
