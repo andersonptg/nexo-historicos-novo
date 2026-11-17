@@ -61,7 +61,7 @@ def _v18_1_confirm_ids(base, game_id, entries):
     except Exception:
         return False
 
-def sync(db):
+def sync(db, heartbeat_enabled=True):
     if not SITE_URL.is_file() or not TOKEN.is_file():return {'ok':False,'skipped':'site_ou_token_nao_configurado'}
     base=SITE_URL.read_text().strip().rstrip('/')
     if not base.startswith('https://'):
@@ -107,7 +107,7 @@ def sync(db):
         removed=prune_after_remote_ack(db,game['id'],400) if sent else 0
         # Sinal de vida com baixa frequencia, independente da chegada de rodadas.
         # Ajuda o painel a distinguir motor ativo de resultado novo.
-        if not sent and time.monotonic()-HB_LAST.get(game['id'],0)>=30:
+        if heartbeat_enabled and not sent and time.monotonic()-HB_LAST.get(game['id'],0)>=30:
             heartbeat=json.dumps({'game_id':game['id']}).encode()
             hb_req=Request(base+'/api/heartbeat',data=heartbeat,method='POST',headers={'Content-Type':'application/json','Authorization':'Bearer '+token,'User-Agent':'NEXO-V2-Termux'})
             try:
@@ -157,11 +157,36 @@ def sync_only():
     started=time.monotonic()
     db=connection()
     try:
-        result=sync(db)
+        result=sync(db,heartbeat_enabled=False)
         result['upload_ms']=round((time.monotonic()-started)*1000)
         return result
     finally:
         db.close()
+
+
+# NEXO V26.6 | HEARTBEAT ISOLADO
+# O heartbeat nao consulta SQLite, nao publica rodadas e nunca dispara Telegram.
+# Executado em um executor SEPARADO; uma rede lenta aqui nao bloqueia o uploader.
+def heartbeat_only():
+    if not SITE_URL.is_file() or not TOKEN.is_file():return {'ok':False,'skipped':'configuracao_incompleta'}
+    base=SITE_URL.read_text().strip().rstrip('/')
+    if not base.startswith('https://'):return {'ok':False,'error':'URL nao HTTPS'}
+    token=TOKEN.read_text().strip()
+    if len(token)<32:return {'ok':False,'error':'Token nao configurado'}
+    sent=0
+    for game in get_games():
+        if not game.get('enabled') or time.monotonic()-HB_LAST.get(game['id'],0)<30:
+            continue
+        request=Request(base+'/api/heartbeat',data=json.dumps({'game_id':game['id']}).encode(),method='POST',headers={'Content-Type':'application/json','Authorization':'Bearer '+token,'User-Agent':'NEXO-V26.6-Heartbeat'})
+        try:
+            with urlopen(request,timeout=6) as resp:
+                answer=json.load(resp)
+                if resp.status==200 and answer.get('ok'):
+                    HB_LAST[game['id']]=time.monotonic()
+                    sent+=1
+        except Exception:
+            pass  # Falha do heartbeat nao compromete fila R2 nem coleta.
+    return {'ok':True,'heartbeats':sent}
 
 
 def fast_metrics(values):
@@ -209,10 +234,21 @@ def run_motor(interval=1.0):
         last_source_error=''
         last_sync_error=''
         future=None
-        with ThreadPoolExecutor(max_workers=1,thread_name_prefix='nexo-r2') as uploader:
+        sync_pendente=False  # pedra descoberta durante HTTP ainda em andamento
+        hb_future=None
+        next_hb=0.0
+        with ThreadPoolExecutor(max_workers=1,thread_name_prefix='nexo-r2') as uploader, ThreadPoolExecutor(max_workers=1,thread_name_prefix='nexo-heartbeat') as heartbeats:
             while True:
                 started=time.monotonic()
                 dirty_metrics=False
+                # Heartbeat isolado da fila R2 e dos sinais; nunca bloqueia a coleta.
+                if hb_future is not None and hb_future.done():
+                    try:hb_future.result()
+                    except Exception:pass
+                    hb_future=None
+                if hb_future is None and time.monotonic()>=next_hb:
+                    hb_future=heartbeats.submit(heartbeat_only)
+                    next_hb=time.monotonic()+15.0
                 # Recolhe somente um resultado por envio. Nunca dispara dois
                 # POSTs simultaneos do mesmo motor (R2 e Telegram idempotentes).
                 if future is not None and future.done():
@@ -240,6 +276,11 @@ def run_motor(interval=1.0):
                         last_sync_error=error
                         next_sync=time.monotonic()+3.0
                     future=None
+                    # Se uma pedra surgiu durante o upload, nao aguardar mais 3s.
+                    # Em falha, respeitar o backoff de reconexao existente.
+                    if sync_pendente and metrics['r2_ok']:
+                        next_sync=0.0
+                    sync_pendente=False
                     dirty_metrics=True
                 try:
                     out=collect_only()
@@ -254,6 +295,7 @@ def run_motor(interval=1.0):
                         metrics['ultima_pedra_observada_pelo_nexo']=int(time.time())
                         metrics['quantidade_novas_pedras']=new
                         print('['+time.strftime('%H:%M:%S')+'] +'+str(new)+' rodada(s) confirmada(s) na fonte.',flush=True)
+                        if future is not None:sync_pendente=True
                         dirty_metrics=True
                     source_error='; '.join(str(x.get('error','')) for x in out['coleta'] if not x.get('ok'))
                     if source_error and source_error!=last_source_error:
