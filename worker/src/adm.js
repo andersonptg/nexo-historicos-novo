@@ -195,78 +195,227 @@ async function handlePrivateMessage(env,msg){
    const bot=await botInfo(env);await sendOwnerConfirmation(env,chatId,bot?.username||'');return;
  }
  if(!owner||owner.id!==chatId){if(/^\/start(?:@\w+)?$/i.test(text))await tg(env,'sendMessage',{chat_id:chatId,text:'🔐 Abra o NEXO ADM → Telegram, gere o código de vinculação e envie /vincular CODIGO aqui.'});return;}
- if(/^\/nexo(?:@\w+)?$/i.test(text)||/^\/menu(?:@\w+)?$/i.test(text)){await nexoSendMenu(env,chatId);return;}
+ if(/^\/nexo(?:@\w+)?$/i.test(text)||/^\/menu(?:@\w+)?$/i.test(text)){await nx5Clear(env,chatId);await nx5Send(env,chatId,await nx5View(env));return;}
+ if(await nx5Reply(env,msg))return;
  if(msg.sticker||msg.animation||msg.document?.mime_type==='image/gif'){
     const added=await saveReceivedMedia(env,msg);
     await tg(env,'sendMessage',{chat_id:chatId,text:added?'✅ Mídia recebida! Abra Stickers e GIFs no ADM e selecione-a para o sinal desejado.':'ℹ️ Essa mídia já está na biblioteca do NEXO.'});
  }
 }
-// NEXO BOT V1 ETAPA 4: menu privado somente leitura
-const NEXO_MENU_BUTTONS=[
- [{text:'⚡ Motor',callback_data:'nexo_menu:motor'},{text:'🔴 Resultados',callback_data:'nexo_menu:results'}],
- [{text:'🎯 Estratégias',callback_data:'nexo_menu:strategies'},{text:'🧪 Validação',callback_data:'nexo_menu:validation'}],
- [{text:'🖼 Stickers',callback_data:'nexo_menu:stickers'},{text:'✍️ Mensagens',callback_data:'nexo_menu:messages'}],
- [{text:'👥 Grupos',callback_data:'nexo_menu:groups'},{text:'📈 Placares',callback_data:'nexo_menu:scores'}],
- [{text:'⚙️ Ajustes',callback_data:'nexo_menu:settings'},{text:'📋 Logs',callback_data:'nexo_menu:logs'}]
-];
-const NEXO_MENU_TITLES={motor:'⚡ Motor',results:'🔴 Resultados',strategies:'🎯 Estratégias',validation:'🧪 Validação',stickers:'🖼 Stickers',messages:'✍️ Mensagens',groups:'👥 Grupos',scores:'📈 Placares',settings:'⚙️ Ajustes',logs:'📋 Logs'};
-async function nexoMenuText(env,section='home'){
- if(section==='home'){
-  const [settings,ss,gs]=await Promise.all([getDoc(env,K.settings,settingsDefault),getDoc(env,K.strategies,[]),getDoc(env,K.groups,[])]);
-  return '🤖 NEXO BOT — CENTRAL ADMINISTRATIVA\n\n'+
-   'Cloudflare: emissor oficial atual\n'+
-   'Sinais: '+(settings.botEnabled?'🟢 ativos':'🔴 desativados')+'\n'+
-   'Estratégias ativas: '+ss.filter(x=>x.enabled&&!x.archived).length+'\n'+
-   'Grupos selecionados: '+gs.filter(x=>x.selected&&x.admin).length+'\n\n'+
-   'Escolha uma opção. Nesta etapa os controles de escrita estão desativados.';
+// NEXO BOT V1 ETAPA 5: admin via private Telegram, no new webhook or sender.
+const NX5_PAGES={motor:'⚡ Motor',results:'🔴 Histórico',strategies:'🎯 Estratégias',validation:'🧪 Validação',stickers:'🖼 Stickers',messages:'✍️ Mensagens',groups:'👥 Grupos',scores:'📈 Placares',settings:'⚙️ Ajustes',logs:'📋 Logs'};
+const NX5_EVENTS={attention:'⚠️ Atenção',entry_black:'⚫ Entrada preto',entry_red:'🔴 Entrada vermelho',entry_white:'⚪ Entrada branco',gale1:'1️⃣ Gale 1',gale2:'2️⃣ Gale 2',green:'✅ WIN',white:'⚪ Branco',red:'❌ RED',bot_on:'🟢 Ativação'};
+const NX5_EVENT_NAMES=Object.keys(NX5_EVENTS);
+const NX5_DRAFT_PREFIX=ROOT+'telegram/menu-v5/draft/';
+const nx5DraftKey=id=>NX5_DRAFT_PREFIX+id+'.json';
+const nx5Btn=(label,data)=>({text:label,callback_data:'nx5:'+data});
+function nx5Keyboard(rows){return {inline_keyboard:rows.map(row=>row.map(([label,data])=>nx5Btn(label,data)))}}
+const nx5Back=()=>[['◀ Menu principal','home']];
+function nx5Time(r){
+ const sec=Number(r.minute_epoch||r.timestamp||0);
+ if(Number.isFinite(sec)&&sec>1600000000&&sec<2100000000)return isoTime(sec);
+ const raw=String(r.time||r.created_at||r.createdAt||'');
+ const m=raw.match(/\b([01]?\d|2[0-3]):([0-5]\d)\b/);
+ return m?m[1].padStart(2,'0')+':'+m[2]:'--:--';
+}
+function nx5Date(r){
+ const sec=Number(r.minute_epoch||r.timestamp||0);
+ if(Number.isFinite(sec)&&sec>1600000000&&sec<2100000000)return new Intl.DateTimeFormat('pt-BR',{timeZone:'America/Sao_Paulo',day:'2-digit',month:'2-digit'}).format(new Date(sec*1000));
+ const raw=String(r.time||r.created_at||r.createdAt||'');const m=raw.match(/\b(\d\d)\/(\d\d)\/(\d{4})\b/);return m?m[1]+'/'+m[2]:'--/--';
+}
+const nx5Stone=r=>(r.color==='red'?'🔴':r.color==='black'?'⚫':r.color==='white'?'⚪':'❔')+String(r.number??'?');
+const nx5Escape=x=>String(x).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+function nx5Table(items,page){
+ const start=page*15,rows=items.slice(start,start+15);
+ const header='POS  DATA   HORA   PEDRA';
+ const lines=rows.map((r,i)=>`${String(start+i+1).padStart(3,'0')}  ${nx5Date(r)}  ${nx5Time(r)}  ${nx5Stone(r)}`);
+ return '🔴 HISTÓRICO — BRABET DOUBLE\n\n<pre>'+nx5Escape(header+'\n'+(lines.join('\n')||'Nenhuma rodada disponível'))+'</pre>\nPágina '+(page+1)+' de '+Math.max(1,Math.ceil(items.length/15))+' · '+items.length+' registros disponíveis no recorte da Cloudflare.\nHorário em minutos conforme a fonte; não representa o instante exato da jogada.';
+}
+async function nx5Owner(env,id){const o=await getDoc(env,K.owner,null);return !!(o?.id&&o.id===String(id))}
+async function nx5Send(env,chatId,view){await tg(env,'sendMessage',{chat_id:chatId,text:view.text,...(view.html?{parse_mode:'HTML'}:{}),reply_markup:nx5Keyboard(view.rows)})}
+async function nx5Edit(env,q,view){
+ try{await tg(env,'editMessageText',{chat_id:q.message.chat.id,message_id:q.message.message_id,text:view.text,...(view.html?{parse_mode:'HTML'}:{}),reply_markup:nx5Keyboard(view.rows)})}
+ catch(e){if(!String(e?.message||e).includes('message is not modified'))throw e}
+}
+async function nx5View(env,screen='home',page=0){
+ const back=[nx5Back()];
+ if(screen==='home'){
+  const [st,ss,gs]=await Promise.all([getDoc(env,K.settings,settingsDefault),getDoc(env,K.strategies,[]),getDoc(env,K.groups,[])]);
+  return {text:'🤖 NEXO BOT V1 — ADMINISTRADOR\n\nSinais Cloudflare: '+(st.botEnabled?'🟢 ligados':'🔴 desligados')+'\nEstratégias: '+ss.filter(x=>!x.archived).length+' cadastradas\nGrupos selecionados: '+gs.filter(x=>x.selected&&x.admin).length+'\n\nEscolha uma área para administrar pelo Telegram.',rows:[[['⚡ Motor','motor'],['🔴 Histórico','results:0']],[['🎯 Estratégias','strategies'],['🧪 Validação','validation']],[['🖼 Stickers','stickers'],['✍️ Mensagens','messages']],[['👥 Grupos','groups'],['📈 Placares','scores']],[['⚙️ Ajustes','settings'],['📋 Logs','logs']]]};
  }
- if(!(section in NEXO_MENU_TITLES))return '⚠️ Opção desconhecida';
- if(section==='motor')return '⚡ MOTOR\n\nTermux: consulta em preparação.\nCloudflare: emissor oficial atual.\n\nLigar / Desligar / Automático: serão habilitados depois de validar a conexão autenticada com o Termux.';
- if(section==='results'){
-  const h=await recentR2(env,'brabet-double');
-  const items=(h.items||[]).slice(0,20);
-  return '🔴 RESULTADOS — BRABET DOUBLE\n\n'+(items.length?items.map(x=>(x.color==='red'?'🔴':x.color==='black'?'⚫':'⚪')+x.number).join('  '):'Nenhuma rodada no histórico atual')+'\n\nLeitura do arquivo Cloudflare. Histórico local Termux será conectado depois.';
+ if(screen==='results'){
+  const h=await recentR2(env,'brabet-double'),items=Array.isArray(h.items)?h.items:[];
+  const max=Math.max(0,Math.ceil(items.length/15)-1);page=Math.max(0,Math.min(max,page));
+  const pager=[];if(page>0)pager.push(['◀ Anterior','results:'+(page-1)]);if(page<max)pager.push(['Próxima ▶','results:'+(page+1)]);
+  return {text:nx5Table(items,page),html:true,rows:[...(pager.length?[pager]:[]),[['🔄 Atualizar','results:'+page]],...back]};
  }
- if(section==='strategies'){
-  const ss=await getDoc(env,K.strategies,[]);
-  return '🎯 ESTRATÉGIAS\n\nCadastradas: '+ss.filter(x=>!x.archived).length+'\nAtivas: '+ss.filter(x=>x.enabled&&!x.archived).length+'\n\nEditor será habilitado após testes seguros.';
+ if(screen==='strategies'){
+  const ss=(await getDoc(env,K.strategies,[])).filter(s=>!s.archived),start=page*7,max=Math.max(0,Math.ceil(ss.length/7)-1);page=Math.max(0,Math.min(page,max));
+  const current=ss.slice(page*7,page*7+7),rows=current.map(s=>[[`${s.enabled?'🟢':'⚪'} ${s.name.slice(0,42)}`,'strategy:'+s.id]]);
+  const pager=[];if(page>0)pager.push(['◀','strategies:'+(page-1)]);if(page<max)pager.push(['▶','strategies:'+(page+1)]);
+  return {text:`🎯 ESTRATÉGIAS\n\n${ss.length} cadastradas · ${ss.filter(s=>s.enabled).length} ativas.\n\nSelecione uma estratégia para editar, pausar ou excluir.`,rows:[[['➕ Cadastrar estratégia','strategynew']],...rows,...(pager.length?[pager]:[]),...back]};
  }
- if(section==='groups'){
+ if(screen==='strategynew')return {text:'🎯 CADASTRAR ESTRATÉGIA\n\nResponda com o NOME da nova estratégia (2 a 70 caracteres).\nO bot pedirá padrão, cor e Gale em seguida.\nEla será criada DESLIGADA, para evitar sinais inesperados.',rows:[[['❌ Cancelar','cancel']],...back]};
+ if(screen==='messages')return {text:'✍️ MENSAGENS GLOBAIS\n\nEscolha o evento. O bot vai pedir o texto e salvar no mesmo banco usado pelo site.\n\nAs mensagens atuais não serão apagadas.',rows:[...Object.entries(NX5_EVENTS).reduce((a,[k,v],i)=>{if(i%2===0)a.push([]);a[a.length-1].push([v,'message:'+k]);return a},[]),...back]};
+ if(screen==='groups'){
   const gs=await getDoc(env,K.groups,[]);
-  return '👥 GRUPOS\n\nDetectados: '+gs.length+'\nSelecionados e ADM: '+gs.filter(x=>x.selected&&x.admin).length+'\n\nSeleção de destinos: bloqueada nesta etapa.';
+  return {text:'👥 GRUPOS E CANAIS\n\nToque em um destino para marcar/desmarcar. O salvamento é imediato.\n\nSomente destinos em que o bot é administrador podem ser selecionados.\nSelecionados: '+gs.filter(g=>g.selected&&g.admin).length,rows:[...gs.slice(0,30).map((g,i)=>[[`${g.selected?'✅':'⬜'} ${String(g.name||g.id).slice(0,37)}${g.admin?'':' 🔒'}`,'group:'+i]]),[['🔄 Atualizar','groups']],...back]};
  }
- if(section==='stickers'){
+ if(screen==='stickers'){
   const media=await getDoc(env,K.media,[]);
-  return '🖼 STICKERS E GIFS\n\nNa biblioteca: '+media.length+'\n\nVocê já pode encaminhar stickers para o bot no privado; o cadastro existente continua funcionando.';
+  return {text:'🖼 STICKERS E GIFS\n\nBiblioteca: '+media.length+' mídia(s).\n\nPara cadastrar um sticker ou GIF, envie-o nesta conversa privada. Depois selecione um evento abaixo para associar uma mídia.',rows:[[['🎯 Atribuir mídia','mediaevents'],['🔄 Atualizar','stickers']],...back]};
  }
- if(section==='settings'){
-  const cfg=await getDoc(env,K.settings,settingsDefault);
-  return '⚙️ AJUSTES\n\nEnvio oficial: '+(cfg.botEnabled?'LIGADO':'DESLIGADO')+'\n\nConfigurações de escrita disponíveis somente no ADM atual até a próxima etapa.';
+ if(screen==='mediaevents')return {text:'🖼 ATRIBUIR STICKER OU GIF\n\nSelecione o evento que receberá uma mídia cadastrada. Gale 1 e Gale 2 continuam somente texto.',rows:[...Object.entries(NX5_EVENTS).filter(([k])=>!['gale1','gale2'].includes(k)).map(([k,v])=>[[v,'mediaevent:'+k]]),...back]};
+ if(screen==='settings'){
+  const st=await getDoc(env,K.settings,settingsDefault);
+  return {text:'⚙️ AJUSTES\n\nEnvio oficial atual: '+(st.botEnabled?'LIGADO':'DESLIGADO')+'\nMostrar números: '+(st.showNumbers?'SIM':'NÃO')+'\nBranco curinga: '+(st.jokerWhite?'SIM':'NÃO')+'\nZerar placar à meia-noite: '+(st.resetMidnight?'SIM':'NÃO')+'\n\nMudar estas opções afeta os próximos sinais.',rows:[[['🔢 Alternar números','setting:showNumbers']],[['⚪ Alternar branco curinga','setting:jokerWhite']],[['🌙 Alternar reset diário','setting:resetMidnight']],...back]};
  }
- return NEXO_MENU_TITLES[section]+'\n\nTela preparada. Operações de escrita ficam bloqueadas por segurança nesta etapa.';
+ if(screen==='scores'){
+  const ss=(await getDoc(env,K.strategies,[])).filter(x=>!x.archived);const rows=[];
+  for(const s of ss.slice(page*8,page*8+8)){const c=await scoreRead(env,s.id);rows.push(`${s.name.slice(0,24)}\n✅${c.green||0} ⚪${c.white||0} ❌${c.red||0}`)}
+  const max=Math.max(0,Math.ceil(ss.length/8)-1),pager=[];if(page>0)pager.push(['◀','scores:'+(page-1)]);if(page<max)pager.push(['▶','scores:'+(page+1)]);
+  return {text:'📈 PLACARES DO DIA\n\n'+(rows.join('\n\n')||'Nenhuma estratégia cadastrada')+'\n\nPágina '+(page+1),rows:[...(pager.length?[pager]:[]),[['🔄 Atualizar','scores:'+page]],...back]};
+ }
+ if(screen==='validation')return {text:'🧪 VALIDAÇÃO\n\nO painel antigo tem rotinas próprias de análise. A execução de backtests por Telegram ainda não está conectada; não exibiremos porcentagens simuladas nem aprovação automática sem testes reais.',rows:back};
+ if(screen==='logs')return {text:'📋 LOGS E DIAGNÓSTICO\n\nO menu está conectado ao receptor Cloudflare. Logs do motor Termux ainda não estão sincronizados aqui.\n\nUse o histórico para verificar a última janela recebida pela Cloudflare.',rows:[[['🔴 Histórico','results:0']],...back]};
+ if(screen==='motor')return {text:'⚡ MOTOR\n\nCloudflare: emissor oficial atual.\nTermux V1: ainda não conectado por canal autenticado.\n\nNão é possível ligar ou reiniciar remotamente o Termux apenas com botões do Telegram. Evitamos criar um segundo emissor.',rows:back};
+ return nx5View(env,'home');
 }
-function nexoMenuMarkup(section='home'){
- return {inline_keyboard:section==='home'?NEXO_MENU_BUTTONS:[[{text:'◀ Voltar ao menu',callback_data:'nexo_menu:home'}]]};
+async function nx5Draft(env,chatId,stage,extras={}){await putDoc(env,nx5DraftKey(chatId),{stage,created:now(),...extras})}
+async function nx5Clear(env,chatId){await env.R2.delete(nx5DraftKey(chatId))}
+function nx5Pattern(raw){
+ const map={r:'red',red:'red',vermelho:'red','🔴':'red',b:'black',black:'black',preto:'black','⚫':'black',w:'white',white:'white',branco:'white','⚪':'white','*':'*'};
+ return raw.trim().split(/[\s,;|]+/).filter(Boolean).map(x=>map[x.toLowerCase()]||'');
 }
-async function nexoSendMenu(env,chatId){
- await tg(env,'sendMessage',{chat_id:chatId,text:await nexoMenuText(env),reply_markup:nexoMenuMarkup()});
+async function nx5Reply(env,msg){
+ const chatId=String(msg.chat?.id||'');if(!chatId||chatId!==String(msg.from?.id||'')||!await nx5Owner(env,chatId))return false;
+ const d=await getDoc(env,nx5DraftKey(chatId),null);if(!d||!d.stage)return false;
+ const t=String(msg.text||'').trim();if(!t)return false;
+ if(/^\/cancelar$/i.test(t)){await nx5Clear(env,chatId);await nx5Send(env,chatId,{text:'❎ Operação cancelada.',rows:[nx5Back()]});return true}
+ if(now()-d.created>1200){await nx5Clear(env,chatId);await nx5Send(env,chatId,{text:'⌛ Cadastro expirado. Reabra o menu /nexo.',rows:[nx5Back()]});return true}
+ let answer='';
+ if(d.stage==='newname'){
+  if(t.length<2||t.length>70)answer='Nome inválido. Envie um nome entre 2 e 70 caracteres.';
+  else {await nx5Draft(env,chatId,'newpattern',{name:t});answer='Padrão recebido no formato de cores.\nExemplo: vermelho preto vermelho branco\nOu: 🔴 ⚫ 🔴 ⚪\nMáximo: '+MAX_PATTERN_STONES+' pedras.\n\nEnvie o padrão:'}
+ }else if(d.stage==='newpattern'){
+  const p=nx5Pattern(t);if(!p.length||p.length>MAX_PATTERN_STONES)answer='Padrão inválido. Use 🔴 ⚫ ⚪ ou vermelho/preto/branco.';
+  else{await nx5Draft(env,chatId,'newtarget',{name:d.name,pattern:p});answer='Escolha a cor-alvo. Responda: PRETO, VERMELHO ou BRANCO.'}
+ }else if(d.stage==='newtarget'){
+  const target=nx5Pattern(t);if(target.length!==1||!TARGETS.includes(target[0]))answer='Digite somente PRETO, VERMELHO ou BRANCO.';
+  else {await nx5Draft(env,chatId,'newgale',{name:d.name,pattern:d.pattern,target:target[0]});answer='Defina o Gale máximo: 0, 1 ou 2.'}
+ }else if(d.stage==='newgale'){
+  if(!['0','1','2'].includes(t))answer='Digite 0, 1 ou 2.';
+  else{
+   const ss=await getDoc(env,K.strategies,[]);if(ss.length>=1000)answer='Limite de estratégias atingido.';
+   else{
+    const row=validateStrategy({...strategyDefault(),name:d.name,pattern:d.pattern,target:d.target,maxGale:Number(t),enabled:false},null);
+    const h=await recentR2(env,'brabet-double'),max=Math.max(0,...(h.items||[]).map(x=>Number(x.seq)||0));
+    await putDoc(env,runtimeKey(row.id),{lastSeq:max,recent:[],active:null});await resetScore(env,row.id);
+    await putDoc(env,K.strategies,[...ss,row]);await nx5Clear(env,chatId);
+    answer='✅ Estratégia cadastrada DESLIGADA!\n'+row.name+'\nPadrão: '+row.pattern.join(', ')+'\nCor: '+row.target+' · Gale '+row.maxGale+'\n\nAbra Estratégias para ativar quando estiver pronto.';
+   }
+  }
+ }else if(d.stage.startsWith('edit')){
+  const ss=await getDoc(env,K.strategies,[]),row=ss.find(x=>x.id===d.id&&!x.archived);
+  if(!row){await nx5Clear(env,chatId);answer='Estratégia não encontrada.'}
+  else{
+   const updated={...row};let valid=true;
+   if(d.stage==='editname'){if(t.length<2||t.length>70){valid=false;answer='Nome inválido (2 a 70 caracteres).'}else updated.name=t}
+   else if(d.stage==='editpattern'){const p=nx5Pattern(t);if(!p.length||p.length>MAX_PATTERN_STONES||p.some(x=>!x)){valid=false;answer='Padrão inválido. Use vermelho/preto/branco e *.'}else updated.pattern=p}
+   else if(d.stage==='edittarget'){const p=nx5Pattern(t);if(p.length!==1||!TARGETS.includes(p[0])){valid=false;answer='Responda PRETO, VERMELHO ou BRANCO.'}else updated.target=p[0]}
+   else if(d.stage==='editgale'){if(!['0','1','2'].includes(t)){valid=false;answer='Responda 0, 1 ou 2.'}else updated.maxGale=Number(t)}
+   if(valid){
+    const checked=validateStrategy(updated,row);
+    const i=ss.findIndex(x=>x.id===d.id);ss[i]={...checked,enabled:false,updatedAt:now(),revision:crypto.randomUUID()};
+    await putDoc(env,K.strategies,ss);await nx5Clear(env,chatId);
+    answer='✅ Estratégia editada e PAUSADA por segurança. Reative no menu depois de conferir os dados.';
+   }
+  }
+ }else if(d.stage==='message'){
+  if(t.length>1500)answer='Mensagem longa demais (máx. 1500 caracteres).';
+  else{
+   const g=await globalDoc(env);g.templates={...(g.templates||{}),[d.event]:{...(g.templates?.[d.event]||{}),text:t,type:'text',assetId:'',saved:true,updatedAt:now()}};
+   g.updatedAt=now();await putDoc(env,GLOBAL_KEY,g);await nx5Clear(env,chatId);answer='✅ Texto salvo para '+NX5_EVENTS[d.event]+'.';
+  }
+ }else return false;
+ await nx5Send(env,chatId,{text:answer+'\n\nDigite /cancelar para interromper um cadastro.',rows:[nx5Back()]});return true;
 }
-async function nexoMenuCallback(env,q){
- const data=String(q?.data||'');if(!data.startsWith('nexo_menu:'))return;
+async function nx5Callback(env,q){
+ const data=String(q?.data||'');if(!data.startsWith('nx5:'))return false;
  const chatId=String(q.message?.chat?.id||''),from=String(q.from?.id||'');
- const owner=await getDoc(env,K.owner,null);
- if(!chatId||chatId!==from||q.message?.chat?.type!=='private'||owner?.id!==from){
-  await tg(env,'answerCallbackQuery',{callback_query_id:q.id,text:'Acesso exclusivo do administrador',show_alert:true});return;
- }
- const section=data.slice(10);
- if(section!=='home'&&!(section in NEXO_MENU_TITLES)){
-  await tg(env,'answerCallbackQuery',{callback_query_id:q.id,text:'Opção inválida'});return;
+ if(!chatId||chatId!==from||q.message.chat.type!=='private'||!await nx5Owner(env,from)){
+  await tg(env,'answerCallbackQuery',{callback_query_id:q.id,text:'Acesso restrito ao administrador',show_alert:true});return true;
  }
  await tg(env,'answerCallbackQuery',{callback_query_id:q.id});
- try{
-  await tg(env,'editMessageText',{chat_id:chatId,message_id:q.message.message_id,text:await nexoMenuText(env,section),reply_markup:nexoMenuMarkup(section)});
- }catch(e){if(!String(e?.message||e).includes('message is not modified'))throw e;}
+ const key=data.slice(4);let screen=key,page=0;
+ if(key==='cancel'){await nx5Clear(env,chatId);screen='home'}
+ if(key==='strategynew'){await nx5Draft(env,chatId,'newname');return nx5Edit(env,q,await nx5View(env,'strategynew'))}
+ if(/^message:(attention|entry_black|entry_red|entry_white|gale1|gale2|green|white|red|bot_on)$/.test(key)){
+  const ev=key.slice(8);await nx5Draft(env,chatId,'message',{event:ev});return nx5Edit(env,q,{text:'✍️ '+NX5_EVENTS[ev]+'\n\nEnvie a nova mensagem neste chat. O texto atual só será substituído depois de receber a mensagem.\n\nDigite /cancelar para cancelar.',rows:[nx5Back()]});
+ }
+ if(key.startsWith('group:')){
+  const ix=Number(key.slice(6)),gs=await getDoc(env,K.groups,[]);
+  if(!Number.isInteger(ix)||ix<0||ix>=gs.length)return nx5Edit(env,q,await nx5View(env,'groups'));
+  const g=gs[ix];if(!g.admin)return nx5Edit(env,q,{text:'🔒 Este destino precisa conceder privilégios de administrador ao bot.',rows:[nx5Back()]});
+  const selected=gs.filter(x=>x.selected&&x.admin).length;
+  if(!g.selected&&selected>=5)return nx5Edit(env,q,{text:'Máximo de 5 destinos selecionados.',rows:[nx5Back()]});
+  gs[ix]={...g,selected:!g.selected,updatedAt:now()};await putDoc(env,K.groups,gs);
+  return nx5Edit(env,q,await nx5View(env,'groups'));
+ }
+ if(key.startsWith('setting:')){
+  const name=key.slice(8);if(!['showNumbers','jokerWhite','resetMidnight'].includes(name))return;
+  const st=await getDoc(env,K.settings,settingsDefault);st[name]=!st[name];st.updatedAt=now();await putDoc(env,K.settings,st);
+  return nx5Edit(env,q,await nx5View(env,'settings'));
+ }
+ if(/^strategy:[0-9a-f]{32}$/.test(key)){
+  const id=key.slice(9),ss=await getDoc(env,K.strategies,[]),s=ss.find(x=>x.id===id&&!x.archived);
+  if(!s)return nx5Edit(env,q,await nx5View(env,'strategies'));
+  return nx5Edit(env,q,{text:'🎯 '+s.name+'\n\nEstado: '+(s.enabled?'🟢 LIGADA':'⚪ DESLIGADA')+'\nPadrão: '+s.pattern.join(' ').slice(0,750)+'\nEntrada: '+s.target+' · Gale '+s.maxGale+'\n\nConfirme alterações pelo botão.',rows:[[[s.enabled?'⏸ Pausar':'▶ Ativar','strtoggle:'+id]],[['✏️ Editar','stredit:'+id],['🗑 Excluir','strdelete:'+id]],[['◀ Estratégias','strategies']]]});
+ }
+ if(/^stredit:[0-9a-f]{32}$/.test(key)){
+  const id=key.slice(8),ss=await getDoc(env,K.strategies,[]),s=ss.find(x=>x.id===id&&!x.archived);
+  if(!s)return nx5Edit(env,q,await nx5View(env,'strategies'));
+  return nx5Edit(env,q,{text:'✏️ EDITAR ESTRATÉGIA\n\n'+s.name+'\nAs alterações pausam a estratégia para revisão.\nSelecione o campo:',rows:[[['Nome','editfield:name:'+id],['Padrão','editfield:pattern:'+id]],[['Cor de entrada','editfield:target:'+id],['Gale máximo','editfield:gale:'+id]],[['◀ Voltar','strategy:'+id]]]});
+ }
+ if(/^editfield:(name|pattern|target|gale):[0-9a-f]{32}$/.test(key)){
+  const m=/^editfield:(name|pattern|target|gale):([0-9a-f]{32})$/.exec(key),field=m[1],id=m[2];
+  await nx5Draft(env,chatId,'edit'+field,{id});
+  const hint={name:'Envie o novo nome (2 a 70 caracteres).',pattern:'Envie o novo padrão: 🔴 ⚫ ⚪ ou vermelho preto branco.',target:'Responda PRETO, VERMELHO ou BRANCO.',gale:'Envie 0, 1 ou 2.'};
+  return nx5Edit(env,q,{text:'✏️ EDITAR '+field.toUpperCase()+'\n\n'+hint[field]+'\n\nA estratégia ficará pausada quando salvar.',rows:[[['❌ Cancelar','cancel']]]});
+ }
+ if(/^strtoggle:[0-9a-f]{32}$/.test(key)){
+  const id=key.slice(10),ss=await getDoc(env,K.strategies,[]),s=ss.find(x=>x.id===id&&!x.archived);if(!s)return;
+  if(!s.enabled){const h=await recentR2(env,'brabet-double'),max=Math.max(0,...(h.items||[]).map(x=>Number(x.seq)||0));await putDoc(env,runtimeKey(id),{lastSeq:max,recent:[],active:null})}
+  s.enabled=!s.enabled;s.updatedAt=now();s.revision=crypto.randomUUID();await putDoc(env,K.strategies,ss);
+  return nx5Edit(env,q,{text:'✅ Estratégia '+s.name+' '+(s.enabled?'ATIVADA':'PAUSADA')+'.\n\nAlterações afetam os próximos resultados.',rows:[[['◀ Estratégias','strategies']]]});
+ }
+ if(/^strdelete:[0-9a-f]{32}$/.test(key))return nx5Edit(env,q,{text:'⚠️ Confirmar EXCLUSÃO permanente da estratégia? Essa ação não pode ser desfeita pelo menu.',rows:[[['✅ Confirmar exclusão','strconfirm:'+key.slice(10)]],[['❌ Cancelar','strategies']]]});
+ if(/^strconfirm:[0-9a-f]{32}$/.test(key)){
+  const id=key.slice(11),ss=await getDoc(env,K.strategies,[]),s=ss.find(x=>x.id===id&&!x.archived);
+  if(!s)return nx5Edit(env,q,await nx5View(env,'strategies'));
+  if(s.enabled)return nx5Edit(env,q,{text:'⚠️ Pause a estratégia antes de excluir, para não interromper sinais ativos.',rows:[[['◀ Estratégias','strategies']]]});
+  await putDoc(env,purgeTaskKey(id),{id,queuedAt:now(),pending:true,version:26});await putDoc(env,K.strategies,ss.filter(x=>x.id!==id));
+  return nx5Edit(env,q,{text:'✅ Estratégia excluída. Limpeza histórica agendada.',rows:[[['◀ Estratégias','strategies']]]});
+ }
+ if(/^mediaevent:/.test(key)){
+  const ev=key.slice(11),media=await getDoc(env,K.media,[]);if(!NX5_EVENTS[ev]||['gale1','gale2'].includes(ev))return;
+  const rows=media.slice(-20).reverse().map((m,i)=>[[`${m.kind==='sticker'?'🖼':'🎞'} ${String(m.name||'Mídia').slice(0,36)}`,'mediaassign:'+ev+':'+m.id]]);
+  return nx5Edit(env,q,{text:'🖼 '+NX5_EVENTS[ev]+'\nEscolha uma mídia da biblioteca.\n\nÚltimas '+rows.length+' mídias:',rows:[...rows,[['🚫 Somente texto','mediatxt:'+ev]],...nx5Back()]});
+ }
+ if(/^mediaassign:/.test(key)){
+  const m=/^mediaassign:([a-z_]+):([a-zA-Z0-9_-]{8,90})$/.exec(key);if(!m||!NX5_EVENTS[m[1]])return;
+  const media=await getDoc(env,K.media,[]),a=media.find(x=>x.id===m[2]);if(!a)return;
+  const g=await globalDoc(env);g.templates={...(g.templates||{}),[m[1]]:{...(g.templates?.[m[1]]||{}),type:a.kind,assetId:a.id,text:g.templates?.[m[1]]?.text||'',sendWithMedia:true,saved:true,updatedAt:now()}};g.updatedAt=now();await putDoc(env,GLOBAL_KEY,g);
+  return nx5Edit(env,q,{text:'✅ Mídia associada ao evento '+NX5_EVENTS[m[1]]+'.',rows:[[['◀ Stickers','stickers']]]});
+ }
+ if(/^mediatxt:/.test(key)){
+  const ev=key.slice(9);if(!NX5_EVENTS[ev])return;const g=await globalDoc(env);g.templates={...(g.templates||{}),[ev]:{...(g.templates?.[ev]||{}),type:'text',assetId:'',saved:true,updatedAt:now()}};g.updatedAt=now();await putDoc(env,GLOBAL_KEY,g);
+  return nx5Edit(env,q,{text:'✅ Evento configurado para somente texto.',rows:[[['◀ Stickers','stickers']]]});
+ }
+ const match=/^(results|strategies|scores):(\d+)$/.exec(key);if(match){screen=match[1];page=Math.min(1000,Number(match[2]))}
+ await nx5Edit(env,q,await nx5View(env,screen,page));return true;
 }
+
 async function telegramWebhook(request,env){
  const secret=await webhookSecret(env);
  if(!secret||!await eqHash(request.headers.get('X-Telegram-Bot-Api-Secret-Token')||'',secret))return err('Nao autorizado',401);
@@ -278,7 +427,7 @@ async function telegramWebhook(request,env){
  if(normChat(c)){
    try{await discoverChat(env,c,{force:!!b.my_chat_member})}catch(e){console.warn('ADM webhook group',String(e.message||e).slice(0,80))}
  }
- if(b.callback_query)try{await nexoMenuCallback(env,b.callback_query)}catch(e){console.warn('NEXO MENU callback:',String(e.message||e).slice(0,90))}
+ if(b.callback_query)try{await nx5Callback(env,b.callback_query)}catch(e){console.warn('NEXO MENU callback:',String(e.message||e).slice(0,90))}
  if(b.message?.chat?.type==='private')try{await handlePrivateMessage(env,b.message)}catch(e){console.warn('ADM webhook private:',String(e.message||e).slice(0,90))}
  return json({ok:true});
 }
