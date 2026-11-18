@@ -6,8 +6,8 @@
  const el=(tag,cls,txt)=>{const n=document.createElement(tag);if(cls)n.className=cls;if(txt!==undefined)n.textContent=String(txt);return n};
  const btn=(txt,act,cls='')=>{const b=el('button','v17-btn '+cls,txt);b.type='button';b.addEventListener('click',act);return b};
  const tokenColor=t=>t==='red'||t==='black'||t==='white'?t:t==='*'?'any':t.startsWith('n:')?(+t.slice(2)===0?'white':+t.slice(2)<=7?'red':'black'):'any';
- const label=t=>t==='red'?'🔴':t==='black'?'⚫':t==='white'?'⚪':t==='*'?'★':t.startsWith('n:')?t.slice(2):'?';
- let analysis=null,searching=false,pageIndex=0,visibleTarget='all',selectedScore='__all__',touched=false;
+ const label=t=>t==='red'?'red':t==='black'?'black':t==='white'?'white':t==='*'?'★':t.startsWith('n:')?'#'+t.slice(2):'?';
+ let analysis=null,searching=false,pageIndex=0,visibleTarget='all',patternType='all',selectedScore='__all__',touched=false;
  let v25RuleSearch='',v25Deleting=false;
  const v26SelectedIds=new Set();let v26BulkBusy=false;
  function stoneRow(tokens){const row=el('div','v17-stones');for(const t of tokens){const x=el('span','v17-stone '+tokenColor(t),label(t));x.title=t;x.setAttribute('aria-label',t);row.append(x)}return row}
@@ -222,10 +222,20 @@
  async function resetScore(){if(!confirm('Zerar '+(selectedScore==='__all__'?'os placares de TODAS as estratégias':'somente este placar')+'? Esta ação não apaga o histórico de rodadas.'))return;
   try{await api('scores/reset',payload('POST',{id:selectedScore==='__all__'?null:selectedScore,confirm:true}));await safeReload();notice('Placar zerado com confirmação.')}catch(e){notice('Erro: '+e.message,true)}}
  function buildPatterns(){const page=$('page-padroes');if(!page||$('v17-pattern-panel'))return;const root=el('div','v17-wrap');root.id='v17-pattern-panel';root.append(header('Analisador de padrões reais','Busca todas as datas disponíveis no histórico R2, sem cadastrar ou ativar sinais automaticamente.'));
-  const c=wrapper('Buscar padrões repetidos','Números exatos, cores ou uma pedra exata no meio de cores. Exibe apenas padrões que tiveram 100% histórico e no mínimo 5 acertos.');const fields=el('div','v17-form-row');const lab=el('label');lab.append(el('small','','Mínimo de acertos'));const min=el('select','v17-input');min.id='v17-min-hits';for(const n of [5,6,8,10,15,20]){const op=el('option','',String(n));op.value=n;min.append(op)}lab.append(min);const other=el('label');other.append(el('small','','Tamanho do padrão'));const sel=el('select','v17-input');sel.id='v17-pattern-length';for(const n of [3,4,5,6,7]){const op=el('option','',`Até ${n} pedras`);op.value=n;sel.append(op)}sel.value='7';other.append(sel);fields.append(lab,other);c.append(fields);
+  const c=wrapper('Buscar padrões repetidos','Filtre sequências de números exatos, cores, combinações e padrões que antecederam ou vieram após o branco. A amostra histórica não prevê resultados futuros.');const fields=el('div','v17-form-row');const lab=el('label');lab.append(el('small','','Mínimo de acertos'));const min=el('select','v17-input');min.id='v17-min-hits';for(const n of [5,6,8,10,15,20]){const op=el('option','',String(n));op.value=n;min.append(op)}lab.append(min);const other=el('label');other.append(el('small','','Tamanho do padrão'));const sel=el('select','v17-input');sel.id='v17-pattern-length';for(const n of [3,4,5,6,7]){const op=el('option','',`Até ${n} pedras`);op.value=n;sel.append(op)}sel.value='7';other.append(sel);fields.append(lab,other);c.append(fields);
   const buttons=labelButtons(c);buttons.append(btn('⌕ Procurar em todos os dias',()=>void loadPatterns(),'primary'));const status=el('p','v17-muted','Nenhuma busca executada.');status.id='v17-pattern-status';c.append(status);
   c.append(el('p','v17-alert','Uma sequência com 5/5 ou 6/6 acertos no passado não tem 100% de probabilidade futura. A seleção dos melhores padrões após observar resultados aumenta o risco de coincidências.'));
-  root.append(c);const out=wrapper('Padrões encontrados','A lista é ordenada por quantidade de ocorrências, com cada padrão em uma linha.');const filter=el('div','v17-actions');const choose=el('select','v17-input');choose.style.maxWidth='210px';choose.id='v17-target-filter';for(const [v,t] of [['all','Todas as cores'],['red','🔴 Vermelho'],['black','⚫ Preto'],['white','⚪ Branco']]){const o=el('option','',t);o.value=v;choose.append(o)}choose.addEventListener('change',()=>{visibleTarget=choose.value;pageIndex=0;drawPatterns()});filter.append(choose);out.append(filter);
+  root.append(c);const out=wrapper('Padrões encontrados','A lista é ordenada por quantidade de ocorrências, com cada padrão em uma linha.');const filter=el('div','v17-actions');const choose=el('select','v17-input');choose.style.maxWidth='210px';choose.id='v17-target-filter';for(const [v,t] of [['all','Todas as cores'],['red','🟠 Laranja'],['black','⚫ Preto'],['white','⚪ Branco']]){const o=el('option','',t);o.value=v;choose.append(o)}choose.addEventListener('change',()=>{visibleTarget=choose.value;pageIndex=0;drawPatterns()});filter.append(choose);
+    const kind=el('select','v17-input');kind.id='v4-pattern-kind';kind.style.maxWidth='280px';
+    for(const [value,title] of [
+      ['all','Todos os padrões'],['numbers','Somente números exatos'],
+      ['colors','Somente cores'],['mixed','Números + cores'],
+      ['after-white','Padrões após branco'],['with-white','Padrões que contêm branco'],
+      ['to-white','Padrões que antecedem branco']]){
+      const o=el('option','',title);o.value=value;kind.append(o);
+    }
+    kind.addEventListener('change',()=>{patternType=kind.value;pageIndex=0;drawPatterns()});
+    filter.append(kind);out.append(filter);
    const bulk=el('div','v20-bulk-actions');
    const galeLabel=el('label','v20-bulk-gale');galeLabel.append(el('span','','GALE PADRÃO'));
    const galeSelect=el('select','v17-input');galeSelect.id='v20-gale-import';
@@ -236,8 +246,14 @@
    const progress=el('div','v17-muted');progress.id='v20-bulk-status';bulk.append(progress);out.append(bulk);
    const list=el('div','v17-pattern-list');list.id='v17-pattern-results';out.append(list);out.append(btn('Mostrar mais resultados',()=>{pageIndex++;drawPatterns()},''));out.lastChild.id='v17-pattern-more';root.append(out);page.querySelector('.pagehead')?.insertAdjacentElement('afterend',root)}
  async function retrieveArchive(){const days=[];let cursor=null;for(let batch=0;batch<12;batch++){
-  const res=await fetch('/api/days?game_id=brabet-double'+(cursor?'&cursor='+encodeURIComponent(cursor):''),{credentials:'same-origin',cache:'no-store'});if(!res.ok)throw Error('Não foi possível listar dias do R2 (HTTP '+res.status+')');const d=await res.json();days.push(...(d.days||[]));cursor=d.cursor;if(!cursor)break;if(batch===11)throw Error('Há mais datas do que o limite de paginação desta consulta');}
-  const all=[],unique=[...new Set(days)].sort();let count=0;for(const day of unique){let offset=0;while(true){const r=await fetch('/api/history?game_id=brabet-double&day='+day+'&limit=500&offset='+offset,{credentials:'same-origin',cache:'no-store'});if(!r.ok)throw Error('Erro ao ler '+day+' (HTTP '+r.status+')');const data=await r.json();const rows=data.items||[];all.push(...rows);offset+=rows.length;if(all.length>120000)throw Error('O histórico ultrapassou 120 mil linhas; use análise por intervalo para evitar travar o celular. Nenhuma regra foi criada.');if(!data.has_more||!rows.length)break;}
+  const res=await fetch('/api/days?game_id=blitz-double'+(cursor?'&cursor='+encodeURIComponent(cursor):''),{credentials:'same-origin',cache:'no-store'});if(!res.ok)throw Error('Não foi possível listar dias do R2 (HTTP '+res.status+')');const d=await res.json();days.push(...(d.days||[]));cursor=d.cursor;if(!cursor)break;if(batch===11)throw Error('Há mais datas do que o limite de paginação desta consulta');}
+     const all=[],unique=[...new Set(days)].sort();let count=0;
+   if(!unique.length){
+     const r=await fetch('/api/history?game_id=blitz-double&limit=500',{credentials:'same-origin',cache:'no-store'});
+     if(!r.ok)throw Error('Nao foi possivel ler historico Blitz (HTTP '+r.status+')');
+     const data=await r.json();return {rows:data.items||[],days:0};
+   }
+   for(const day of unique){let offset=0;while(true){const r=await fetch('/api/history?game_id=blitz-double&day='+day+'&limit=500&offset='+offset,{credentials:'same-origin',cache:'no-store'});if(!r.ok)throw Error('Erro ao ler '+day+' (HTTP '+r.status+')');const data=await r.json();const rows=data.items||[];all.push(...rows);offset+=rows.length;if(all.length>120000)throw Error('O histórico ultrapassou 120 mil linhas; use análise por intervalo para evitar travar o celular. Nenhuma regra foi criada.');if(!data.has_more||!rows.length)break;}
    count++;$('v17-pattern-status').textContent='Lendo arquivos R2: '+count+'/'+unique.length+' dias · '+all.length+' rodadas.';
    await new Promise(r=>setTimeout(r,0));}
   return {rows:all,days:unique.length};}
@@ -245,8 +261,19 @@
   const {rows,days}=await retrieveArchive();stat.textContent='Analisando '+rows.length+' registros de '+days+' dias...';await new Promise(r=>setTimeout(r,30));
   const core=window.NEXO_V17_PATTERN;if(!core)throw Error('Motor de padrões não carregado');analysis=core.mine(rows,{minHits:Number($('v17-min-hits').value),maxLength:Number($('v17-pattern-length').value)});pageIndex=0;drawPatterns();syncNewCount();stat.textContent=`${allNewPatterns().length} padrões NOVOS encontrados em ${days} dias · ${analysis.records} rodadas consideradas · apenas histórico.`;
  }catch(e){stat.textContent='Falha: '+e.message;notice(e.message,true)}finally{searching=false}}
- function drawPatterns(){const host=$('v17-pattern-results');if(!host)return;host.replaceChildren();let rows=(analysis?.items||[]).filter(x=>(visibleTarget==='all'||x.target===visibleTarget)&&!alreadySaved(x));const available=rows.length;syncNewCount();const shown=rows.slice(0,(pageIndex+1)*15);if(!rows.length)host.append(el('p','v17-blank',analysis?'Nenhum padrão passou no filtro.':'Clique em procurar padrões para iniciar.'));
-  for(const p of shown){const box=el('article','v17-pattern');box.append(stoneRow(p.tokens));const footer=el('footer');const lab=el('div');const target=p.target==='red'?'🔴 VERMELHO':p.target==='black'?'⚫ PRETO':'⚪ BRANCO';lab.append(el('b','',`Depois: ${target}`),el('div','v17-muted',`${p.hits}/${p.total} acertos · 100% histórico · 1ª ${p.first} · 2ª ${p.second} · falhas ${p.fail}`));footer.append(lab);
+ function drawPatterns(){const host=$('v17-pattern-results');if(!host)return;host.replaceChildren();let rows=(analysis?.items||[]).filter(x=>{
+     if(visibleTarget!=='all'&&x.target!==visibleTarget)return false;
+     if(alreadySaved(x))return false;
+     const tokens=x.tokens||[],exact=t=>t.startsWith('n:'),isWhite=t=>t==='white'||t==='n:0';
+     if(patternType==='numbers')return tokens.every(exact);
+     if(patternType==='colors')return tokens.every(t=>['red','black','white'].includes(t));
+     if(patternType==='mixed')return tokens.some(exact)&&tokens.some(t=>['red','black','white'].includes(t));
+     if(patternType==='after-white')return tokens.length>0&&isWhite(tokens[0]);
+     if(patternType==='with-white')return tokens.some(isWhite);
+     if(patternType==='to-white')return x.target==='white';
+     return true;
+    });const available=rows.length;syncNewCount();const shown=rows.slice(0,(pageIndex+1)*15);if(!rows.length)host.append(el('p','v17-blank',analysis?'Nenhum padrão passou no filtro.':'Clique em procurar padrões para iniciar.'));
+  for(const p of shown){const box=el('article','v17-pattern');box.append(stoneRow(p.tokens));const footer=el('footer');const lab=el('div');const target=p.target==='red'?'🔴 VERMELHO':p.target==='black'?'⚫ PRETO':'⚪ BRANCO';lab.append(el('b','',`Entrada: ${target}`),el('div','v17-muted',`${p.hits}/${p.total} ocorrências com acerto · 1ª ${p.first} · 2ª ${p.second} · falhas ${p.fail} · amostra histórica, sem garantia futura`));footer.append(lab);
    footer.append(btn('Exportar individualmente',()=>void exportPattern(p),'primary'));box.append(footer);
    const d=el('details');d.append(el('summary','','Ver sequência completa'));d.append(el('p','',p.pattern),el('p','',`Total ${p.total}; primeira casa ${p.first}; segunda casa ${p.second}; falhas ${p.fail}.`));box.append(d);host.append(box)}
   $('v17-pattern-more').hidden=shown.length>=available;

@@ -6,7 +6,7 @@
   const THEME_KEY = 'nexo-v19-theme';
   const TIME_KEY = 'nexo-v19-time';
   const numURL = n => PREFIX + String(n).padStart(2,'0') + '.png';
-  const genericURL = color => color === 'white' ? numURL(0) : PREFIX + 'cor_' + color + '.png';
+  const genericURL = color => PREFIX + 'cor_' + color + '.png';
   const numberColor = n => n===0 ? 'white' : n<=7 ? 'red' : 'black';
   const el = (tag,cls,txt) => {const n=document.createElement(tag);if(cls)n.className=cls;if(txt!==undefined)n.textContent=txt;return n};
   const safeGet = (key, defaultValue) => {try{return localStorage.getItem(key) || defaultValue}catch{return defaultValue}};
@@ -32,27 +32,20 @@
   // Blitz: 0-7 e cores sem numero desenhadas em CSS/DOM, sem PNG pesado.
   // O nome interno 'red' continua inalterado para preservar dados e estrategias.
   function blitzAsset(src){
-    if(src===PREFIX+'cor_red.png')return {kind:'orange'};
-    if(src===PREFIX+'cor_black.png')return {kind:'black'};
-    if(src===PREFIX+'cor_white.png'||src===numURL(0))return {kind:'white'};
-    const match=src.match(/^\/pedras-v19\/(0[1-7])\.png$/);
-    return match?{kind:'orange',number:Number(match[1])}:null;
+    const assets={
+      [PREFIX+'cor_red.png']:'blitz_cor_laranja_sem_numero.png',
+      [PREFIX+'cor_black.png']:'blitz_cor_preto_sem_numero.png',
+      [PREFIX+'cor_white.png']:'blitz_cor_branco_sem_numero.png',
+      [numURL(0)]:'blitz_branco_raio.png'
+    };
+    for(let n=1;n<=7;n++)assets[numURL(n)]='blitz_numero_'+n+'.png';
+    return assets[src]||null;
   }
-  function blitzTile(asset){
-    const tile=el('span','nexo-blitz-tile nexo-blitz-'+asset.kind);
-    tile.setAttribute('aria-hidden','true');
-    if(asset.kind==='orange'&&Number.isInteger(asset.number)){
-      tile.append(el('span','nexo-blitz-ring',String(asset.number)));
-    }
-    if(asset.kind==='white'){
-      const badge=el('span','nexo-blitz-flash-badge');
-      const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
-      svg.setAttribute('viewBox','0 0 24 24');svg.setAttribute('aria-hidden','true');
-      const bolt=document.createElementNS('http://www.w3.org/2000/svg','path');
-      bolt.setAttribute('d','M13.8 1.8 5.7 13h5.5l-1 9.2L18.8 10h-5.6z');
-      bolt.setAttribute('fill','#111317');svg.append(bolt);badge.append(svg);tile.append(badge);
-    }
-    return tile;
+  function blitzTile(filename){
+    const tile=el('span','nexo-blitz-tile nexo-blitz-png');
+    const img=el('img','nexo-blitz-png-img');img.src='/blitz-pedras-v4/'+filename;
+    img.alt='';img.loading='lazy';img.decoding='async';img.draggable=false;
+    tile.append(img);return tile;
   }
   function imageInto(host,src,description) {
     if(!host)return false;
@@ -135,11 +128,25 @@
     // Inclui regra salva, analisador, edicao da regra e vitrine antiga.
     const selector='.v17-stone,.v12-ball,#pattern-preview .pattern-pill';
     for(const node of document.querySelectorAll(selector)){
-      if(node.querySelector(':scope > img.nexo-v19-stone-image'))continue;
+      if(node.querySelector(':scope > img.nexo-v19-stone-image')||node.querySelector(':scope > .nexo-blitz-tile'))continue;
       const token=tokenFrom(node);if(!token)continue;
       node.dataset.nexoToken=token.raw;
       node.setAttribute('aria-label',token.label);
       imageInto(node,token.url,token.label);
+    }
+  }
+  function paintColorPalette(){
+    const palette=document.getElementById('pattern-palette');if(!palette)return;
+    for(const b of palette.querySelectorAll('[data-stone]')){
+      const color=b.dataset.stone;
+      if(color==='*'){
+        const src='/blitz-pedras-v4/blitz_cor_coringa_azul_sem_numero.png';
+        if(b.querySelector('img')?.getAttribute('src')===src)continue;
+        const img=el('img','nexo-blitz-png-img');img.src=src;img.alt='Coringa';img.draggable=false;
+        b.replaceChildren(img);b.classList.add('nexo-blitz-palette-host');
+      }else if(['red','black','white'].includes(color)){
+        imageInto(b,genericURL(color),'Cor '+color);
+      }
     }
   }
   function paintAdminStones(){
@@ -192,7 +199,7 @@
   let scheduled=false;
   const paint=()=>{
     scheduled=false;
-    paintHistory();paintLatest();paintTokens();paintAdminStones();
+    paintHistory();paintLatest();paintTokens();paintAdminStones();paintColorPalette();
   };
   const schedule=()=>{if(scheduled)return;scheduled=true;requestAnimationFrame(paint)};
   function init(){

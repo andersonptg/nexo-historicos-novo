@@ -24,3 +24,16 @@ button:focus-visible,a:focus-visible,select:focus-visible,input:focus-visible { 
 #pattern-palette [data-stone=black],.builder-palette .stone.black{background:#1e212b!important;border-color:#353846!important;color:transparent!important}
 #pattern-palette [data-stone=white],.builder-palette .stone.white{background:#fff!important;border-color:#ddd!important;color:transparent!important}
 /* Não altera as pedras numeradas pretas de 8 a 14. */
+
+/* V4: os 13 PNGs usam o mesmo tamanho e fundo transparente. */
+.nexo-blitz-png{background:transparent!important;border:none!important;box-shadow:none!important;overflow:visible!important}
+.nexo-blitz-png-img{display:block!important;width:100%!important;height:100%!important;object-fit:contain!important;pointer-events:none!important}
+#pattern-palette .nexo-blitz-palette-host,#pattern-palette .nexo-blitz-host{background:transparent!important;border:0!important;box-shadow:none!important;color:transparent!important;padding:0!important;overflow:visible!important}
+#pattern-palette .stone .nexo-blitz-tile{height:100%!important;width:100%!important}
+#pattern-palette .stone .nexo-blitz-png-img{width:100%!important;height:100%!important}
+#v17-pattern-results .v17-stone .nexo-blitz-png-img{width:100%;height:100%}
+#v17-pattern-panel .v17-form-row{flex-wrap:wrap}
+#v17-pattern-panel #v4-pattern-kind{min-height:42px;max-width:100%!important}
+#page-estrategias #pattern-preview{min-height:64px;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+#page-estrategias #pattern-preview .pattern-pill{flex:0 0 42px}
+@media(max-width:500px){#page-estrategias #pattern-preview .pattern-pill{flex-basis:34px}}
