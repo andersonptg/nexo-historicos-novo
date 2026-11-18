@@ -222,7 +222,21 @@ def collect_one(db, game, source_html=None, now=None):
 
 
 def get_games():
-    return [{**g,'interval_seconds':1 if g['id']=='brabet-double' else g.get('interval_seconds',60)} for g in CONFIG['games']]
+    # A selecao persiste no Termux; sem arquivo, a base legada segue Brabet.
+    mode_file = Path.home() / '.config/nexo_v1/active_game'
+    requested = os.environ.get('NEXO_ACTIVE_GAME', '').strip()
+    if not requested and mode_file.is_file():
+        requested = mode_file.read_text(encoding='utf-8').strip()
+    active = requested or 'brabet-double'
+    if active not in ('brabet-double', 'blitz-double'):
+        raise RuntimeError('Jogo ativo invalido: ' + active)
+    selected = [g for g in CONFIG['games'] if g.get('enabled') and g['id'] == 'brabet-double']
+    if active == 'blitz-double' and len(selected) == 1:
+        original = selected[0]
+        selected = [{**original, 'id':'blitz-double', 'platform':'Blitz', 'source':'Historicos Blaze (publica, terceiros)', 'source_url':'https://historicosblaze.com/results/blitz/double'}]
+    if len(selected) != 1:
+        raise RuntimeError('Jogo ativo nao cadastrado ou desligado: ' + active)
+    return [{**g, 'interval_seconds': 1 if active == 'blitz-double' else g.get('interval_seconds', 60)} for g in selected]
 
 
 def get_state(db):

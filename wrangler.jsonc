@@ -32,5 +32,8 @@
         "NexoCoordinator"
       ]
     }
-  ]
+  ],
+  "vars": {
+    "NEXO_ACTIVE_GAME": "blitz-double"
+  }
 }

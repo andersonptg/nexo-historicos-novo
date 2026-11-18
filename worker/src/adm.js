@@ -3,6 +3,8 @@
 import {routeWhiteAdmin} from './white.js';
 const ROOT='nexo-v3/';
 const K={settings:ROOT+'admin/settings.json',strategies:ROOT+'admin/strategies.json',groups:ROOT+'telegram/groups.json',media:ROOT+'media/catalog.json',bot:ROOT+'telegram/bot-encrypted.json',owner:ROOT+'telegram/owner.json',pair:ROOT+'telegram/pair.json'};
+const activeGame=env=>env?.NEXO_ACTIVE_GAME==='blitz-double'?'blitz-double':'brabet-double';
+const strategyStorage=env=>activeGame(env)==='blitz-double'?ROOT+'admin/strategies-blitz-v1.json':K.strategies;
 const E=['attention','entry_black','entry_red','entry_white','gale1','gale2','win_black','win_red','win_white','red'];
 const TARGETS=['black','red','white'];
 // Limite técnico de segurança para o processamento e armazenamento no Worker.
@@ -106,7 +108,7 @@ function validateStrategy(input,previous){
  if(!input||typeof input!=='object')throw Error('Dados da estrategia invalidos');
  const x={...(previous||strategyDefault())};
  x.name=textLimit(input.name,70).trim();if(x.name.length<2)throw Error('Informe nome da estrategia (2 a 70 caracteres).');
- if(input.gameId!==undefined&&input.gameId!=='brabet-double')throw Error('Somente Brabet Double esta validado na V3.');
+ if(input.gameId!==undefined){if(!['brabet-double','blitz-double'].includes(input.gameId))throw Error('Jogo Double invalido.');x.gameId=input.gameId;}
  x.target=TARGETS.includes(input.target)?input.target:'black';
  x.maxGale=Number(input.maxGale);if(![0,1,2].includes(x.maxGale))throw Error('Gale deve ser 0, 1 ou 2.');
  if(!Array.isArray(input.pattern)||input.pattern.length<1||input.pattern.length>MAX_PATTERN_STONES||input.pattern.some(z=>!(['red','black','white','*'].includes(z)||/^(?:n:)(?:[0-9]|1[0-4])$/.test(z))))throw Error('Padrão inválido (1 a '+MAX_PATTERN_STONES+' pedras).');
@@ -240,17 +242,17 @@ async function nx5Edit(env,q,view){
 async function nx5View(env,screen='home',page=0){
  const back=[nx5Back()];
  if(screen==='home'){
-  const [st,ss,gs]=await Promise.all([getDoc(env,K.settings,settingsDefault),getDoc(env,K.strategies,[]),getDoc(env,K.groups,[])]);
+  const [st,ss,gs]=await Promise.all([getDoc(env,K.settings,settingsDefault),getDoc(env,strategyStorage(env),[]),getDoc(env,K.groups,[])]);
   return {text:'🤖 NEXO BOT V1 — ADMINISTRADOR\n\nSinais Cloudflare: '+(st.botEnabled?'🟢 ligados':'🔴 desligados')+'\nEstratégias: '+ss.filter(x=>!x.archived).length+' cadastradas\nGrupos selecionados: '+gs.filter(x=>x.selected&&x.admin).length+'\n\nEscolha uma área para administrar pelo Telegram.',rows:[[['⚡ Motor','motor'],['🔴 Histórico','results:0']],[['🎯 Estratégias','strategies'],['🧪 Validação','validation']],[['🖼 Stickers','stickers'],['✍️ Mensagens','messages']],[['👥 Grupos','groups'],['📈 Placares','scores']],[['⚙️ Ajustes','settings'],['📋 Logs','logs']]]};
  }
  if(screen==='results'){
-  const h=await recentR2(env,'brabet-double'),items=Array.isArray(h.items)?h.items:[];
+  const h=await recentR2(env,activeGame(env)),items=Array.isArray(h.items)?h.items:[];
   const max=Math.max(0,Math.ceil(items.length/15)-1);page=Math.max(0,Math.min(max,page));
   const pager=[];if(page>0)pager.push(['◀ Anterior','results:'+(page-1)]);if(page<max)pager.push(['Próxima ▶','results:'+(page+1)]);
   return {text:nx5Table(items,page),html:true,rows:[...(pager.length?[pager]:[]),[['🔄 Atualizar','results:'+page]],...back]};
  }
  if(screen==='strategies'){
-  const ss=(await getDoc(env,K.strategies,[])).filter(s=>!s.archived),start=page*7,max=Math.max(0,Math.ceil(ss.length/7)-1);page=Math.max(0,Math.min(page,max));
+  const ss=(await getDoc(env,strategyStorage(env),[])).filter(s=>!s.archived),start=page*7,max=Math.max(0,Math.ceil(ss.length/7)-1);page=Math.max(0,Math.min(page,max));
   const current=ss.slice(page*7,page*7+7),rows=current.map(s=>[[`${s.enabled?'🟢':'⚪'} ${s.name.slice(0,42)}`,'strategy:'+s.id]]);
   const pager=[];if(page>0)pager.push(['◀','strategies:'+(page-1)]);if(page<max)pager.push(['▶','strategies:'+(page+1)]);
   return {text:`🎯 ESTRATÉGIAS\n\n${ss.length} cadastradas · ${ss.filter(s=>s.enabled).length} ativas.\n\nSelecione uma estratégia para editar, pausar ou excluir.`,rows:[[['➕ Cadastrar estratégia','strategynew']],...rows,...(pager.length?[pager]:[]),...back]};
@@ -271,7 +273,7 @@ async function nx5View(env,screen='home',page=0){
   return {text:'⚙️ AJUSTES\n\nEnvio oficial atual: '+(st.botEnabled?'LIGADO':'DESLIGADO')+'\nMostrar números: '+(st.showNumbers?'SIM':'NÃO')+'\nBranco curinga: '+(st.jokerWhite?'SIM':'NÃO')+'\nZerar placar à meia-noite: '+(st.resetMidnight?'SIM':'NÃO')+'\n\nMudar estas opções afeta os próximos sinais.',rows:[[['🔢 Alternar números','setting:showNumbers']],[['⚪ Alternar branco curinga','setting:jokerWhite']],[['🌙 Alternar reset diário','setting:resetMidnight']],...back]};
  }
  if(screen==='scores'){
-  const ss=(await getDoc(env,K.strategies,[])).filter(x=>!x.archived);const rows=[];
+  const ss=(await getDoc(env,strategyStorage(env),[])).filter(x=>!x.archived);const rows=[];
   for(const s of ss.slice(page*8,page*8+8)){const c=await scoreRead(env,s.id);rows.push(`${s.name.slice(0,24)}\n✅${c.green||0} ⚪${c.white||0} ❌${c.red||0}`)}
   const max=Math.max(0,Math.ceil(ss.length/8)-1),pager=[];if(page>0)pager.push(['◀','scores:'+(page-1)]);if(page<max)pager.push(['▶','scores:'+(page+1)]);
   return {text:'📈 PLACARES DO DIA\n\n'+(rows.join('\n\n')||'Nenhuma estratégia cadastrada')+'\n\nPágina '+(page+1),rows:[...(pager.length?[pager]:[]),[['🔄 Atualizar','scores:'+page]],...back]};
@@ -306,17 +308,17 @@ async function nx5Reply(env,msg){
  }else if(d.stage==='newgale'){
   if(!['0','1','2'].includes(t))answer='Digite 0, 1 ou 2.';
   else{
-   const ss=await getDoc(env,K.strategies,[]);if(ss.length>=1000)answer='Limite de estratégias atingido.';
+   const ss=await getDoc(env,strategyStorage(env),[]);if(ss.length>=1000)answer='Limite de estratégias atingido.';
    else{
-    const row=validateStrategy({...strategyDefault(),name:d.name,pattern:d.pattern,target:d.target,maxGale:Number(t),enabled:false},null);
-    const h=await recentR2(env,'brabet-double'),max=Math.max(0,...(h.items||[]).map(x=>Number(x.seq)||0));
+    const row=validateStrategy({...strategyDefault(),gameId:activeGame(env),name:d.name,pattern:d.pattern,target:d.target,maxGale:Number(t),enabled:false},null);
+    const h=await recentR2(env,activeGame(env)),max=Math.max(0,...(h.items||[]).map(x=>Number(x.seq)||0));
     await putDoc(env,runtimeKey(row.id),{lastSeq:max,recent:[],active:null});await resetScore(env,row.id);
-    await putDoc(env,K.strategies,[...ss,row]);await nx5Clear(env,chatId);
+    await putDoc(env,strategyStorage(env),[...ss,row]);await nx5Clear(env,chatId);
     answer='✅ Estratégia cadastrada DESLIGADA!\n'+row.name+'\nPadrão: '+row.pattern.join(', ')+'\nCor: '+row.target+' · Gale '+row.maxGale+'\n\nAbra Estratégias para ativar quando estiver pronto.';
    }
   }
  }else if(d.stage.startsWith('edit')){
-  const ss=await getDoc(env,K.strategies,[]),row=ss.find(x=>x.id===d.id&&!x.archived);
+  const ss=await getDoc(env,strategyStorage(env),[]),row=ss.find(x=>x.id===d.id&&!x.archived);
   if(!row){await nx5Clear(env,chatId);answer='Estratégia não encontrada.'}
   else{
    const updated={...row};let valid=true;
@@ -327,7 +329,7 @@ async function nx5Reply(env,msg){
    if(valid){
     const checked=validateStrategy(updated,row);
     const i=ss.findIndex(x=>x.id===d.id);ss[i]={...checked,enabled:false,updatedAt:now(),revision:crypto.randomUUID()};
-    await putDoc(env,K.strategies,ss);await nx5Clear(env,chatId);
+    await putDoc(env,strategyStorage(env),ss);await nx5Clear(env,chatId);
     answer='✅ Estratégia editada e PAUSADA por segurança. Reative no menu depois de conferir os dados.';
    }
   }
@@ -368,12 +370,12 @@ async function nx5Callback(env,q){
   return nx5Edit(env,q,await nx5View(env,'settings'));
  }
  if(/^strategy:[0-9a-f]{32}$/.test(key)){
-  const id=key.slice(9),ss=await getDoc(env,K.strategies,[]),s=ss.find(x=>x.id===id&&!x.archived);
+  const id=key.slice(9),ss=await getDoc(env,strategyStorage(env),[]),s=ss.find(x=>x.id===id&&!x.archived);
   if(!s)return nx5Edit(env,q,await nx5View(env,'strategies'));
   return nx5Edit(env,q,{text:'🎯 '+s.name+'\n\nEstado: '+(s.enabled?'🟢 LIGADA':'⚪ DESLIGADA')+'\nPadrão: '+s.pattern.join(' ').slice(0,750)+'\nEntrada: '+s.target+' · Gale '+s.maxGale+'\n\nConfirme alterações pelo botão.',rows:[[[s.enabled?'⏸ Pausar':'▶ Ativar','strtoggle:'+id]],[['✏️ Editar','stredit:'+id],['🗑 Excluir','strdelete:'+id]],[['◀ Estratégias','strategies']]]});
  }
  if(/^stredit:[0-9a-f]{32}$/.test(key)){
-  const id=key.slice(8),ss=await getDoc(env,K.strategies,[]),s=ss.find(x=>x.id===id&&!x.archived);
+  const id=key.slice(8),ss=await getDoc(env,strategyStorage(env),[]),s=ss.find(x=>x.id===id&&!x.archived);
   if(!s)return nx5Edit(env,q,await nx5View(env,'strategies'));
   return nx5Edit(env,q,{text:'✏️ EDITAR ESTRATÉGIA\n\n'+s.name+'\nAs alterações pausam a estratégia para revisão.\nSelecione o campo:',rows:[[['Nome','editfield:name:'+id],['Padrão','editfield:pattern:'+id]],[['Cor de entrada','editfield:target:'+id],['Gale máximo','editfield:gale:'+id]],[['◀ Voltar','strategy:'+id]]]});
  }
@@ -384,17 +386,17 @@ async function nx5Callback(env,q){
   return nx5Edit(env,q,{text:'✏️ EDITAR '+field.toUpperCase()+'\n\n'+hint[field]+'\n\nA estratégia ficará pausada quando salvar.',rows:[[['❌ Cancelar','cancel']]]});
  }
  if(/^strtoggle:[0-9a-f]{32}$/.test(key)){
-  const id=key.slice(10),ss=await getDoc(env,K.strategies,[]),s=ss.find(x=>x.id===id&&!x.archived);if(!s)return;
-  if(!s.enabled){const h=await recentR2(env,'brabet-double'),max=Math.max(0,...(h.items||[]).map(x=>Number(x.seq)||0));await putDoc(env,runtimeKey(id),{lastSeq:max,recent:[],active:null})}
-  s.enabled=!s.enabled;s.updatedAt=now();s.revision=crypto.randomUUID();await putDoc(env,K.strategies,ss);
+  const id=key.slice(10),ss=await getDoc(env,strategyStorage(env),[]),s=ss.find(x=>x.id===id&&!x.archived);if(!s)return;
+  if(!s.enabled){const h=await recentR2(env,activeGame(env)),max=Math.max(0,...(h.items||[]).map(x=>Number(x.seq)||0));await putDoc(env,runtimeKey(id),{lastSeq:max,recent:[],active:null})}
+  s.enabled=!s.enabled;s.updatedAt=now();s.revision=crypto.randomUUID();await putDoc(env,strategyStorage(env),ss);
   return nx5Edit(env,q,{text:'✅ Estratégia '+s.name+' '+(s.enabled?'ATIVADA':'PAUSADA')+'.\n\nAlterações afetam os próximos resultados.',rows:[[['◀ Estratégias','strategies']]]});
  }
  if(/^strdelete:[0-9a-f]{32}$/.test(key))return nx5Edit(env,q,{text:'⚠️ Confirmar EXCLUSÃO permanente da estratégia? Essa ação não pode ser desfeita pelo menu.',rows:[[['✅ Confirmar exclusão','strconfirm:'+key.slice(10)]],[['❌ Cancelar','strategies']]]});
  if(/^strconfirm:[0-9a-f]{32}$/.test(key)){
-  const id=key.slice(11),ss=await getDoc(env,K.strategies,[]),s=ss.find(x=>x.id===id&&!x.archived);
+  const id=key.slice(11),ss=await getDoc(env,strategyStorage(env),[]),s=ss.find(x=>x.id===id&&!x.archived);
   if(!s)return nx5Edit(env,q,await nx5View(env,'strategies'));
   if(s.enabled)return nx5Edit(env,q,{text:'⚠️ Pause a estratégia antes de excluir, para não interromper sinais ativos.',rows:[[['◀ Estratégias','strategies']]]});
-  await putDoc(env,purgeTaskKey(id),{id,queuedAt:now(),pending:true,version:26});await putDoc(env,K.strategies,ss.filter(x=>x.id!==id));
+  await putDoc(env,purgeTaskKey(id),{id,queuedAt:now(),pending:true,version:26});await putDoc(env,strategyStorage(env),ss.filter(x=>x.id!==id));
   return nx5Edit(env,q,{text:'✅ Estratégia excluída. Limpeza histórica agendada.',rows:[[['◀ Estratégias','strategies']]]});
  }
  if(/^mediaevent:/.test(key)){
@@ -726,7 +728,7 @@ async function fireEvent(env,settings,strategy,r,type,step,deadlineAtMs=0,global
   }
  if(['entry_black','entry_red','entry_white'].includes(type)&&String(media.type||'text')==='text'){
     // V25: no caminho de alta carga, evita reler todo o catalogo no evento.
-    const number=numberLookup?.get(strategy.id)||((await getDoc(env,K.strategies,[])).filter(x=>!x.archived).findIndex(x=>x.id===strategy.id)+1);
+    const number=numberLookup?.get(strategy.id)||((await getDoc(env,strategyStorage(env),[])).filter(x=>!x.archived).findIndex(x=>x.id===strategy.id)+1);
     if(number>0){const digits=String(number).replace(/[0-9]/g,c=>'⁰¹²³⁴⁵⁶⁷⁸⁹'[Number(c)]);evt.message+='\n\nᵉˢᵗ '+digits;}
   }
  await putDoc(env,eventKey(evt.id),evt);
@@ -757,7 +759,7 @@ export async function resetAfterCatchup(env,game,records){
  if(!records.length)return;
  const maxSeq=Math.max(...records.map(r=>Number(r.seq)||0));
  if(maxSeq<=0)return;
- const strategies=(await getDoc(env,K.strategies,[])).filter(s=>!s.archived&&s.gameId===game.id);
+ const strategies=(await getDoc(env,strategyStorage(env),[])).filter(s=>!s.archived&&s.gameId===game.id);
  const prior=await getDoc(env,v11GameKey(game.id),null);
  if(prior&&maxSeq<=Number(prior.lastSeq||0))return;
  // V24: com dezenas de estrategias, uma unica marcacao de cursor basta.
@@ -903,7 +905,7 @@ async function v24ProcessMany(env,game,records,deadlineAtMs,strategies,snapshot,
 
 export async function processNewRounds(env,game,records,deadlineAtMs=0,diagnostics=null){
  if(!env.R2||!records.length)return;
- const allStrategies=await getDoc(env,K.strategies,[]);
+ const allStrategies=await getDoc(env,strategyStorage(env),[]);
  const strategies=allStrategies.filter(s=>s.enabled&&!s.archived&&s.gameId===game.id);
  if(!strategies.length)return;
  // V24: snapshot persistente para bases grandes. O modo rapido, uma vez
@@ -1017,7 +1019,7 @@ function fileOk(bytes,kind){const a=new Uint8Array(bytes);if(kind==='gif')return
 // V25.4: exclusao rapida e em lotes. Nunca executar limpeza R2 pesada
 // dentro da solicitacao HTTP; o cron faz a remocao por ID, com limite.
 async function v26ScheduleStrategyPurge(env,ids){
- const all=await getDoc(env,K.strategies,[]),wanted=new Set(ids);
+ const all=await getDoc(env,strategyStorage(env),[]),wanted=new Set(ids);
  if(wanted.size!==ids.length||!ids.length||ids.length>10||ids.some(id=>!/^[a-f0-9]{32}$/.test(id)))
   return err('Escolha entre 1 e 10 estrategias validas e diferentes.',400);
  const found=all.filter(s=>wanted.has(s.id)&&!s.archived);
@@ -1026,11 +1028,11 @@ async function v26ScheduleStrategyPurge(env,ids){
  // a regra nao esteja ativa no catalogo: falha parcial nao apaga regra valida.
  for(const s of found)await putDoc(env,purgeTaskKey(s.id),{id:s.id,queuedAt:now(),pending:true,version:26});
  // Um unico update do catalogo remove todos os IDs sem tocar nos demais.
- await putDoc(env,K.strategies,all.filter(s=>!wanted.has(s.id)));
+ await putDoc(env,strategyStorage(env),all.filter(s=>!wanted.has(s.id)));
  // Liberar imediatamente o ciclo se o dono foi excluido. Nao zerar o cursor.
  // Se esta escrita complementar falhar, a remocao confirmada nao pode
  // ser reportada como falha: V25.3 tambem saneia dono inativo na proxima rodada.
- for(const gameId of new Set(found.map(s=>s.gameId||'brabet-double'))){
+ for(const gameId of new Set(found.map(s=>s.gameId||activeGame(env)))){
   const gameKey=v11GameKey(gameId);
   try{
    const owner=await getDoc(env,gameKey,null);
@@ -1052,19 +1054,19 @@ export async function routeAdmin(req,env,url){
   const whiteReply=await routeWhiteAdmin(req,env,url);if(whiteReply)return whiteReply;
  if(path==='/api/adm/logout'&&req.method==='POST')return json({ok:true},200,{'Set-Cookie':sessionCookie('',0)});
  const settings=()=>getDoc(env,K.settings,settingsDefault);
- const strategies=()=>getDoc(env,K.strategies,[]);
+ const strategies=()=>getDoc(env,strategyStorage(env),[]);
   const groups=()=>getDoc(env,K.groups,[]);
   try{
    if(path==='/api/adm/queue-health'&&req.method==='GET'){
     if(!env.NEXO_COORDINATOR)return err('Coordenador da fila indisponivel.',503);
-    const id=env.NEXO_COORDINATOR.idFromName('nexo-brabet-double-v11');
+    const id=env.NEXO_COORDINATOR.idFromName(activeGame(env)==='blitz-double'?'nexo-blitz-double-v11':'nexo-brabet-double-v11');
     return env.NEXO_COORDINATOR.get(id).fetch('https://nexo.internal/v11/queue-health');
    }
   if(path==='/api/adm/bootstrap'&&req.method==='GET'){
    const [st,ss,gs,media]=await Promise.all([settings(),strategies(),groups(),getDoc(env,K.media,[])]);
    const active=ss.filter(x=>!x.archived);
    const scoresData=await scores(env,active);
-   const latest=await recentR2(env,'brabet-double');
+   const latest=await recentR2(env,activeGame(env));
    const stored=await botInfo(env),owner=await getDoc(env,K.owner,null);return json({ok:true,settings:st,strategies:active,groups:gs,media,scores:scoresData,latestCount:latest.items?.length||0,telegramConfigured:!!stored||!!env.NEXO_TELEGRAM_BOT_TOKEN,botName:stored?.username||'',ownerPaired:!!owner?.id,webhookSecretConfigured:!!await webhookSecret(env)});
   }
   if(path==='/api/adm/global-signals'&&req.method==='GET')return json({ok:true,config:await globalDoc(env)});
@@ -1109,15 +1111,15 @@ export async function routeAdmin(req,env,url){
        const key=raw.target+'|'+JSON.stringify(raw.tokens);
        if(keys.has(key)){skipped++;continue;}
        const title='Histórico · '+raw.tokens.map(t=>t==='red'?'🔴':t==='black'?'⚫':t==='white'?'⚪':t.startsWith('n:')?t.slice(2):'★').join(' ')+' → '+(raw.target==='white'?'⚪':raw.target==='red'?'🔴':'⚫');
-       const item=validateStrategy({name:title.slice(0,70),gameId:'brabet-double',target:raw.target,pattern:raw.tokens,maxGale:gale,enabled:false,showStoneAfter:true,showAfterPattern:true,showNumbers:true,jokerWhite:false},null);
+       const item=validateStrategy({name:title.slice(0,70),gameId:activeGame(env),target:raw.target,pattern:raw.tokens,maxGale:gale,enabled:false,showStoneAfter:true,showAfterPattern:true,showNumbers:true,jokerWhite:false},null);
        added.push(item);keys.add(key);
      }
      if(added.length){
-       const latest=await recentR2(env,'brabet-double'),cursor=Math.max(0,...(latest.items||[]).map(x=>Number(x.seq)||0));
+       const latest=await recentR2(env,activeGame(env)),cursor=Math.max(0,...(latest.items||[]).map(x=>Number(x.seq)||0));
        // Persistir runtime de cada regra ANTES da lista de estrategias; em caso
        // de falha, nenhuma regra ativa nasce sem cursor de seguranca.
        for(const s of added){await putDoc(env,runtimeKey(s.id),{lastSeq:cursor,recent:[],active:null});await resetScore(env,s.id);}
-       await putDoc(env,K.strategies,[...all,...added]);
+       await putDoc(env,strategyStorage(env),[...all,...added]);
      }
      return json({ok:true,added:added.length,skipped,ids:added.map(s=>s.id)});
    }
@@ -1126,7 +1128,7 @@ export async function routeAdmin(req,env,url){
      const body=await req.json(),gale=Number(body?.maxGale);
      if(body?.confirm!==true||![0,1,2].includes(gale))return err('Confirme um Gale valido (0, 1 ou 2).',400);
      const all=await strategies(),updated=all.map(s=>s.archived?s:{...s,maxGale:gale,updatedAt:now()});
-     await putDoc(env,K.strategies,updated);
+     await putDoc(env,strategyStorage(env),updated);
      return json({ok:true,count:all.filter(s=>!s.archived).length,maxGale:gale,notice:'O Gale atualizado vale tambem para os proximos eventos das regras ativas.'});
    }
    // NEXO V21: alterar apenas as regras cujo estado difere do solicitado.
@@ -1145,11 +1147,11 @@ export async function routeAdmin(req,env,url){
      if(desired){
        // Regra recém-ativada inicia DEPOIS da última pedra disponível.
        // Regras que já estavam ativas conservam seu estado e placar.
-       const latest=await recentR2(env,'brabet-double');
+       const latest=await recentR2(env,activeGame(env));
        const max=Math.max(0,...(latest.items||[]).map(x=>Number(x.seq)||0));
        await Promise.all(changed.map(s=>putDoc(env,runtimeKey(s.id),{lastSeq:max,recent:[],active:null})));
      }
-     await putDoc(env,K.strategies,all.map(s=>idSet.has(s.id)&&!s.archived&&s.enabled!==desired?{...s,enabled:desired,updatedAt:now(),revision:crypto.randomUUID()}:s));
+     await putDoc(env,strategyStorage(env),all.map(s=>idSet.has(s.id)&&!s.archived&&s.enabled!==desired?{...s,enabled:desired,updatedAt:now(),revision:crypto.randomUUID()}:s));
      const warnings=[];
      if(!desired){
        // Persistir o estado pausado primeiro; depois limpar avisos/bloqueios.
@@ -1171,7 +1173,7 @@ export async function routeAdmin(req,env,url){
   if(path==='/api/adm/strategies'&&req.method==='POST'){
    const b=await req.json();const all=await strategies();/* V10: sem limite artificial de 30 estratégias; o armazenamento e as cotas do Worker continuam valendo. */
    if(b&&typeof b==='object'&&!String(b.name||'').trim()){let n=1;const existing=new Set(all.filter(x=>!x.archived).map(x=>x.name));while(existing.has('Estratégia '+n))n++;b.name='Estratégia '+n;}
-    const s=validateStrategy({...b,enabled:false},null);all.push(s);await putDoc(env,K.strategies,all);
+    const s=validateStrategy({...b,gameId:activeGame(env),enabled:false},null);all.push(s);await putDoc(env,strategyStorage(env),all);
    const latest=await recentR2(env,s.gameId);const max=Math.max(0,...(latest.items||[]).map(x=>Number(x.seq)||0));
    await putDoc(env,runtimeKey(s.id),{lastSeq:max,recent:[],active:null});await resetScore(env,s.id);
    return json({ok:true,strategy:s});
@@ -1194,12 +1196,12 @@ export async function routeAdmin(req,env,url){
     }
     // Não reprocessar histórico antigo quando uma regra muda ou volta a ser ativada.
     if(reset){const latest=await recentR2(env,s.gameId);const max=Math.max(0,...(latest.items||[]).map(x=>Number(x.seq)||0));await putDoc(env,runtimeKey(s.id),{lastSeq:max,recent:[],active:null});}
-    all[idx]=s;await putDoc(env,K.strategies,all);if(was&&!s.enabled)await v11DropStrategyBlocks(env,s.id);return json({ok:true,strategy:s});
+    all[idx]=s;await putDoc(env,strategyStorage(env),all);if(was&&!s.enabled)await v11DropStrategyBlocks(env,s.id);return json({ok:true,strategy:s});
    }
    if(req.method==='DELETE'&&!match[2]){
     const runtime=await getDoc(env,runtimeKey(id),null);
     if(runtime?.attentionEventId)await dismissAttention(env,id,runtime.attentionEventId);
-    all[idx]={...all[idx],enabled:false,archived:true,updatedAt:now()};await putDoc(env,K.strategies,all);await v11DropStrategyBlocks(env,id);
+    all[idx]={...all[idx],enabled:false,archived:true,updatedAt:now()};await putDoc(env,strategyStorage(env),all);await v11DropStrategyBlocks(env,id);
     return json({ok:true});
    }
   }
@@ -1378,7 +1380,7 @@ export async function routeAdmin(req,env,url){
       const data=await getDoc(env,entry.key,null);
       if(data)recent.push({id:entry.key.slice(V11_BLOCK_ROOT.length).replace(/\.json$/,''),type:'ENTREGA INCERTA',stage:data.stage||'—',chatMasked:'••'+String(data.chatId||'').slice(-4),at:new Date((data.updatedAt||now())*1000).toISOString()});
     }
-    const cycle=await getDoc(env,v11GameKey('brabet-double'),{ownerId:null});
+    const cycle=await getDoc(env,v11GameKey(activeGame(env)),{ownerId:null});
     return json({ok:true,pending:waiting.length,uncertain:blocked.length,recent,cycle});
    }
    if(path==='/api/adm/v11/discard-delivery'&&req.method==='POST'){
@@ -1403,9 +1405,9 @@ export async function routeAdmin(req,env,url){
    if(path==='/api/adm/v11/reset-cycles'&&req.method==='POST'){
     const body=await req.json();if(body?.confirm!==true)return err('Confirme o reset de ciclos.',400);
     const st=await settings();if(st.botEnabled)return err('Desligue o robô antes de reinicializar ciclos.',409);
-    const latest=await recentR2(env,'brabet-double');const rows=latest.items||[];
+    const latest=await recentR2(env,activeGame(env));const rows=latest.items||[];
     if(!rows.length)return err('Histórico remoto vazio; não há cursor confirmado.',409);
-    await resetAfterCatchup(env,{id:'brabet-double'},rows);
+    await resetAfterCatchup(env,{id:activeGame(env)},rows);
     // Arquivar apenas pendências de sinais desta aplicação; nunca tocar no histórico R2.
     const old=await list(env,ROOT+'outbox/pending/',100);
     for(const entry of old){const task=await getDoc(env,entry.key,null);if(!task)continue;
@@ -1454,7 +1456,7 @@ async function purgeStrategyFiles(env,id,limit=35){
 async function runPurgeQueue(env){
  const pending=await list(env,ROOT+'maintenance/purge/',6);
  if(!pending.length)return;
- const current=await getDoc(env,K.strategies,[]);
+ const current=await getDoc(env,strategyStorage(env),[]);
  // Limite pequeno por minuto: a fila Telegram continua prioritária.
  for(const task of pending.slice(0,1)){
   const id=/\/([a-f0-9]{32})\.json$/.exec(task.key)?.[1];
@@ -1471,7 +1473,7 @@ async function runPurgeQueue(env){
 }
 export async function scheduledAdmin(env){
  if(!env.R2)return;
- const st=await getDoc(env,K.settings,settingsDefault),strategies=await getDoc(env,K.strategies,[]);
+ const st=await getDoc(env,K.settings,settingsDefault),strategies=await getDoc(env,strategyStorage(env),[]);
  // V24: sem leitura de centenas de placares a CADA MINUTO.
  // scoreRead() ja devolve placar zerado quando o dia muda; no proximo
  // evento o placar do dia e persistido. Sem apagar placares anteriores.

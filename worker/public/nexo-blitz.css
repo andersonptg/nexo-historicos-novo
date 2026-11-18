@@ -1,0 +1,7 @@
+/* NEXO Blitz: melhoria leve, sem figuras pesadas ou bloquear painéis existentes. */
+:root { --blitz-cyan: #26dfef; --blitz-navy: #0b1730; }
+body { -webkit-font-smoothing: antialiased; }
+button,select,input { transition: border-color .15s ease, box-shadow .15s ease, background .15s ease; }
+button:focus-visible,a:focus-visible,select:focus-visible,input:focus-visible { outline: 2px solid var(--blitz-cyan); outline-offset: 2px; }
+#resultados { scroll-margin-top: 15px; }
+@media (prefers-reduced-motion: reduce) { *,*:before,*:after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }

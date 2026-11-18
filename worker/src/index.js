@@ -5,7 +5,8 @@ import {processWhiteRounds,resetWhiteAfterCatchup,whiteHasActiveForecast,whiteSh
 // V2 preserva o prefixo EXCLUSIVO nexo-v1/. Nenhum objeto V30 e alterado.
 const V17_WHITE_PAUSED=true; // Modulo Branco por Minuto suspenso sem apagar configuracoes.
 const PREFIX='nexo-v1/games/';
-const gameById=id=>catalog.games.find(x=>x.id===id&&x.enabled);
+const gameList=env=>env?.NEXO_ACTIVE_GAME==='blitz-double'?[{...catalog.games.find(x=>x.id==='brabet-double'),id:'blitz-double',platform:'Blitz',game:'Double',kind:'double',source:'Historicos Blaze (publica, terceiros)',enabled:true,precision:'minute'}]:catalog.games;
+const gameById=(id,env)=>gameList(env).find(x=>x.id===id&&x.enabled);
 const out=(body,status=200)=>new Response(JSON.stringify(body),{status,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
 const now=()=>Math.floor(Date.now()/1000);
 const dayOf=(stamp)=>{
@@ -49,7 +50,7 @@ async function v11Ingest(request,env,trusted=false,queueSignalJob=null,queuedMax
  try{textBody=await request.text()}catch{return out({error:'Corpo indisponivel'},400)}
  if(textBody.length>130000)return out({error:'Lote acima do limite'},413);
  let payload;try{payload=JSON.parse(textBody)}catch{return out({error:'JSON invalido'},400)}
- const game=gameById(payload?.game_id),items=payload?.items;
+ const game=gameById(payload?.game_id,env),items=payload?.items;
  if(!game||game.kind!=='double')return out({error:'Jogo desconhecido ou nao suportado'},400);
  if(!Array.isArray(items)||items.length<1||items.length>200||items.some(x=>!validRecord(x)))return out({error:'Resultados invalidos (1 a 200)'},400);
  const rows=normalize(items),groups=new Map();
@@ -114,7 +115,7 @@ const v22IsStale=job=>!Number.isSafeInteger(job?.enqueuedAtMs)||job.enqueuedAtMs
 // NEXO_V18_1_DURABLE_QUEUE: processar sinais DEPOIS do ACK R2, na ordem dos lotes.
 // O job foi persistido no storage do Durable Object ANTES da resposta HTTP 200.
 async function v18_1ProcessQueuedSignal(env,job,diagnostics=null){
- const game=gameById(job.gameId);
+ const game=gameById(job.gameId,env);
  if(!game||!Array.isArray(job.rows)||!job.rows.length)throw Error('Job de sinais invalido');
  const rows=job.rows,expired=v22IsStale(job);
  if(expired)console.warn('V22: job atrasado descartado para sinais; cursor sera recuperado',job.gameId,Math.max(...rows.map(r=>Number(r.seq)||0)));
@@ -172,7 +173,7 @@ export class NexoCoordinator {
     if(old.length){
      const newest=new Map();
      for(const [,job] of old){
-      const game=gameById(job?.gameId);
+      const game=gameById(job?.gameId,this.env);
       if(!game||!Array.isArray(job.rows)||!job.rows.length)throw Error('V23 lote antigo invalido; preservado para revisao');
       const seq=Math.max(...job.rows.map(r=>Number(r.seq)||0));
       if(!Number.isSafeInteger(seq)||seq<1)throw Error('V23 sequencia invalida; fila preservada');
@@ -244,11 +245,11 @@ export default {
     return out({showNumbers:prefs.showNumbers!==false});
    }
    if(path==='/api/health')return out({ok:true,version:'2.0.0',storage:!!env.R2,motor:'termux'});
-   if(path==='/api/catalog')return out({games:catalog.games.map(({id,platform,game,kind,source,enabled,precision})=>({id,platform,game,kind,source,enabled,precision}))});
+   if(path==='/api/catalog')return out({games:gameList(env).map(({id,platform,game,kind,source,enabled,precision})=>({id,platform,game,kind,source,enabled,precision}))});
     if(path==='/api/ingest'&&request.method==='POST'){
      if(!tokenOK(request,env))return out({error:'Credencial ausente ou invalida'},401);
      if(env.NEXO_COORDINATOR){
-      const id=env.NEXO_COORDINATOR.idFromName('nexo-brabet-double-v11');
+      const id=env.NEXO_COORDINATOR.idFromName(env.NEXO_ACTIVE_GAME==='blitz-double'?'nexo-blitz-double-v11':'nexo-brabet-double-v11');
       const stub=env.NEXO_COORDINATOR.get(id);
       return stub.fetch('https://nexo.internal/v11/ingest',{method:'POST',body:await request.text()});
      }
@@ -259,7 +260,7 @@ export default {
      if(!tokenOK(request,env))return out({error:'Nao autorizado'},401);
      if(!env.R2)return out({error:'R2 indisponivel'},503);
      let body;try{body=await request.json()}catch{return out({error:'JSON invalido'},400)}
-     const game=gameById(body?.game_id);
+     const game=gameById(body?.game_id,env);
      if(!game)return out({error:'Jogo invalido'},400);
      const key=base(game.id)+'status.json';
      const old=await jsonGet(env.R2,key)||{};
@@ -268,8 +269,8 @@ export default {
    }
    if(path==='/api/days'&&request.method==='GET'){
      if(!env.R2)return out({error:'R2 nao configurado'},503);
-     const id=url.searchParams.get('game_id')||'brabet-double';
-     if(!gameById(id))return out({error:'Jogo nao cadastrado'},404);
+     const id=url.searchParams.get('game_id')||env.NEXO_ACTIVE_GAME||'brabet-double';
+     if(!gameById(id,env))return out({error:'Jogo nao cadastrado'},404);
      const prefix=base(id)+'days/';
      const cursor=url.searchParams.get('cursor')||undefined;
      if(cursor&&cursor.length>2000)return out({error:'Cursor invalido'},400);
@@ -279,7 +280,7 @@ export default {
    }
    if(path==='/api/status'){
      if(!env.R2)return out({error:'R2 nao configurado'},503);
-     const games=await Promise.all(catalog.games.filter(x=>x.enabled).map(async g=>({
+     const games=await Promise.all(gameList(env).filter(x=>x.enabled).map(async g=>({
         id:g.id,platform:g.platform,game:g.game,
         status:await jsonGet(env.R2,base(g.id)+'status.json')
      })));
@@ -287,8 +288,8 @@ export default {
    }
    if(path==='/api/history'){
      if(!env.R2)return out({error:'R2 nao configurado'},503);
-     const id=url.searchParams.get('game_id')||'brabet-double';
-     if(!gameById(id))return out({error:'Jogo nao cadastrado'},404);
+     const id=url.searchParams.get('game_id')||env.NEXO_ACTIVE_GAME||'brabet-double';
+     if(!gameById(id,env))return out({error:'Jogo nao cadastrado'},404);
      const limit=Math.min(500,Math.max(1,Number(url.searchParams.get('limit'))||200));
      const offset=Math.min(100000,Math.max(0,Number(url.searchParams.get('offset'))||0));
      const date=url.searchParams.get('day');
@@ -303,7 +304,7 @@ export default {
   }catch(err){console.error('NEXO V1 erro:',String(err?.message||err).slice(0,150));return out({error:'Erro interno; consulte logs do Worker'},500)}
  },
  async scheduled(event,env,ctx){
-   if(env.NEXO_COORDINATOR){const id=env.NEXO_COORDINATOR.idFromName('nexo-brabet-double-v11');ctx.waitUntil(env.NEXO_COORDINATOR.get(id).fetch('https://nexo.internal/v11/cron',{method:'POST'}));}
+   if(env.NEXO_COORDINATOR){const id=env.NEXO_COORDINATOR.idFromName(env.NEXO_ACTIVE_GAME==='blitz-double'?'nexo-blitz-double-v11':'nexo-brabet-double-v11');ctx.waitUntil(env.NEXO_COORDINATOR.get(id).fetch('https://nexo.internal/v11/cron',{method:'POST'}));}
    else ctx.waitUntil(Promise.allSettled(V17_WHITE_PAUSED?[scheduledAdmin(env)]:[scheduledAdmin(env),scheduledWhite(env)]));
   }
 };

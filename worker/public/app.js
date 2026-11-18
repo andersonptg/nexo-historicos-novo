@@ -1,6 +1,6 @@
 const $=id=>document.getElementById(id);
 const TZ='America/Sao_Paulo';
-let refreshing=false,loadingMore=false,archiveTotal=0,archiveDays=[],items=[],games=[],activeId='brabet-double',showStoneNumbers=true;
+let refreshing=false,loadingMore=false,archiveTotal=0,archiveDays=[],items=[],games=[],activeId='blitz-double',showStoneNumbers=true;
 const qs={number:'all',color:'all',day:''};
 const shortDay=(s)=>{try{const [y,m,d]=s.split('-');return `${d}/${m}/${y}`}catch{return s}};
 const localeTime=(seconds)=>seconds?new Intl.DateTimeFormat('pt-BR',{timeZone:TZ,hour:'2-digit',minute:'2-digit'}).format(new Date(seconds*1000)):'—';
