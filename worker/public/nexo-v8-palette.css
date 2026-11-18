@@ -1,0 +1,84 @@
+/* NEXO Blitz V8 — somente os botoes de Criar estrategia.
+   Vem por ULTIMO no adm.html; nao atinge historico ou cards salvos. */
+#page-estrategias #strategy-form #nexo-v19-numbers button.nexo-v19-number,
+#page-estrategias #strategy-form #pattern-palette button[data-stone]{
+  display:grid!important;place-items:center!important;position:relative!important;
+  isolation:isolate!important;box-sizing:border-box!important;
+  width:clamp(44px,10vw,76px)!important;height:clamp(44px,10vw,76px)!important;
+  min-height:0!important;aspect-ratio:1/1!important;padding:0!important;margin:0!important;
+  overflow:hidden!important;border-radius:12px!important;border:1px solid #414957!important;
+  background:#202632!important;color:transparent!important;
+  box-shadow:0 3px 0 rgba(0,0,0,.45)!important;
+  font-size:0!important;line-height:0!important;cursor:pointer!important;
+}
+/* Desliga as imagens de fundos antigas e mostra somente o desenho correto. */
+#page-estrategias #strategy-form #nexo-v19-numbers button.nexo-v19-number > *,
+#page-estrategias #strategy-form #pattern-palette button[data-stone] > *{
+  visibility:hidden!important;opacity:0!important;pointer-events:none!important;
+}
+#page-estrategias #strategy-form #nexo-v19-numbers button.nexo-v19-number::before,
+#page-estrategias #strategy-form #pattern-palette button[data-stone]::before{
+  content:""!important;position:absolute!important;inset:0!important;display:block!important;
+  z-index:1!important;border-radius:11px!important;background:#202632!important;
+  pointer-events:none!important;
+}
+#page-estrategias #strategy-form #nexo-v19-numbers button.nexo-v19-number::after,
+#page-estrategias #strategy-form #pattern-palette button[data-stone]::after{
+  content:attr(data-nexo-blitz-number)!important;position:absolute!important;inset:17%!important;
+  z-index:2!important;display:grid!important;place-items:center!important;
+  box-sizing:border-box!important;border:3px solid #fff!important;border-radius:50%!important;
+  background:transparent!important;color:#fff!important;
+  font:800 clamp(16px,3.6vw,28px)/1 system-ui,sans-serif!important;
+  text-shadow:none!important;pointer-events:none!important;
+}
+/* LARANJA: as sete pedras numeradas e a cor livre. */
+#page-estrategias #strategy-form #nexo-v19-numbers button.nexo-v19-number[data-nexo-blitz-number="1"]::before,
+#page-estrategias #strategy-form #nexo-v19-numbers button.nexo-v19-number[data-nexo-blitz-number="2"]::before,
+#page-estrategias #strategy-form #nexo-v19-numbers button.nexo-v19-number[data-nexo-blitz-number="3"]::before,
+#page-estrategias #strategy-form #nexo-v19-numbers button.nexo-v19-number[data-nexo-blitz-number="4"]::before,
+#page-estrategias #strategy-form #nexo-v19-numbers button.nexo-v19-number[data-nexo-blitz-number="5"]::before,
+#page-estrategias #strategy-form #nexo-v19-numbers button.nexo-v19-number[data-nexo-blitz-number="6"]::before,
+#page-estrategias #strategy-form #nexo-v19-numbers button.nexo-v19-number[data-nexo-blitz-number="7"]::before,
+#page-estrategias #strategy-form #pattern-palette button[data-stone="red"]::before{
+  background:#ff9900!important;
+}
+/* PRETO: 8 a 14 e cor livre. */
+#page-estrategias #strategy-form #nexo-v19-numbers button.nexo-v19-number[data-nexo-blitz-number="8"]::before,
+#page-estrategias #strategy-form #nexo-v19-numbers button.nexo-v19-number[data-nexo-blitz-number="9"]::before,
+#page-estrategias #strategy-form #nexo-v19-numbers button.nexo-v19-number[data-nexo-blitz-number="10"]::before,
+#page-estrategias #strategy-form #nexo-v19-numbers button.nexo-v19-number[data-nexo-blitz-number="11"]::before,
+#page-estrategias #strategy-form #nexo-v19-numbers button.nexo-v19-number[data-nexo-blitz-number="12"]::before,
+#page-estrategias #strategy-form #nexo-v19-numbers button.nexo-v19-number[data-nexo-blitz-number="13"]::before,
+#page-estrategias #strategy-form #nexo-v19-numbers button.nexo-v19-number[data-nexo-blitz-number="14"]::before,
+#page-estrategias #strategy-form #pattern-palette button[data-stone="black"]::before{
+  background:#202632!important;
+}
+/* BRANCO 0: mesmo branco com raio do historico, sem anel externo. */
+#page-estrategias #strategy-form #nexo-v19-numbers button.nexo-v19-number[data-nexo-blitz-number="0"]::before,
+#page-estrategias #strategy-form #pattern-palette button[data-stone="white"]::before{background:#fff!important;}
+#page-estrategias #strategy-form #nexo-v19-numbers button.nexo-v19-number[data-nexo-blitz-number="0"]::after,
+#page-estrategias #strategy-form #pattern-palette button[data-stone="white"]::after{
+  content:"ϟ"!important;inset:26%!important;border:0!important;border-radius:18%!important;
+  background:#ffd52e!important;color:#13171b!important;
+  font:900 clamp(22px,5vw,36px)/1 system-ui,sans-serif!important;
+}
+/* Cor livre não recebe número. */
+#page-estrategias #strategy-form #pattern-palette button[data-stone="red"]::after,
+#page-estrategias #strategy-form #pattern-palette button[data-stone="black"]::after{content:""!important;}
+/* CORINGA: azul como era. */
+#page-estrategias #strategy-form #pattern-palette button[data-stone="*"]::before{
+  background:linear-gradient(145deg,#479ff4,#1151b2)!important;
+}
+#page-estrategias #strategy-form #pattern-palette button[data-stone="*"]::after{
+  content:"★"!important;inset:0!important;border:0!important;
+  font-size:clamp(25px,5vw,38px)!important;
+}
+#page-estrategias #strategy-form #nexo-v19-numbers .nexo-v19-numbers-grid{
+  display:grid!important;grid-template-columns:repeat(auto-fit,minmax(49px,1fr))!important;
+  justify-items:start!important;gap:9px!important;
+}
+#page-estrategias #strategy-form #pattern-palette{gap:10px!important;}
+#page-estrategias #strategy-form #nexo-v19-numbers button.nexo-v19-number:focus-visible,
+#page-estrategias #strategy-form #pattern-palette button[data-stone]:focus-visible{
+  outline:3px solid #28d8bc!important;outline-offset:3px!important;
+}
