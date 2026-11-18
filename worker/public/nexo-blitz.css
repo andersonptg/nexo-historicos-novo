@@ -58,3 +58,41 @@ button:focus-visible,a:focus-visible,select:focus-visible,input:focus-visible { 
   height: 100% !important;
   box-shadow: none !important;
 }
+
+/* NEXO BLITZ V5 PADRAO: somente visual; red continua identificador interno. */
+#balls .stone.red .circle.nexo-blitz-host,
+#balls .stone.white .circle.nexo-blitz-host{
+ background:transparent!important; padding:0!important; border:0!important;
+ width:100%!important;max-width:80px!important;aspect-ratio:1!important;
+ height:auto!important;box-shadow:none!important;overflow:hidden!important;
+ border-radius:13%!important;
+}
+#balls .stone.red .circle .nexo-blitz-v5-stone,
+#balls .stone.white .circle .nexo-blitz-v5-stone,
+#nexo-v11-now .v11-stone .nexo-blitz-v5-stone{
+ width:100%!important;height:100%!important; border-radius:13%!important;
+ margin:0!important;overflow:hidden!important;
+}
+.nexo-blitz-v5-stone{display:flex!important;justify-content:center!important;align-items:center!important;
+ box-sizing:border-box!important;aspect-ratio:1!important;box-shadow:none!important;
+ border-radius:13%!important;line-height:1!important;
+}
+.nexo-blitz-v5-orange{background:#ff9800!important;border:1px solid #efa021!important;color:white!important;}
+.nexo-blitz-v5-black{background:#20242f!important;border:1px solid #3e4759!important;color:white!important;}
+.nexo-blitz-v5-white{background:#fff!important;border:1px solid #e2e5ed!important;color:#111!important;}
+.nexo-blitz-v5-ring{box-sizing:border-box;display:grid;place-items:center;width:67%;height:67%;
+ border:clamp(2px,0.3vw,4px) solid #fff;border-radius:50%;color:#fff!important;
+ font:750 clamp(11px,3.8vw,35px)/1 Outfit,system-ui,sans-serif!important;text-shadow:none!important;
+}
+.nexo-blitz-v5-bolt{display:grid;place-items:center;background:#ffd32e;border-radius:16%;width:46%;height:46%;}
+.nexo-blitz-v5-bolt svg{width:75%;height:75%;display:block;}
+#nexo-v11-now .v11-stone.nexo-blitz-host{background:transparent!important;border:0!important;box-shadow:none!important;
+ width:70px!important;height:70px!important;overflow:hidden!important;}
+/* Editar: quatro cores e pedras exatas com a mesma geometria. */
+#page-estrategias #pattern-palette [data-stone] .nexo-blitz-v5-stone,
+#page-estrategias #nexo-v19-numbers .nexo-blitz-v5-stone{width:100%!important;height:100%!important;}
+#page-estrategias #pattern-preview .nexo-blitz-v5-stone{width:100%!important;height:100%!important;}
+#page-estrategias #nexo-v19-numbers .nexo-v19-number{padding:0!important;overflow:hidden!important;}
+#page-estrategias #nexo-v19-numbers .nexo-v19-number.nexo-blitz-host{background:transparent!important;
+ border:0!important;box-shadow:none!important;}
+@media(max-width:500px){.nexo-blitz-v5-ring{font-size:clamp(11px,5vw,24px)!important}}

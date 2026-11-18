@@ -726,11 +726,7 @@ async function fireEvent(env,settings,strategy,r,type,step,deadlineAtMs=0,global
    const stoneTemplate=String(sc.text||'🎲 Pedra sorteada: {pedra}').slice(0,400).replace(/\{quadrado(?:_espaco)?\}/g,'{pedra}');
    evt.stoneAfter=formatMessage(stoneTemplate,r,strategy,step);
   }
- if(['entry_black','entry_red','entry_white'].includes(type)&&String(media.type||'text')==='text'){
-    // V25: no caminho de alta carga, evita reler todo o catalogo no evento.
-    const number=numberLookup?.get(strategy.id)||((await getDoc(env,strategyStorage(env),[])).filter(x=>!x.archived).findIndex(x=>x.id===strategy.id)+1);
-    if(number>0){const digits=String(number).replace(/[0-9]/g,c=>'⁰¹²³⁴⁵⁶⁷⁸⁹'[Number(c)]);evt.message+='\n\nᵉˢᵗ '+digits;}
-  }
+  // NEXO Blitz V5.1: mensagem de entrada sem rodape automatico est N.
  await putDoc(env,eventKey(evt.id),evt);
  const v26EventSavedAt=Date.now(); // NEXO V26.4 TELEMETRIA
  if(type==='attention'&&settings.botEnabled)await beginAttention(env,evt);

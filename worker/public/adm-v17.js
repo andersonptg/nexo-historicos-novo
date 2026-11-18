@@ -88,7 +88,7 @@
    pick.append(check,el('span','','Selecionar'));
    left.append(pick,el('span','v17-idx','ESTRATÉGIA '+String(index+1).padStart(2,'0')),el('div','v17-rule-title',s.name||'Regra sem nome'));
    top.append(left,el('span','v17-pill '+(s.enabled?'on':'off'),s.enabled?'● ATIVA':'○ PAUSADA'));card.append(top,stoneRow(s.pattern||[]));
-   card.append(el('small','v17-muted',(s.target==='white'?'⚪ SOMENTE BRANCO':s.target==='red'?'🔴 VERMELHO + BRANCO':'⚫ PRETO + BRANCO')+' • até Gale '+(s.maxGale||0)));
+   card.append(el('small','v17-muted',(s.target==='white'?'⚪ SOMENTE BRANCO':s.target==='red'?'🟠 LARANJA + BRANCO':'⚫ PRETO + BRANCO')+' • até Gale '+(s.maxGale||0)));
    const actions=labelButtons(card);
    actions.append(btn('✎ Editar',()=>showEditor(s)),btn('▥ Placar',()=>showScore(s)),btn(s.enabled?'Ⅱ Pausar':'▶ Ativar',()=>void toggle(s),s.enabled?'danger':'primary'),btn('🗑 Excluir',()=>void v25DeleteRule(s,index+1),'v25-rule-delete'));
    card.append(v26Stats(scores.get(s.id)));
@@ -273,7 +273,7 @@
      if(patternType==='to-white')return x.target==='white';
      return true;
     });const available=rows.length;syncNewCount();const shown=rows.slice(0,(pageIndex+1)*15);if(!rows.length)host.append(el('p','v17-blank',analysis?'Nenhum padrão passou no filtro.':'Clique em procurar padrões para iniciar.'));
-  for(const p of shown){const box=el('article','v17-pattern');box.append(stoneRow(p.tokens));const footer=el('footer');const lab=el('div');const target=p.target==='red'?'🔴 VERMELHO':p.target==='black'?'⚫ PRETO':'⚪ BRANCO';lab.append(el('b','',`Entrada: ${target}`),el('div','v17-muted',`${p.hits}/${p.total} ocorrências com acerto · 1ª ${p.first} · 2ª ${p.second} · falhas ${p.fail} · amostra histórica, sem garantia futura`));footer.append(lab);
+  for(const p of shown){const box=el('article','v17-pattern');box.append(stoneRow(p.tokens));const footer=el('footer');const lab=el('div');const target=p.target==='red'?'🟠 LARANJA':p.target==='black'?'⚫ PRETO':'⚪ BRANCO';lab.append(el('b','',`Entrada: ${target}`),el('div','v17-muted',`${p.hits}/${p.total} ocorrências com acerto · 1ª ${p.first} · 2ª ${p.second} · falhas ${p.fail} · amostra histórica, sem garantia futura`));footer.append(lab);
    footer.append(btn('Exportar individualmente',()=>void exportPattern(p),'primary'));box.append(footer);
    const d=el('details');d.append(el('summary','','Ver sequência completa'));d.append(el('p','',p.pattern),el('p','',`Total ${p.total}; primeira casa ${p.first}; segunda casa ${p.second}; falhas ${p.fail}.`));box.append(d);host.append(box)}
   $('v17-pattern-more').hidden=shown.length>=available;

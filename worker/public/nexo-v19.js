@@ -42,6 +42,29 @@
     return assets[src]||null;
   }
   function blitzTile(filename){
+    // V5: a propria pedra preenche toda a celula. Nao desenhar outro botao por tras.
+    // Esta conversao apenas visual usa o numero EXATO da imagem correspondente,
+    // sem substituir uma pedra numerada por outra de cor generica.
+    const match=/^blitz_numero_([1-7])\.png$/.exec(filename);
+    const kind=match?'orange':filename==='blitz_branco_raio.png'?'white':
+      filename==='blitz_cor_laranja_sem_numero.png'?'orange':
+      filename==='blitz_cor_preto_sem_numero.png'?'black':
+      filename==='blitz_cor_branco_sem_numero.png'?'white':null;
+    if(kind){
+      const tile=el('span','nexo-blitz-tile nexo-blitz-v5-stone nexo-blitz-v5-'+kind);
+      if(kind==='white'){
+        const badge=el('span','nexo-blitz-v5-bolt');
+        const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
+        svg.setAttribute('viewBox','0 0 24 24');svg.setAttribute('aria-hidden','true');
+        const path=document.createElementNS('http://www.w3.org/2000/svg','path');
+        path.setAttribute('d','M13.8 1.8 5.7 13h5.5l-1 9.2L18.8 10h-5.6z');
+        path.setAttribute('fill','#111317');svg.append(path);badge.append(svg);tile.append(badge);
+      }else{
+        const ring=el('span','nexo-blitz-v5-ring',match?match[1]:'');tile.append(ring);
+      }
+      return tile;
+    }
+    // Coringa e pedras pretas numeradas mantem suas imagens existentes.
     const tile=el('span','nexo-blitz-tile nexo-blitz-png');
     const img=el('img','nexo-blitz-png-img');img.src='/blitz-pedras-v4/'+filename;
     img.alt='';img.loading='lazy';img.decoding='async';img.draggable=false;
@@ -108,8 +131,12 @@
   function paintLatest(){
     const square=document.querySelector('#nexo-v11-now .v11-stone');if(!square)return;
     if(square.querySelector(':scope > img.nexo-v19-stone-image'))return;
-    const n=Number(square.textContent.trim());
-    if(Number.isInteger(n)&&n>=0&&n<=14)imageInto(square,numURL(n),'Última pedra confirmada: '+n);
+    const raw=square.textContent.trim();
+    const n=/^\d{1,2}$/.test(raw)?Number(raw):Number(square.dataset.nexoV5LastNumber);
+    if(Number.isInteger(n)&&n>=0&&n<=14){
+      square.dataset.nexoV5LastNumber=String(n);
+      imageInto(square,numURL(n),'Última pedra confirmada: '+n);
+    }
   }
   function tokenFrom(node){
     const original=node.dataset.nexoToken || node.getAttribute('title') || node.textContent.trim();
@@ -132,6 +159,8 @@
       const token=tokenFrom(node);if(!token)continue;
       node.dataset.nexoToken=token.raw;
       node.setAttribute('aria-label',token.label);
+      // n:1..n:14 permanece numero EXATO; red/black/white permanece cor livre.
+      // Nunca transformar token exato em token de cor.
       imageInto(node,token.url,token.label);
     }
   }
@@ -179,6 +208,15 @@
   }
   function organizeEditor(){
     const page=document.getElementById('page-estrategias');if(!page)return;
+    // Cor interna continua 'red'; apenas a interface do montador diz LARANJA.
+    const targets=page.querySelector('#st-target');
+    if(targets){for(const opt of targets.options){if(/vermelho/i.test(opt.textContent))opt.textContent=opt.textContent.replace(/vermelho/gi,'LARANJA');}}
+    for(const btn of page.querySelectorAll('#pattern-palette [data-stone="red"]')){
+      btn.setAttribute('aria-label','Adicionar laranja');btn.setAttribute('title','Laranja');
+      const label=btn.closest('label');if(label&&/vermelho/i.test(label.textContent)){
+        for(const node of label.childNodes)if(node.nodeType===Node.TEXT_NODE)node.textContent=node.textContent.replace(/vermelho/gi,'LARANJA');
+      }
+    }
     const rules=document.getElementById('v17-rules');const layout=page.querySelector('.strategies-layout');
     if(rules&&layout&&layout.nextElementSibling!==rules){rules.before(layout)}
     const newButton=document.getElementById('new-strategy');if(newButton)newButton.textContent='＋ Montar estratégia';

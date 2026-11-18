@@ -49,8 +49,8 @@
   const age=Math.round(Date.now()/1000-r.minute_epoch);
   if(age>120){old(rows,status);phase.textContent='FONTE ATRASADA · '+Math.max(1,Math.floor(age/60))+' MIN';card.classList.remove('v12-result-arriving');if(fireCancel)fireCancel();return;}
   card.classList.remove('v12-result-arriving');
-  if(first){old(rows,status);phase.textContent='BRABET · ÚLTIMO RESULTADO CONFIRMADO';return;}
-  phase.textContent='BRABET GIROU · RESULTADO RECEBIDO';
+  if(first){old(rows,status);phase.textContent='BLITZ · ÚLTIMO RESULTADO CONFIRMADO';return;}
+  phase.textContent='BLITZ GIROU · RESULTADO RECEBIDO';
   card.classList.add('v12-result-arriving');
   timer=setTimeout(()=>{
    if(r.id!==seen)return;
