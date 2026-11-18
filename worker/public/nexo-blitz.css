@@ -37,3 +37,24 @@ button:focus-visible,a:focus-visible,select:focus-visible,input:focus-visible { 
 #page-estrategias #pattern-preview{min-height:64px;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 #page-estrategias #pattern-preview .pattern-pill{flex:0 0 42px}
 @media(max-width:500px){#page-estrategias #pattern-preview .pattern-pill{flex-basis:34px}}
+
+/* NEXO BLITZ: remover fundo preto atras das pedras laranja */
+#balls .stone:has(.nexo-blitz-orange),
+#balls .stone:has(.nexo-blitz-orange) > .circle,
+#balls .stone:has(.nexo-blitz-orange) .nexo-blitz-tile {
+  background: #ff9700 !important;
+  background-image: none !important;
+}
+
+#balls .stone:has(.nexo-blitz-orange) > .circle {
+  width: 100% !important;
+  height: 100% !important;
+  padding: 0 !important;
+  box-shadow: none !important;
+}
+
+#balls .stone:has(.nexo-blitz-orange) .nexo-blitz-tile {
+  width: 100% !important;
+  height: 100% !important;
+  box-shadow: none !important;
+}
