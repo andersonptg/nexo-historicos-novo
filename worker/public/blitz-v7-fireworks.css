@@ -1,0 +1,7 @@
+/* Presente só na página pública / do histórico. Nenhuma animação no ADM. */
+#nexo-v7-white-celebration{position:fixed;inset:0;z-index:9000;pointer-events:none;overflow:hidden}
+#nexo-v7-white-celebration .nexo-v7-white-title{position:absolute;top:20%;left:50%;transform:translateX(-50%);max-width:90vw;padding:12px 26px;border:1px solid #96fbed;border-radius:22px;background:#071c2fdd;box-shadow:0 0 38px #5df6f6a0;color:#fff;font:900 clamp(29px,8vw,65px)/1.1 system-ui;text-align:center;animation:nexo-v7-white-title 2.8s both}
+#nexo-v7-white-celebration .nexo-v7-spark{position:absolute;left:var(--x);top:var(--y);width:7px;height:7px;border-radius:50%;background:var(--color);box-shadow:0 0 12px var(--color);animation:nexo-v7-white-spark 1.4s ease-out var(--delay) both}
+@keyframes nexo-v7-white-spark{0%{opacity:0;transform:translate(0,0) scale(.5)}10%{opacity:1}75%{opacity:1}100%{opacity:0;transform:translate(var(--dx),var(--dy)) scale(.1)}}
+@keyframes nexo-v7-white-title{0%{opacity:0;transform:translate(-50%,-20px) scale(.8)}15%{opacity:1;transform:translate(-50%,0) scale(1)}75%{opacity:1}100%{opacity:0;transform:translate(-50%,-15px) scale(.95)}}
+@media(prefers-reduced-motion:reduce){#nexo-v7-white-celebration{display:none!important}}
