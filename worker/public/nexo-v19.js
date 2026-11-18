@@ -29,11 +29,47 @@
     b.addEventListener('click',()=>{theme=theme==='dark'?'light':'dark';safeSet(THEME_KEY,theme);changeTheme()});
     parent.prepend(b);
   }
+  // Blitz: 0-7 e cores sem numero desenhadas em CSS/DOM, sem PNG pesado.
+  // O nome interno 'red' continua inalterado para preservar dados e estrategias.
+  function blitzAsset(src){
+    if(src===PREFIX+'cor_red.png')return {kind:'orange'};
+    if(src===PREFIX+'cor_black.png')return {kind:'black'};
+    if(src===PREFIX+'cor_white.png'||src===numURL(0))return {kind:'white'};
+    const match=src.match(/^\/pedras-v19\/(0[1-7])\.png$/);
+    return match?{kind:'orange',number:Number(match[1])}:null;
+  }
+  function blitzTile(asset){
+    const tile=el('span','nexo-blitz-tile nexo-blitz-'+asset.kind);
+    tile.setAttribute('aria-hidden','true');
+    if(asset.kind==='orange'&&Number.isInteger(asset.number)){
+      tile.append(el('span','nexo-blitz-ring',String(asset.number)));
+    }
+    if(asset.kind==='white'){
+      const badge=el('span','nexo-blitz-flash-badge');
+      const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
+      svg.setAttribute('viewBox','0 0 24 24');svg.setAttribute('aria-hidden','true');
+      const bolt=document.createElementNS('http://www.w3.org/2000/svg','path');
+      bolt.setAttribute('d','M13.8 1.8 5.7 13h5.5l-1 9.2L18.8 10h-5.6z');
+      bolt.setAttribute('fill','#111317');svg.append(bolt);badge.append(svg);tile.append(badge);
+    }
+    return tile;
+  }
   function imageInto(host,src,description) {
-    if(!host || host.querySelector(':scope > img.nexo-v19-stone-image')?.getAttribute('src') === src)return false;
+    if(!host)return false;
+    const asset=blitzAsset(src);
+    if(asset){
+      if(host.dataset.nexoBlitzAsset===src&&host.querySelector(':scope > .nexo-blitz-tile'))return false;
+      host.replaceChildren(blitzTile(asset));
+      host.dataset.nexoBlitzAsset=src;
+      host.classList.add('nexo-v19-image-host','nexo-blitz-host');
+      host.setAttribute('aria-label',description);
+      return true;
+    }
+    if(host.querySelector(':scope > img.nexo-v19-stone-image')?.getAttribute('src')===src)return false;
     const image=el('img','nexo-v19-stone-image');
     image.src=src;image.alt=description;image.loading='lazy';image.decoding='async';image.draggable=false;
-    host.replaceChildren(image);host.classList.add('nexo-v19-image-host');
+    host.replaceChildren(image);delete host.dataset.nexoBlitzAsset;
+    host.classList.remove('nexo-blitz-host');host.classList.add('nexo-v19-image-host');
     return true;
   }
   function timeBR(seconds, includeSeconds=false){
@@ -122,8 +158,7 @@
     const grid=el('div','nexo-v19-numbers-grid');
     for(let n=0;n<=14;n++){
       const b=el('button','nexo-v19-number');b.type='button';b.title='Adicionar número '+n;b.setAttribute('aria-label',b.title);
-      const img=el('img');img.src=numURL(n);img.alt='Pedra '+n;img.loading='lazy';img.draggable=false;
-      b.append(img);
+      imageInto(b,numURL(n),'Pedra '+n);
       b.addEventListener('click',()=>{
         if(typeof addPatternStone==='function')addPatternStone('n:'+n);
         else{

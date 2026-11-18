@@ -5,3 +5,22 @@ button,select,input { transition: border-color .15s ease, box-shadow .15s ease, 
 button:focus-visible,a:focus-visible,select:focus-visible,input:focus-visible { outline: 2px solid var(--blitz-cyan); outline-offset: 2px; }
 #resultados { scroll-margin-top: 15px; }
 @media (prefers-reduced-motion: reduce) { *,*:before,*:after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
+
+/* NEXO BLITZ V3 - TILES DIRETO NO SITE (numeradas 1-7 e cores sem numero) */
+/* Apenas desenha a aparência: não modifica a cor lógica red/black/white. */
+.nexo-blitz-host{position:relative!important;overflow:visible!important}
+.nexo-blitz-tile{box-sizing:border-box;display:flex;align-items:center;justify-content:center;position:relative;width:100%;height:100%;aspect-ratio:1/1;container-type:inline-size;border-radius:13%;overflow:hidden;box-shadow:inset 0 1px 1px #ffffff23,0 2px 3px #0004;line-height:1;font-family:Outfit,system-ui,sans-serif}
+.nexo-blitz-orange{background:#ff9700!important;color:#fff!important;border:1px solid #ffa522}
+.nexo-blitz-black{background:#1e212b!important;color:#fff!important;border:1px solid #323540}
+.nexo-blitz-white{background:#fff!important;border:1px solid #eeeeee;color:#171717!important}
+.nexo-blitz-ring{position:absolute;inset:17%;display:flex;align-items:center;justify-content:center;border:3px solid #fff;border-radius:50%;font-size:43cqw;font-weight:750;line-height:1;letter-spacing:-.05em;color:#fff!important}
+.nexo-blitz-flash-badge{width:43%;height:43%;border-radius:17%;background:#ffd32e;display:grid;place-items:center}
+.nexo-blitz-flash-badge svg{display:block;width:75%;height:75%}
+/* Compatibilidade com os componentes existentes (painel, estratégias, histórico). */
+#balls .stone .circle .nexo-blitz-tile,#nexo-v11-now .v11-stone .nexo-blitz-tile,.v17-stone .nexo-blitz-tile,.v12-ball .nexo-blitz-tile,.pattern-pill .nexo-blitz-tile,#stones .stone .nexo-blitz-tile,.nexo-v19-number .nexo-blitz-tile{width:100%!important;height:100%!important}
+.nexo-v19-number.nexo-blitz-host{overflow:visible}
+/* Paleta de cores genéricas do editor: sem numero, desenhada no CSS. */
+#pattern-palette [data-stone=red],.builder-palette .stone.red{background:#ff9700!important;border-color:#ffb034!important;color:transparent!important}
+#pattern-palette [data-stone=black],.builder-palette .stone.black{background:#1e212b!important;border-color:#353846!important;color:transparent!important}
+#pattern-palette [data-stone=white],.builder-palette .stone.white{background:#fff!important;border-color:#ddd!important;color:transparent!important}
+/* Não altera as pedras numeradas pretas de 8 a 14. */
