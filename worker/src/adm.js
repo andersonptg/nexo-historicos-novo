@@ -195,10 +195,77 @@ async function handlePrivateMessage(env,msg){
    const bot=await botInfo(env);await sendOwnerConfirmation(env,chatId,bot?.username||'');return;
  }
  if(!owner||owner.id!==chatId){if(/^\/start(?:@\w+)?$/i.test(text))await tg(env,'sendMessage',{chat_id:chatId,text:'🔐 Abra o NEXO ADM → Telegram, gere o código de vinculação e envie /vincular CODIGO aqui.'});return;}
+ if(/^\/nexo(?:@\w+)?$/i.test(text)||/^\/menu(?:@\w+)?$/i.test(text)){await nexoSendMenu(env,chatId);return;}
  if(msg.sticker||msg.animation||msg.document?.mime_type==='image/gif'){
     const added=await saveReceivedMedia(env,msg);
     await tg(env,'sendMessage',{chat_id:chatId,text:added?'✅ Mídia recebida! Abra Stickers e GIFs no ADM e selecione-a para o sinal desejado.':'ℹ️ Essa mídia já está na biblioteca do NEXO.'});
  }
+}
+// NEXO BOT V1 ETAPA 4: menu privado somente leitura
+const NEXO_MENU_BUTTONS=[
+ [{text:'⚡ Motor',callback_data:'nexo_menu:motor'},{text:'🔴 Resultados',callback_data:'nexo_menu:results'}],
+ [{text:'🎯 Estratégias',callback_data:'nexo_menu:strategies'},{text:'🧪 Validação',callback_data:'nexo_menu:validation'}],
+ [{text:'🖼 Stickers',callback_data:'nexo_menu:stickers'},{text:'✍️ Mensagens',callback_data:'nexo_menu:messages'}],
+ [{text:'👥 Grupos',callback_data:'nexo_menu:groups'},{text:'📈 Placares',callback_data:'nexo_menu:scores'}],
+ [{text:'⚙️ Ajustes',callback_data:'nexo_menu:settings'},{text:'📋 Logs',callback_data:'nexo_menu:logs'}]
+];
+const NEXO_MENU_TITLES={motor:'⚡ Motor',results:'🔴 Resultados',strategies:'🎯 Estratégias',validation:'🧪 Validação',stickers:'🖼 Stickers',messages:'✍️ Mensagens',groups:'👥 Grupos',scores:'📈 Placares',settings:'⚙️ Ajustes',logs:'📋 Logs'};
+async function nexoMenuText(env,section='home'){
+ if(section==='home'){
+  const [settings,ss,gs]=await Promise.all([getDoc(env,K.settings,settingsDefault),getDoc(env,K.strategies,[]),getDoc(env,K.groups,[])]);
+  return '🤖 NEXO BOT — CENTRAL ADMINISTRATIVA\n\n'+
+   'Cloudflare: emissor oficial atual\n'+
+   'Sinais: '+(settings.botEnabled?'🟢 ativos':'🔴 desativados')+'\n'+
+   'Estratégias ativas: '+ss.filter(x=>x.enabled&&!x.archived).length+'\n'+
+   'Grupos selecionados: '+gs.filter(x=>x.selected&&x.admin).length+'\n\n'+
+   'Escolha uma opção. Nesta etapa os controles de escrita estão desativados.';
+ }
+ if(!(section in NEXO_MENU_TITLES))return '⚠️ Opção desconhecida';
+ if(section==='motor')return '⚡ MOTOR\n\nTermux: consulta em preparação.\nCloudflare: emissor oficial atual.\n\nLigar / Desligar / Automático: serão habilitados depois de validar a conexão autenticada com o Termux.';
+ if(section==='results'){
+  const h=await recentR2(env,'brabet-double');
+  const items=(h.items||[]).slice(0,20);
+  return '🔴 RESULTADOS — BRABET DOUBLE\n\n'+(items.length?items.map(x=>(x.color==='red'?'🔴':x.color==='black'?'⚫':'⚪')+x.number).join('  '):'Nenhuma rodada no histórico atual')+'\n\nLeitura do arquivo Cloudflare. Histórico local Termux será conectado depois.';
+ }
+ if(section==='strategies'){
+  const ss=await getDoc(env,K.strategies,[]);
+  return '🎯 ESTRATÉGIAS\n\nCadastradas: '+ss.filter(x=>!x.archived).length+'\nAtivas: '+ss.filter(x=>x.enabled&&!x.archived).length+'\n\nEditor será habilitado após testes seguros.';
+ }
+ if(section==='groups'){
+  const gs=await getDoc(env,K.groups,[]);
+  return '👥 GRUPOS\n\nDetectados: '+gs.length+'\nSelecionados e ADM: '+gs.filter(x=>x.selected&&x.admin).length+'\n\nSeleção de destinos: bloqueada nesta etapa.';
+ }
+ if(section==='stickers'){
+  const media=await getDoc(env,K.media,[]);
+  return '🖼 STICKERS E GIFS\n\nNa biblioteca: '+media.length+'\n\nVocê já pode encaminhar stickers para o bot no privado; o cadastro existente continua funcionando.';
+ }
+ if(section==='settings'){
+  const cfg=await getDoc(env,K.settings,settingsDefault);
+  return '⚙️ AJUSTES\n\nEnvio oficial: '+(cfg.botEnabled?'LIGADO':'DESLIGADO')+'\n\nConfigurações de escrita disponíveis somente no ADM atual até a próxima etapa.';
+ }
+ return NEXO_MENU_TITLES[section]+'\n\nTela preparada. Operações de escrita ficam bloqueadas por segurança nesta etapa.';
+}
+function nexoMenuMarkup(section='home'){
+ return {inline_keyboard:section==='home'?NEXO_MENU_BUTTONS:[[{text:'◀ Voltar ao menu',callback_data:'nexo_menu:home'}]]};
+}
+async function nexoSendMenu(env,chatId){
+ await tg(env,'sendMessage',{chat_id:chatId,text:await nexoMenuText(env),reply_markup:nexoMenuMarkup()});
+}
+async function nexoMenuCallback(env,q){
+ const data=String(q?.data||'');if(!data.startsWith('nexo_menu:'))return;
+ const chatId=String(q.message?.chat?.id||''),from=String(q.from?.id||'');
+ const owner=await getDoc(env,K.owner,null);
+ if(!chatId||chatId!==from||q.message?.chat?.type!=='private'||owner?.id!==from){
+  await tg(env,'answerCallbackQuery',{callback_query_id:q.id,text:'Acesso exclusivo do administrador',show_alert:true});return;
+ }
+ const section=data.slice(10);
+ if(section!=='home'&&!(section in NEXO_MENU_TITLES)){
+  await tg(env,'answerCallbackQuery',{callback_query_id:q.id,text:'Opção inválida'});return;
+ }
+ await tg(env,'answerCallbackQuery',{callback_query_id:q.id});
+ try{
+  await tg(env,'editMessageText',{chat_id:chatId,message_id:q.message.message_id,text:await nexoMenuText(env,section),reply_markup:nexoMenuMarkup(section)});
+ }catch(e){if(!String(e?.message||e).includes('message is not modified'))throw e;}
 }
 async function telegramWebhook(request,env){
  const secret=await webhookSecret(env);
@@ -211,6 +278,7 @@ async function telegramWebhook(request,env){
  if(normChat(c)){
    try{await discoverChat(env,c,{force:!!b.my_chat_member})}catch(e){console.warn('ADM webhook group',String(e.message||e).slice(0,80))}
  }
+ if(b.callback_query)try{await nexoMenuCallback(env,b.callback_query)}catch(e){console.warn('NEXO MENU callback:',String(e.message||e).slice(0,90))}
  if(b.message?.chat?.type==='private')try{await handlePrivateMessage(env,b.message)}catch(e){console.warn('ADM webhook private:',String(e.message||e).slice(0,90))}
  return json({ok:true});
 }
@@ -762,7 +830,7 @@ async function registerWebhook(req,env){
  const secret=await webhookSecret(env);if(!secret)return err('Configure o Secret NEXO_BOT_ENCRYPTION_KEY no Worker.',503);
  const existing=await tg(env,'getWebhookInfo',{}),desired=new URL(req.url).origin+'/api/telegram/webhook';
  if(existing.url&&existing.url!==desired)return err('Esse bot ainda usa o webhook de outro sistema. Desative o sistema anterior antes de transferir o webhook; NEXO nao ira substitui-lo.',409);
- const result=await tg(env,'setWebhook',{url:desired,secret_token:secret,allowed_updates:['my_chat_member','message','channel_post'],drop_pending_updates:false});
+ const result=await tg(env,'setWebhook',{url:desired,secret_token:secret,allowed_updates:['my_chat_member','message','channel_post','callback_query'],drop_pending_updates:false});
  return json({ok:!!result,webhook:desired});
 }
 async function saveBotToken(req,env){
@@ -784,7 +852,7 @@ async function saveBotToken(req,env){
  try{
   const info=await tgUsing(token,'getWebhookInfo',{}),desired=new URL(req.url).origin+'/api/telegram/webhook';
   if(info.url&&info.url!==desired)webhook='outro sistema';
-  else{await tgUsing(token,'setWebhook',{url:desired,secret_token:await webhookSecret(env),allowed_updates:['my_chat_member','message','channel_post'],drop_pending_updates:false});webhook='conectado'}
+  else{await tgUsing(token,'setWebhook',{url:desired,secret_token:await webhookSecret(env),allowed_updates:['my_chat_member','message','channel_post','callback_query'],drop_pending_updates:false});webhook='conectado'}
  }catch{webhook='falha ao registrar; use o botao de webhook'}
  return json({ok:true,bot:{username:row.username,id:row.botId},notified,webhook,notice:notified?'Confirmacao enviada ao chat privado vinculado.':'Para receber confirmacao no privado, vincule seu Telegram com o codigo do painel. O Telegram nao permite iniciar conversa antes disso.'});
 }
