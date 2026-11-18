@@ -1,0 +1,21 @@
+/* NEXO V9: apenas a cor LOGICA red do jogo Blitz (agora laranja).
+   Preserve sinal RED (derrota), erros, exclusao, pausa e credenciais. */
+#page-estrategias .v6-stone.red,
+#page-estrategias .v17-stone.red,
+#page-estrategias .pattern-pill.red,
+#page-estrategias #v6-builder .v6-stone.red,
+#page-estrategias #v6-builder [data-stone="red"],
+#page-estrategias #pattern-palette [data-stone="red"]{background:#ff9900!important;background-image:none!important;border-color:#ffb548!important;color:#fff!important}
+#page-estrategias .v6-stone.red::before,
+#page-estrategias .v17-stone.red::before{background:#ff9900!important}
+#page-estrategias .v6-stone.red .v6-stone-face{color:#fff!important}
+#page-estrategias .v17-stone.red::after,
+#page-estrategias .v6-stone.red::after{border-color:#fff!important}
+/* Botoes legados no montador; CSS V8 ja trata a paleta exata. */
+#page-estrategias #nexo-v19-numbers button.nexo-v19-number[data-nexo-blitz-number="1"],
+#page-estrategias #nexo-v19-numbers button.nexo-v19-number[data-nexo-blitz-number="2"],
+#page-estrategias #nexo-v19-numbers button.nexo-v19-number[data-nexo-blitz-number="3"],
+#page-estrategias #nexo-v19-numbers button.nexo-v19-number[data-nexo-blitz-number="4"],
+#page-estrategias #nexo-v19-numbers button.nexo-v19-number[data-nexo-blitz-number="5"],
+#page-estrategias #nexo-v19-numbers button.nexo-v19-number[data-nexo-blitz-number="6"],
+#page-estrategias #nexo-v19-numbers button.nexo-v19-number[data-nexo-blitz-number="7"]{background:#ff9900!important}
