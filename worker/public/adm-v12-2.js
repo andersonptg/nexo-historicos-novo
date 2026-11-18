@@ -40,10 +40,10 @@
  }
  function setupStrategyOption(){
   const checks=$('strategy-form')?.querySelector('.checks');if(!checks||$('v12-2-after-strategy'))return;
-  const label=el('label','v12-2-line'),box=el('input');box.type='checkbox';box.id='v12-2-after-strategy';box.checked=true;
+  const label=el('label','v12-2-line'),box=el('input');box.type='checkbox';box.id='v12-2-after-strategy';box.checked=false;
   label.append(box,el('span','','Permitir mensagem automática “Após pedra” nesta estratégia'));
   checks.append(label);
-  const select=()=>{const s=typeof strategy==='function'?strategy():null;box.checked=s?.showAfterPattern!==false};
+  const select=()=>{const s=typeof strategy==='function'?strategy():null;box.checked=s?s.showAfterPattern!==false:false};
   select();
   // Mudanças de estratégia chamam renderStrategies no código principal.
  }

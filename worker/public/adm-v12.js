@@ -46,7 +46,7 @@
   const oldStoneControl=$('st-stone')?.closest('label');if(oldStoneControl)oldStoneControl.hidden=true;
   const checks=$('strategy-form')?.querySelector('.checks');
   if(checks&&!$('v12-stone-strategy')){
-   const label=el('label','v12-toggle'),check=el('input');check.type='checkbox';check.id='v12-stone-strategy';check.checked=true;
+   const label=el('label','v12-toggle'),check=el('input');check.type='checkbox';check.id='v12-stone-strategy';check.checked=false;
    label.append(check,el('span','','Permitir pedra sorteada somente no WIN/BRANCO desta estratégia'));checks.append(label);
   }
   paintStrategies();
