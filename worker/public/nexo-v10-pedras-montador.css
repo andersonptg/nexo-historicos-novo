@@ -1,0 +1,35 @@
+/* V10: APENAS #v6-builder (Criar/Editar estratégia).
+   Reutiliza as mesmas classes de pedra do histórico, sem mudar cards salvos. */
+#v6-builder .v6-stone.nexo-v10-host{
+ box-sizing:border-box!important;position:relative!important;display:inline-flex!important;
+ align-items:center!important;justify-content:center!important;
+ padding:0!important;overflow:hidden!important;background:transparent!important;
+ border:0!important;box-shadow:none!important;color:transparent!important;
+ line-height:0!important;isolation:isolate!important;
+}
+#v6-builder .v6-stone.nexo-v10-host > .v6-stone-face{display:none!important}
+#v6-builder .v6-stone.nexo-v10-host > .nexo-blitz-tile{
+ position:relative!important;display:flex!important;visibility:visible!important;opacity:1!important;
+ width:100%!important;height:100%!important;aspect-ratio:1!important;
+ inset:auto!important;margin:0!important;padding:0!important;
+ border-radius:13%!important;overflow:hidden!important;box-sizing:border-box!important;
+ pointer-events:none!important;
+}
+#v6-builder .v6-stone.nexo-v10-host > .nexo-blitz-tile::before,
+#v6-builder .v6-stone.nexo-v10-host > .nexo-blitz-tile::after{display:none!important}
+#v6-builder .v6-stone.nexo-v10-host .nexo-blitz-v5-ring{
+ box-sizing:border-box!important;display:grid!important;place-items:center!important;
+ width:67%!important;height:67%!important;border:3px solid #fff!important;
+ border-radius:50%!important;color:#fff!important;
+ font:750 clamp(13px,3.9vw,29px)/1 Outfit,system-ui,sans-serif!important;
+ text-shadow:none!important;
+}
+#v6-builder .v6-stone.nexo-v10-host .nexo-blitz-v5-bolt{
+ display:grid!important;place-items:center!important;background:#ffd32e!important;
+ width:46%!important;height:46%!important;border-radius:16%!important;
+}
+#v6-builder .v6-stone.nexo-v10-host .nexo-blitz-v5-bolt svg{display:block!important;width:75%!important;height:75%!important}
+#v6-builder .v6-stone.nexo-v10-host .nexo-blitz-png-img{display:block!important;width:100%!important;height:100%!important;object-fit:contain!important}
+#v6-builder .v6-stone.nexo-v10-host::before,
+#v6-builder .v6-stone.nexo-v10-host::after{content:none!important;display:none!important}
+/* A fonte continua red/black/white internamente; só muda a interface. */
