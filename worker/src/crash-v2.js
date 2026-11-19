@@ -1,5 +1,6 @@
 // NEXO Crash V2 - isolated storage namespace and HTTP routes.
 // Never calls Double queue, white strategies, nor Telegram automatically.
+import {crashV3Public} from './crash-v3.js';
 const PREFIX='nexo-crash-v2/';
 const h={'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'};
 const j=(x,status=200)=>new Response(JSON.stringify(x),{status,headers:h});
@@ -28,11 +29,12 @@ function cleanStrategy(x,id){
  const name=String(x?.name||'').trim().slice(0,80),pattern=x?.pattern;
  if(name.length<2||!Array.isArray(pattern)||pattern.length<1||pattern.length>8||pattern.some(z=>!ranges.includes(z)))throw Error('Nome ou sequencia invalida');
  const target=Number(x.target);if(!targets.includes(target))throw Error('Multiplicador alvo invalido');
- return {id,name,pattern:[...pattern],target,enabled:x.enabled===true,createdAt:Number(x.createdAt)||Date.now(),updatedAt:Date.now()};
+ return {id,name,pattern:[...pattern],target,entryText:String(x.entryText||'').slice(0,900),greenText:String(x.greenText||'').slice(0,900),enabled:x.enabled===true,createdAt:Number(x.createdAt)||Date.now(),updatedAt:Date.now()};
 }
 function cleanMsg(src){const out={};for(const k of ['attention','entry','green','red','closed']){const z=src?.[k]||{};const kind=['text','sticker','gif'].includes(z.kind)?z.kind:'text';const file_id=String(z.file_id||'').trim();if(file_id.length>240||!/^[-_A-Za-z0-9]*$/.test(file_id))throw Error('file_id invalido');out[k]={text:String(z.text||'').slice(0,900),kind,file_id};}return out}
 const defaults={attention:{kind:'text',text:'🔎 CRASH PRO | POSSÍVEL SINAL\nAguardando confirmação da sequência.'},entry:{kind:'text',text:'🤖 CRASH PRO | ENTRADA\nAlvo: {alvo}x\nEntrada somente após rodada confirmada.'},green:{kind:'text',text:'✅ CRASH PRO | GREEN\nVela: {vela}x'},red:{kind:'text',text:'🔴 CRASH PRO | RED\nPadrão não confirmou o alvo.'},closed:{kind:'text',text:'⛔ CRASH PRO | ENCERRADO'}};
 export async function crashPublic(req,env,u){
+ const v3=await crashV3Public(req,env,u,{analyze});if(v3)return v3;
  if(!u.pathname.startsWith('/api/crash/'))return null;
  if(!env.R2)return j({ok:false,error:'R2 indisponivel'},503);
  if(u.pathname==='/api/crash/history'&&req.method==='GET'){
