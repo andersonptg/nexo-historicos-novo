@@ -1,4 +1,5 @@
 import catalog from '../../catalog.json' with {type:'json'};
+import {crashPublic} from './crash-v2.js';
 import {routeAdmin,processNewRounds,resetAfterCatchup,scheduledAdmin} from './adm.js';
 import {processWhiteRounds,resetWhiteAfterCatchup,whiteHasActiveForecast,whiteShouldBlockLegacy,scheduledWhite} from './white.js';
 
@@ -239,6 +240,7 @@ export default {
  async fetch(request,env){
   const url=new URL(request.url);const path=url.pathname;
   try{
+   const crashReply=await crashPublic(request,env,url);if(crashReply)return crashReply;
    const adminReply=await routeAdmin(request,env,url);if(adminReply)return adminReply;
    if(path==='/api/public/preferences'&&request.method==='GET'){
     const p=await env.R2?.get('nexo-v3/admin/settings.json');let prefs={};if(p){try{prefs=await p.json()}catch{}}

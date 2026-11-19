@@ -1,0 +1,24 @@
+/* Isolated Crash module; no global Double CSS overrides. */
+#nx-crash-home,#nx-crash-adm {color:#eaf2fa; font-family:inherit}
+#nx-crash-home{margin:20px 0;padding:18px;background:#0d1828;border:1px solid #28445b;border-radius:16px}
+#nx-crash-home .nx-title,#nx-crash-adm .nx-title{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+#nx-crash-home h2,#nx-crash-adm h2{margin:0 0 8px;color:#eff8ff}
+.nx-sub{color:#a4b9c9;font-size:13px;margin:4px 0 12px}
+.nx-crash-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(85px,1fr));gap:9px;margin:12px 0}
+.nx-candle{border:1px solid #344456;border-radius:10px;padding:10px 6px;text-align:center;background:#122439;min-width:0}
+.nx-candle strong{font-size:18px;display:block}
+.nx-candle small{display:block;font-size:11px;color:#a9bfd0;margin-top:5px}
+.nx-low strong{color:#ef8296}.nx-mid strong{color:#ffd16d}.nx-high strong{color:#61e3ad}.nx-very strong{color:#bb8cff}
+.nx-module{border:1px solid #2b465b;border-radius:13px;background:#0b1928;padding:14px;margin:12px 0}
+#nx-crash-adm label{display:block;margin:9px 0;color:#d6e6f0;font-size:13px}
+#nx-crash-adm input,#nx-crash-adm select,#nx-crash-adm textarea{color:#eaf2fa;background:#122c40;border:1px solid #456077;border-radius:7px;padding:9px;max-width:100%;box-sizing:border-box}
+#nx-crash-adm input[type=checkbox]{width:auto}
+#nx-crash-adm button,#nx-crash-home button{background:#176fa4;color:white;padding:9px 13px;border:0;border-radius:7px;cursor:pointer;margin:4px}
+#nx-crash-adm button:disabled{background:#405568;cursor:not-allowed}
+#nx-crash-adm table{width:100%;border-collapse:collapse;font-size:13px}
+#nx-crash-adm th,#nx-crash-adm td{border-bottom:1px solid #34485e;text-align:left;padding:9px 4px}
+#nx-crash-adm .nx-scroll{overflow-x:auto}.nx-note{color:#b9cbd8;font-size:12px}
+.nx-flex{display:flex;gap:12px;flex-wrap:wrap}.nx-flex>*{flex:1 1 160px}
+.nx-pill{font-size:12px;background:#224e68;padding:4px 8px;border-radius:20px}
+.nx-crash-tab{background:#174b67!important;color:#f4fbff!important}
+@media(max-width:600px){#nx-crash-adm .nx-module{padding:10px}.nx-crash-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
