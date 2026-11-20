@@ -1,0 +1,14 @@
+#page-cloud .nx63-panel{margin:14px 0;padding:17px;border:1px solid #2e5364;border-radius:14px;background:#0c2330;color:#e7f5ff}
+#page-cloud .nx63-panel h2{font-size:18px;margin:0 0 8px}
+#page-cloud .nx63-muted{color:#a9bfce;font-size:13px;line-height:1.6}
+#page-cloud .nx63-controls{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:12px 0}
+#page-cloud .nx63-controls button{background:#175d76;border:1px solid #277999;color:#f1fcff;border-radius:8px;padding:10px 12px;font:inherit;cursor:pointer}
+#page-cloud .nx63-controls button:disabled{opacity:.45;cursor:not-allowed}
+#page-cloud .nx63-details summary{font-weight:700;padding:12px 0;cursor:pointer}
+#page-cloud .nx63-scroll{overflow-x:auto;max-height:65vh;overflow-y:auto}
+#page-cloud .nx63-scroll table{border-collapse:collapse;width:100%;font-size:12px;min-width:630px}
+#page-cloud .nx63-scroll th,#page-cloud .nx63-scroll td{border-bottom:1px solid #2b4655;padding:9px 8px;text-align:left;vertical-align:top}
+#page-cloud .nx63-scroll tr[data-state="bloqueado"]{background:#8a383522}
+#page-cloud .nx63-scroll tr[data-state="erro"]{background:#c4782520}
+#page-cloud .nx63-scroll tr[data-state="atualizado"]{background:#0b604a20}
+#page-cloud #nx63-summary{color:#c4ecdd;font-size:13px;line-height:1.5}

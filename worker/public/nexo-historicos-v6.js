@@ -47,7 +47,7 @@ async function loadCatalog(){
 }
 function updateContext(){
  const name=active.platform+' · '+active.game;
- document.body.classList.toggle('nx6-crash-visual',active.kind==='multiplier');
+ document.body.classList.toggle('nx6-crash-visual',active.kind==='multiplier' && /crash/i.test(active.game));
  document.title=name+' — NEXO Históricos';
  $('nx6-title').textContent=name;
  $('nx6-section-title').textContent=active.game==='Double'?'Pedras recentes':active.kind==='multiplier'?'Multiplicadores recentes':'Rodadas recentes';

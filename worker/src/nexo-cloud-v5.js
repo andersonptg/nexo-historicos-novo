@@ -34,7 +34,12 @@ function tokensFrom(html){
 function sourceRows(html,game,now=Date.now()){
  const tokens=tokensFrom(html);
  let pos=-1;
- if(game.kind==='double')pos=tokens.findIndex(x=>/^(?:sem destaque|no focus)$/i.test(x));
+ if(game.kind==='double'){
+  // Layout atual das paginas publicas: 'Conectando - 200 Resultados'.
+  // Manter o marcador legado como primeira opcao para compatibilidade.
+  pos=tokens.findIndex(x=>/^(?:sem destaque|no focus)$/i.test(x));
+  if(pos<0)pos=tokens.findIndex(x=>/\b(?:conectando|connecting|carregando|loading)\b.*\b(?:resultados|results)\b/i.test(x));
+ }
  else if(game.kind==='multiplier')pos=tokens.findIndex(x=>/\b(?:conectando|connecting|carregando|loading)\b.*\b(?:resultados|results)\b/i.test(x));
  if(pos<0)throw Error('FORMATO_NAO_RECONHECIDO: marcador dos resultados ausente');
  const validTime=/^(?:[01]?\d|2[0-3]):[0-5]\d$/;
@@ -176,7 +181,11 @@ export class NexoCloudCollector {
  async fetch(request){
   const u=new URL(request.url),path=u.pathname;
   let config=await this.config();
-  if(path==='/cloud/status')return json({ok:true,config,ready_count:GAMES.filter(g=>g.eligible).length});
+  if(path==='/cloud/status'){
+   // Rota interna somente atraves do ADM autenticado.
+   const statuses=await this.ctx.storage.get('statuses')||{};
+   return json({ok:true,config,ready_count:GAMES.filter(g=>g.eligible).length,statuses});
+  }
   if(path==='/cloud/kick'){
    if(config.running&&!await this.ctx.storage.getAlarm())await this.ctx.storage.setAlarm(Date.now()+1000);
    return json({ok:true,running:config.running});
