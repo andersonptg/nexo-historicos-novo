@@ -31,7 +31,48 @@ function tokensFrom(html){
  html=html.replace(/<img\b[^>]*\balt\s*=\s*["'](?:branco|white)["'][^>]*>/gi,'>BRANCO<');
  return [...html.matchAll(/>([^<>]+)</g)].map(x=>decodeEntities(x[1])).filter(Boolean);
 }
+// NEXO V6.4: extrair pares multiplicador/horario; nao depender de cabecalho HTML.
+// Exige ao menos 8 pares consecutivos, em ordem cronologica, antes de aceitar uma janela.
+function multiplierWindowV64(html,now=Date.now()){
+ const tokens=tokensFrom(html);
+ const valueRE=/^(\d+(?:[.,]\d{1,4})?)\s*x$/i;
+ const timeRE=/^(?:[01]?\d|2[0-3]):[0-5]\d$/;
+ const parseV=x=>{
+  const m=valueRE.exec(x);
+  if(!m)return null;
+  const n=Number(m[1].replace(',','.'));
+  return n>=1&&n<=1e7&&Number.isFinite(n)?n:null;
+ };
+ let best=[];
+ for(let start=0;start<tokens.length-16;start++){
+  if(parseV(tokens[start])===null||!timeRE.test(tokens[start+1]||''))continue;
+  const run=[];
+  let lastMinute=Infinity;
+  for(let i=start;i+1<tokens.length&&run.length<200;i+=2){
+   const value=parseV(tokens[i]),clock=tokens[i+1];
+   if(value===null||!timeRE.test(clock||''))break;
+   const [hh,mm]=clock.split(':').map(Number);
+   const minute=hh*60+mm;
+   // Novas primeiro; na virada de dia: 00:01 -> 23:59.
+   if(run.length&&minute>lastMinute+1&&!(lastMinute<120&&minute>1320))break;
+   run.push({multiplier:value,clock});lastMinute=minute;
+  }
+  if(run.length>best.length)best=run;
+  if(best.length===200)break;
+ }
+ if(best.length<8)throw Error('FORMATO_NAO_RECONHECIDO: nao ha 8 pares consecutivos de multiplicador e horario');
+ const [y,m,d]=currentBR();let daysBack=0,last=Infinity;
+ return best.map(row=>{
+  const [hh,mm]=row.clock.split(':').map(Number);
+  let epoch=Math.floor(Date.UTC(y,m-1,d,hh+3,mm)/1000)-daysBack*86400;
+  if(epoch>last||epoch>Math.floor(now/1000)+120){daysBack++;epoch-=86400;}
+  last=epoch;
+  return {minute_epoch:epoch,multiplier:row.multiplier};
+ });
+}
+
 function sourceRows(html,game,now=Date.now()){
+ if(game.kind==='multiplier')return multiplierWindowV64(html,now);
  const tokens=tokensFrom(html);
  let pos=-1;
  if(game.kind==='double'){

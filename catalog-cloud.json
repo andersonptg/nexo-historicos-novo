@@ -69,7 +69,7 @@
       "game": "Double",
       "game_slug": "double",
       "kind": "double",
-      "source_url": "https://historicosblaze.com/results/trade-dolar/double",
+      "source_url": "https://historicosblaze.com/results/tradedolar/double",
       "eligible": true,
       "precision": "minute",
       "source": "historicosblaze.com"
@@ -321,7 +321,7 @@
       "game": "Double",
       "game_slug": "double",
       "kind": "double",
-      "source_url": "https://historicosblaze.com/results/casa-campea/double",
+      "source_url": "https://historicosblaze.com/results/casacampea/double",
       "eligible": true,
       "precision": "minute",
       "source": "historicosblaze.com"
@@ -333,7 +333,7 @@
       "game": "Crash",
       "game_slug": "crash",
       "kind": "multiplier",
-      "source_url": "https://historicosblaze.com/results/casa-campea/crash",
+      "source_url": "https://historicosblaze.com/results/casacampea/crash",
       "eligible": true,
       "precision": "minute",
       "source": "historicosblaze.com"
@@ -381,7 +381,7 @@
       "game": "Aviator",
       "game_slug": "aviator",
       "kind": "multiplier",
-      "source_url": "https://historicosblaze.com/results/dezenas-club/aviator",
+      "source_url": "https://historicosblaze.com/results/dezenasclub/aviator",
       "eligible": true,
       "precision": "minute",
       "source": "historicosblaze.com"
@@ -393,7 +393,7 @@
       "game": "Aviator 2",
       "game_slug": "aviator-2",
       "kind": "multiplier",
-      "source_url": "https://historicosblaze.com/results/dezenas-club/aviator-2",
+      "source_url": "https://historicosblaze.com/results/dezenasclub/aviator-2",
       "eligible": true,
       "precision": "minute",
       "source": "historicosblaze.com"
