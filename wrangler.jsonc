@@ -22,6 +22,10 @@
       {
         "name": "NEXO_COORDINATOR",
         "class_name": "NexoCoordinator"
+      },
+      {
+        "name": "NEXO_CLOUD_COLLECTOR",
+        "class_name": "NexoCloudCollector"
       }
     ]
   },
@@ -30,6 +34,12 @@
       "tag": "nexo_v11_coordinator_sqlite",
       "new_sqlite_classes": [
         "NexoCoordinator"
+      ]
+    },
+    {
+      "tag": "nexo_cloud_v5_collector_sqlite",
+      "new_sqlite_classes": [
+        "NexoCloudCollector"
       ]
     }
   ],
