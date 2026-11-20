@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#081521">
+<meta name="description" content="NEXO Históricos — resultados por plataforma e por jogo, em telas independentes.">
+<title>NEXO · Histórico por jogo</title>
+<link rel="stylesheet" href="/nexo-historicos-v6.css?v=6.0.0">
+<script src="/nexo-historicos-v6.js?v=6.0.0" defer></script>
+</head>
+<body>
+<div class="nx6-shell">
+<header class="nx6-top">
+  <a class="nx6-brand" href="/" aria-label="NEXO, voltar à página inicial"><span class="nx6-emblem">N<span>•</span></span><span><b>NEXO</b><small>HISTÓRICOS</small></span></a>
+  <div class="nx6-top-actions">
+    <a class="nx6-home-link" href="/">Início</a>
+    <span id="nx6-clock" class="nx6-clock" aria-label="Relógio em Brasília">--:--:--</span>
+    <button type="button" class="nx6-dots" id="nx6-menu-open" aria-expanded="false" aria-controls="nx6-drawer" aria-label="Abrir plataformas e jogos" title="Plataformas e jogos">⋮</button>
+  </div>
+</header>
+<main class="nx6-content">
+<section class="nx6-hero">
+  <div class="nx6-overline"><span class="nx6-glow"></span> CENTRAL DE HISTÓRICOS <span class="nx6-sep">/</span> <span id="nx6-crumb">SELECIONE UM JOGO</span></div>
+  <div class="nx6-title-row">
+    <div><h1 id="nx6-title">Carregando jogo...</h1><p id="nx6-description">Cada histórico em sua própria tela, com os resultados confirmados.</p></div>
+    <button type="button" id="nx6-choose" class="nx6-pick">☰ Plataformas e jogos</button>
+  </div>
+  <div class="nx6-pills"><span>◷ Horário de Brasília</span><span>◉ Resultados observados</span><span>⛁ Arquivo na nuvem</span></div>
+</section>
+<section class="nx6-mainpanel" aria-label="Histórico do jogo selecionado">
+ <div class="nx6-panelhead">
+  <div><p class="nx6-eyebrow">HISTÓRICO INDEPENDENTE</p><h2 id="nx6-section-title">Resultados recentes</h2><p id="nx6-source">Verificando fonte e registros...</p></div>
+  <button type="button" id="nx6-refresh" class="nx6-refresh">↻ Atualizar</button>
+ </div>
+ <div class="nx6-metrics">
+   <div><span>REGISTROS</span><b id="nx6-count">—</b></div>
+   <div><span>ÚLTIMO RESULTADO</span><b id="nx6-latest">—</b></div>
+   <div><span>ATUALIZAÇÃO</span><b id="nx6-updated">—</b></div>
+   <div><span>ESTADO</span><b id="nx6-state">Carregando</b></div>
+ </div>
+ <div class="nx6-controls">
+   <label class="nx6-game-select"><span>JOGO</span><select id="nx6-game" aria-label="Trocar de jogo"></select></label>
+   <label><span>FILTRAR</span><select id="nx6-filter" aria-label="Filtrar resultados"><option value="all">Todos os resultados</option></select></label>
+   <button type="button" id="nx6-reset" class="nx6-reset">Limpar filtro</button>
+ </div>
+ <div class="nx6-listhead"><span>RESULTADOS MAIS RECENTES</span><span id="nx6-visible">0 VISÍVEIS</span></div>
+ <div id="nx6-notice" class="nx6-notice" role="status">Carregando histórico real...</div>
+ <div id="nx6-grid" class="nx6-grid" aria-live="polite"></div>
+ <div class="nx6-bottom"><span id="nx6-origin">Origem não confirmada</span><span>Horários informados pela fonte, geralmente com precisão de minuto.</span></div>
+</section>
+<footer class="nx6-footer"><span>NEXO Históricos · Plataforma independente</span><span>Históricos não garantem resultados futuros. Sem vínculo com os jogos monitorados.</span></footer>
+</main>
+</div>
+<div id="nx6-backdrop" class="nx6-backdrop" hidden></div>
+<aside id="nx6-drawer" class="nx6-drawer" role="dialog" aria-modal="true" aria-label="Selecionar plataforma e jogo" aria-hidden="true" hidden>
+ <div class="nx6-drawer-title"><div><b>Plataformas e jogos</b><small id="nx6-drawer-count">Carregando catálogo...</small></div><button id="nx6-menu-close" type="button" aria-label="Fechar menu">✕</button></div>
+ <label class="nx6-search-label"><span>BUSCAR JOGO OU PLATAFORMA</span><input id="nx6-search" type="search" placeholder="Ex.: Blitz, Crash, Double" autocomplete="off"></label>
+ <nav id="nx6-nav" aria-label="Plataformas e jogos"><div class="nx6-menu-wait">Carregando plataformas...</div></nav>
+ <a class="nx6-drawer-home" href="/">⌂ Voltar à página inicial</a>
+</aside>
+</body>
+</html>
