@@ -1,0 +1,33 @@
+/* NEXO Cloud V5: isolate game-specific results from the Double visual components. */
+#nexo-cloud-view[hidden]{display:none!important}
+#nexo-cloud-view{padding:12px 0 10px;color:#eaf5ff}
+.nx5-cloud-mode #resultados #balls,.nx5-cloud-mode #resultados .results-head,
+.nx5-cloud-mode #resultados .panel-footer,.nx5-cloud-mode .metric-grid,
+.nx5-cloud-mode #resultados #load-more-box{display:none!important}
+.nx5-cloud-mode #nx-crash-home{display:none!important}
+.nx5-hidden-filter{display:none!important}
+.nx5-head{display:flex;justify-content:space-between;align-items:center;gap:12px;margin:5px 0 12px}
+.nx5-head b{font-size:20px}.nx5-head p{color:#97acc0;font-size:12px;margin:4px 0}
+.nx5-head button,.nx5-control button{background:#174c66;color:#ecfbff;border:1px solid #3c738b;border-radius:9px;padding:10px}
+.nx5-stats{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:14px}
+.nx5-stats span{background:#13263b;border:1px solid #2c4760;padding:6px 9px;border-radius:8px;font-size:11px}
+.nx5-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(82px,1fr));gap:9px}
+.nx5-result{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;min-width:0;padding:7px 3px;border-radius:14px;border:1px solid #2b3d54;background:#111e30}
+.nx5-result .nx5-circle{display:grid;place-items:center;width:min(100%,74px);min-height:52px;border-radius:14px;font-size:16px;font-weight:800;white-space:nowrap}
+.nx5-result small{font-size:10px;color:#bdcddd}
+.nx5-black .nx5-circle{background:#282c35;color:#f2f4f8}
+.nx5-orange .nx5-circle{background:#f18b13;color:white}
+.nx5-white .nx5-circle{background:#f8fbff;color:#131922}
+.nx5-blue .nx5-circle{background:#114d83;color:#b8e1ff}
+.nx5-green .nx5-circle{background:#145943;color:#91ffca}
+.nx5-purple .nx5-circle{background:#5b287d;color:#f1cbff}
+.nx5-empty{grid-column:1/-1;color:#acbdd0;padding:24px;text-align:center;background:#13263b;border:1px dashed #41526a;border-radius:12px}
+.nx5-caution{color:#9db1c1;font-size:11px;margin-top:13px}
+#nexo-cloud-adm .nx5-panel{background:#102237;border:1px solid #31506a;border-radius:13px;padding:15px;margin:12px 0}
+#nexo-cloud-adm table{width:100%;border-collapse:collapse;font-size:12px}
+#nexo-cloud-adm th,#nexo-cloud-adm td{padding:9px 6px;border-bottom:1px solid #30465b;text-align:left}
+#nexo-cloud-adm .nx5-scroll{overflow:auto;max-height:65vh}
+#nexo-cloud-adm .nx5-control{display:flex;flex-wrap:wrap;gap:9px;align-items:center}
+#nexo-cloud-adm select{padding:8px;background:#122d42;color:#f1faff}
+#nexo-cloud-adm .nx5-note{color:#9ebacd;font-size:12px;line-height:1.5}
+@media(max-width:540px){.nx5-grid{grid-template-columns:repeat(4,minmax(0,1fr));gap:5px}.nx5-result{padding:5px 1px}.nx5-result .nx5-circle{min-height:43px;font-size:13px}.nx5-result small{font-size:9px}.nx5-head b{font-size:16px}.nx5-stats{gap:4px}}
