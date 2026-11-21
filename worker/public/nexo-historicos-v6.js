@@ -49,6 +49,7 @@ function updateContext(){
  const name=active.platform+' · '+active.game;
  document.body.classList.toggle('nx6-crash-visual',active.kind==='multiplier' && /crash/i.test(active.game));
  document.body.classList.toggle('nx6-fortune-view',active.kind==='fortune-double');
+  document.body.classList.toggle('nx6-double-visual',active.kind==='double');
  document.title=name+' — NEXO Históricos';
  $('nx6-title').textContent=name;
  $('nx6-section-title').textContent=active.game==='Double'?'Pedras recentes':active.kind==='multiplier'?'Multiplicadores recentes':active.kind==='fortune-double'?'Cores e Panda recentes':'Rodadas recentes';
@@ -99,8 +100,17 @@ function bestHistory(a,b){
 }
 async function getHistory(signal){
  if(active.id==='blitz-double'){
-  const d=await fetchJson('/api/history?game_id=blitz-double&limit=200',signal);
-  return {...d,source_label:'Arquivo Double · R2'};
+  // Motor Termux e motor Cloud salvam em arquivos R2 distintos.
+  // Preferir dados confirmados mais recentes, sem descartar o legado.
+  const settled=await Promise.allSettled([
+   fetchJson('/api/history?game_id=blitz-double&limit=200',signal),
+   fetchJson('/api/cloud/history?game_id=blitz-double&limit=200',signal)
+  ]);
+  const legacy=settled[0].status==='fulfilled'?settled[0].value:null;
+  const cloud=settled[1].status==='fulfilled'?settled[1].value:null;
+  if(!legacy&&!cloud)throw Error('Histórico Double indisponível nas duas fontes');
+  const picked=legacy&&cloud?bestHistory(legacy,cloud):legacy||cloud;
+  return {...picked,source_label:picked===cloud?'Double Cloud · R2':'Double legado · R2'};
  }
  const cloudPath='/api/cloud/history?game_id='+encodeURIComponent(active.id)+'&limit=200';
  if(active.id==='blitz-crash'){
@@ -191,7 +201,7 @@ function setup(){
  clock();setInterval(clock,1000);
  document.addEventListener('visibilitychange',()=>{if(!document.hidden)void loadHistory();});
  window.addEventListener('online',()=>void loadHistory());
- refreshTimer=setInterval(()=>{if(!document.hidden&&!menuOpen)void loadHistory();},12000);
+ refreshTimer=setInterval(()=>{if(!document.hidden&&!menuOpen)void loadHistory();},5000);
 }
 setup();void loadCatalog().then(loadHistory);
 })();

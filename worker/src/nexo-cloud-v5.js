@@ -8,7 +8,7 @@ const ROOT='nexo-cloud-v5/';
 const HEADER={'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'};
 const json=(v,s=200)=>new Response(JSON.stringify(v),{status:s,headers:HEADER});
 const MAX_HISTORY=1200;
-const DEFAULT={running:false,tickSeconds:15,batch:3,consent:false,updated_at:0};
+const DEFAULT={running:false,tickSeconds:15,batch:3,consent:false,manualPause:false,updated_at:0};
 const textSafe=(v,n=130)=>String(v||'').slice(0,n);
 const getR2=async(env,key,fallback=null)=>{const ob=await env.R2.get(ROOT+key);return ob?ob.json():fallback};
 const putR2=(env,key,value)=>env.R2.put(ROOT+key,JSON.stringify(value),{httpMetadata:{contentType:'application/json'}});
@@ -230,20 +230,27 @@ export class NexoCloudCollector {
    return json({ok:true,config,ready_count:GAMES.filter(g=>g.eligible).length,statuses});
   }
   if(path==='/cloud/kick'){
+   // Cron ativa o coletor somente quando habilitado no wrangler.
+   // Pausa manual sempre vence o auto-start para evitar gasto involuntario.
+   if(!config.running&&this.env.NEXO_CLOUD_AUTOSTART==='1'&&!config.manualPause){
+    config={...config,running:true,tickSeconds:Math.max(15,Number(config.tickSeconds)||15),batch:Math.min(4,Math.max(1,Number(config.batch)||3)),updated_at:Date.now()};
+    await this.ctx.storage.put('config',config);
+    await this.publish(config,await this.ctx.storage.get('statuses')||{});
+   }
    if(config.running&&!await this.ctx.storage.getAlarm())await this.ctx.storage.setAlarm(Date.now()+1000);
    return json({ok:true,running:config.running});
   }
   if(path==='/cloud/start'){
    let data={};try{data=await request.json()}catch{}
    const tick=Math.max(15,Math.min(180,Number(data.tick_seconds)||15));
-   config={...config,running:true,tickSeconds:tick,batch:Math.min(4,Math.max(1,Number(data.batch)||3)),updated_at:Date.now()};
+   config={...config,running:true,manualPause:false,tickSeconds:tick,batch:Math.min(4,Math.max(1,Number(data.batch)||3)),updated_at:Date.now()};
    await this.ctx.storage.put('config',config);
    if(!await this.ctx.storage.getAlarm())await this.ctx.storage.setAlarm(Date.now()+1000);
    await this.publish(config,await this.ctx.storage.get('statuses')||{});
    return json({ok:true,running:true,warning:'Monitoramento experimental: fontes externas podem bloquear requisições; sinais Telegram não ativados'});
   }
   if(path==='/cloud/pause'){
-   config={...config,running:false,updated_at:Date.now()};
+   config={...config,running:false,manualPause:true,updated_at:Date.now()};
    await this.ctx.storage.put('config',config);
    await this.ctx.storage.deleteAlarm();
    await this.publish(config,await this.ctx.storage.get('statuses')||{});
@@ -281,7 +288,7 @@ export class NexoCloudCollector {
     return {g,next};
    }).filter(x=>x.next<=now).sort((a,b)=>a.next-b.next);
    // Bounded concurrency and bandwidth: never hammer all sources simultaneously.
-   for(const {g} of due.slice(0,conf.batch||3))await this.runOne(g,states);
+   await Promise.all(due.slice(0,conf.batch||3).map(({g})=>this.runOne(g,states)));
    await this.ctx.storage.put('statuses',states);
    await this.publish(conf,states);
   }catch(e){console.error('NEXO Cloud collector alarm',textSafe(e?.message,120))}
