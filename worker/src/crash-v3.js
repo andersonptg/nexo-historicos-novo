@@ -1,4 +1,5 @@
 import {readNewestCrash} from './crash-v69-source.js';
+import {analyzeCrashAllFast} from './nexo-crash-v692-fast.js';
 // NEXO Crash V3: bot, media and signals isolated from Double.
 // NEVER queues automatic Telegram messages. Only explicit private tests.
 const ROOT='nexo-crash-v2/';
@@ -65,7 +66,7 @@ export async function crashV3Public(req,env,u,{analyze}={}){
  const length=Number(u.searchParams.get('length')??0),minimum=Number(u.searchParams.get('minimum')||3),minHits=Number(u.searchParams.get('min_hits')||1);
  if(!Number.isInteger(length)||length<0||length>12||!Number.isInteger(minimum)||minimum<1||minimum>100||!Number.isInteger(minHits)||minHits<1||minHits>100)return out({ok:false,error:'Filtros inválidos'},400);
  const hist=await readNewestCrash(env);
- const analyses=ANALYSIS_TARGETS.map(target=>{const x=analyze(hist.items||[],{threshold:target,length,minimum,minHits,gaps:hist.gaps||[]});return {target,eligible:x.eligible,baseline:x.baseline,patterns:x.patterns.slice(0,30)}});
+ const analyses=analyzeCrashAllFast(hist.items||[],{targets:ANALYSIS_TARGETS,length,minimum,minHits,gaps:hist.gaps||[]});
  return out({ok:true,analyses,updated_at:hist.updated_at||null,source:hist.source_label,precision:'minute',length,minimum,minHits});
 }
 export async function crashV3Admin(req,env,u,{ownerId}={}){

@@ -1,4 +1,5 @@
 import {readNewestCrash} from './crash-v69-source.js';
+import {analyzeCrashAllFast} from './nexo-crash-v692-fast.js';
 // NEXO Crash V2 - isolated storage namespace and HTTP routes.
 // Never calls Double queue, white strategies, nor Telegram automatically.
 import {crashV3Public} from './crash-v3.js';
@@ -54,7 +55,7 @@ export async function crashPublic(req,env,u){
    return j({ok:true,game_id:'blitz-crash',precision:'minute',items:(data.items||[]).slice(0,limit),updated_at:data.updated_at,gaps:data.gaps||[],palette:await get(env,'palette.json',defaultPalette)});
  }
  if(u.pathname==='/api/crash/analysis'&&req.method==='GET'){
-   try{const data=await readNewestCrash(env);return j({ok:true,...analyze(data.items||[],{threshold:u.searchParams.get('target')||5,length:u.searchParams.get('length')??0,minimum:u.searchParams.get('minimum')||3,minHits:u.searchParams.get('min_hits')||1,gaps:data.gaps||[]}),source:data.source_label,updated_at:data.updated_at})}catch(e){return j({ok:false,error:String(e.message)},400)}
+   try{const data=await readNewestCrash(env);const target=Number(u.searchParams.get('target')||5);if(!targets.includes(target))throw Error('Alvo invalido');const fast=analyzeCrashAllFast(data.items||[],{targets:[target],length:u.searchParams.get('length')??0,minimum:u.searchParams.get('minimum')||3,minHits:u.searchParams.get('min_hits')||1,gaps:data.gaps||[],maxPatterns:80})[0];return j({ok:true,...fast,threshold:target,source:data.source_label,updated_at:data.updated_at})}catch(e){return j({ok:false,error:String(e.message)},400)}
  }
  if(u.pathname==='/api/crash/ingest'&&req.method==='POST'){
    const key=env.NEXO_V1_INGEST_TOKEN;const auth=req.headers.get('Authorization');
