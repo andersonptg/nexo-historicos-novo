@@ -48,14 +48,15 @@ async function loadCatalog(){
 function updateContext(){
  const name=active.platform+' · '+active.game;
  document.body.classList.toggle('nx6-crash-visual',active.kind==='multiplier' && /crash/i.test(active.game));
+ document.body.classList.toggle('nx6-fortune-view',active.kind==='fortune-double');
  document.title=name+' — NEXO Históricos';
  $('nx6-title').textContent=name;
- $('nx6-section-title').textContent=active.game==='Double'?'Pedras recentes':active.kind==='multiplier'?'Multiplicadores recentes':'Rodadas recentes';
+ $('nx6-section-title').textContent=active.game==='Double'?'Pedras recentes':active.kind==='multiplier'?'Multiplicadores recentes':active.kind==='fortune-double'?'Cores e Panda recentes':'Rodadas recentes';
  $('nx6-crumb').textContent=active.platform.toUpperCase()+' / '+active.game.toUpperCase();
  $('nx6-description').textContent='Histórico exclusivo de '+name+'. Sem misturar resultados ou estratégias de outros jogos.';
  $('nx6-filter').replaceChildren();
  const options=active.kind==='double'?[['all','Todas as cores'],['red','Laranjas (1–7)'],['black','Pretos (8–14)'],['white','Brancos (0)']]:
- active.kind==='multiplier'?[['all','Todos os multiplicadores'],['2','≥ 2x'],['5','≥ 5x'],['10','≥ 10x'],['20','≥ 20x'],['50','≥ 50x'],['100','≥ 100x']]:[['all','Todos os resultados']];
+ active.kind==='multiplier'?[['all','Todos os multiplicadores'],['2','≥ 2x'],['5','≥ 5x'],['10','≥ 10x'],['20','≥ 20x'],['50','≥ 50x'],['100','≥ 100x']]:active.kind==='fortune-double'?[['all','Todas as cores'],['red','Vermelho'],['purple','Roxo'],['gold','Dourado · Panda']]:[['all','Todos os resultados']];
  for(const [value,label] of options){const o=document.createElement('option');o.value=value;o.textContent=label;$('nx6-filter').append(o);}
  filter='all';
 }
@@ -85,7 +86,7 @@ function rowsValid(list,kind){
  if(!Array.isArray(list))return [];
  return list.filter(row=>row&&Number.isFinite(Number(row.minute_epoch))&&Number(row.minute_epoch)>0&&(
   kind==='double'?(Number.isInteger(Number(row.number))&&Number(row.number)>=0&&Number(row.number)<=14):
-  kind==='multiplier'?(Number.isFinite(Number(row.multiplier))&&Number(row.multiplier)>=1):false
+  kind==='multiplier'?(Number.isFinite(Number(row.multiplier))&&Number(row.multiplier)>=1):kind==='fortune-double'?(['red','purple','gold'].includes(row.color)&&(row.multiplier==null||row.color==='gold'&&Number.isFinite(Number(row.multiplier))&&Number(row.multiplier)>=1)):false
  )).slice(0,200);
 }
 function bestHistory(a,b){
@@ -118,12 +119,13 @@ async function getHistory(signal){
  const d=await fetchJson(cloudPath,signal);
  return {...d,source_label:'Histórico Cloud · R2'};
 }
-function formatValue(x){return active.kind==='double'?String(x.number):Number(x.multiplier).toFixed(2)+'x';}
+function formatValue(x){return active.kind==='double'?String(x.number):active.kind==='fortune-double'?(x.color==='red'?'Vermelho':x.color==='purple'?'Roxo':x.multiplier==null?'Panda':Number(x.multiplier).toFixed(2)+'x · Panda'):Number(x.multiplier).toFixed(2)+'x';}
 function rowClass(x){
+ if(active.kind==='fortune-double')return 'nx6-fortune-'+x.color;
  if(active.kind==='double')return x.number===0?'nx6-white':x.number<=7?'nx6-red':'nx6-black';
  const n=Number(x.multiplier);return n>=50?'nx6-c4':n>=10?'nx6-c3':n>=2?'nx6-c2':n>=1.2?'nx6-c1':'nx6-c0';
 }
-function filterRows(){return records.filter(row=>active.kind==='double'?(filter==='all'||(row.color||(row.number===0?'white':row.number<=7?'red':'black'))===filter):(filter==='all'||Number(row.multiplier)>=Number(filter)));}
+function filterRows(){return records.filter(row=>active.kind==='fortune-double'?(filter==='all'||row.color===filter):active.kind==='double'?(filter==='all'||(row.color||(row.number===0?'white':row.number<=7?'red':'black'))===filter):(filter==='all'||Number(row.multiplier)>=Number(filter)));}
 function showRows(){
  const list=filterRows();$('nx6-visible').textContent=list.length+' VISÍVEIS';
  const finger=[active.id,filter,records.length,records[0]?.seq,records[0]?.minute_epoch,updatedAt].join('|');
@@ -134,7 +136,7 @@ function showRows(){
  for(const x of list){
   const box=document.createElement('div');box.className='nx6-item';
   const tile=document.createElement('div');tile.className='nx6-tile '+rowClass(x)+(active.kind==='double'?' nx6-double':'');
-  const bold=document.createElement('b');bold.textContent=active.kind==='double'&&Number(x.number)===0?'':formatValue(x);tile.append(bold);
+  const bold=document.createElement('b');bold.textContent=active.kind==='fortune-double'?(x.color==='red'?'🔴':x.color==='purple'?'🟣':x.multiplier==null?'🐼':Number(x.multiplier).toFixed(2)+'x'):active.kind==='double'&&Number(x.number)===0?'':formatValue(x);tile.append(bold);
   const timestamp=document.createElement('small');timestamp.className='nx6-time';timestamp.textContent=whenTime(x.minute_epoch);
   box.append(tile,timestamp);
   if(Number.isFinite(Number(x.seq))&&Number(x.seq)>0){const seq=document.createElement('small');seq.className='nx6-seq';seq.textContent='#'+x.seq;box.append(seq);}

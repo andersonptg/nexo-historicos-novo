@@ -25,7 +25,7 @@ test('ADM obtem erros reais da coleta sem expor token ou alterar o motor',async(
  const value=await res.json();
  assert.equal(value.statuses['blitz-double'].last_error,'FONTE_HTTP_403');
  assert.equal(value.config.running,false);
- assert.equal(value.ready_count,28);
+ assert.equal(value.ready_count,cloudTest.GAMES.filter(g=>g.eligible).length);
 });
 test('Visual V6.3 altera somente o Crash e mantem o Double',()=>{
  const js=readFileSync('worker/public/nexo-historicos-v6.js','utf8');
@@ -36,7 +36,7 @@ test('Visual V6.3 altera somente o Crash e mantem o Double',()=>{
  assert.match(css,/\.nx6-tile\.nx6-c0/);
  assert.match(css,/\.nx6-tile\.nx6-c4/);
  assert.match(page,/nexo-crash-visual-v6-3.css/);
- assert.match(page,/nexo-historicos-v6.js\?v=6.3.0/);
+ assert.match(page,/nexo-historicos-v6\.js\?v=6\.5\.0/);
  assert.doesNotMatch(page,/nexo-crash-visual-v6-1.js/);
 });
 test('Auditoria aparece somente no ADM autenticado, sem envio Telegram',()=>{

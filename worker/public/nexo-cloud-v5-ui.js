@@ -28,12 +28,12 @@ function select(id){
 }
 function ball(rec){
  const cell=document.createElement('div');const value=rec.multiplier;
- const color=game.kind==='double'?(rec.color==='white'?'white':rec.color==='red'?'orange':'black'):value<1.2?'black':value<2?'blue':value<10?'green':'purple';
+ const color=game.kind==='fortune-double'?(rec.color==='red'?'fortune-red':rec.color==='purple'?'fortune-purple':'fortune-gold'):game.kind==='double'?(rec.color==='white'?'white':rec.color==='red'?'orange':'black'):value<1.2?'black':value<2?'blue':value<10?'green':'purple';
  cell.className='nx5-result nx5-'+color;
- const circle=document.createElement('span');circle.className='nx5-circle';circle.textContent=game.kind==='double'?String(rec.number):Number(value).toFixed(2)+'x';
+ const circle=document.createElement('span');circle.className='nx5-circle';circle.textContent=game.kind==='fortune-double'?(rec.color==='red'?'🔴':rec.color==='purple'?'🟣':rec.multiplier==null?'🐼':Number(value).toFixed(2)+'x'):game.kind==='double'?String(rec.number):Number(value).toFixed(2)+'x';
  const time=document.createElement('small');time.textContent=fmt(rec.minute_epoch);
  const seq=document.createElement('small');seq.textContent='#'+(rec.seq||'—');
- cell.title=(game.kind==='double'?'Número '+rec.number:'Vela '+Number(value).toFixed(2)+'x')+' · '+datefmt(rec.minute_epoch)+' · sequência de coleta '+(rec.seq||'—');
+ cell.title=(game.kind==='fortune-double'?(rec.color==='gold'?'Panda · '+(rec.multiplier??'sem multiplicador')+'x':rec.color==='red'?'Vermelho':'Roxo'):game.kind==='double'?'Número '+rec.number:'Vela '+Number(value).toFixed(2)+'x')+' · '+datefmt(rec.minute_epoch)+' · sequência de coleta '+(rec.seq||'—');
  cell.append(circle,time,seq);return cell;
 }
 function render(){
@@ -68,7 +68,7 @@ async function refresh(id,force=false){
   if(!d.ok)throw Error(d.error||'Falha ao ler o histórico');
   if(selected!==id)return;
   game=(c.games||[]).find(g=>g.id===id)||{};
-  details=d.status||{};rows=(d.items||[]).filter(x=>game.kind==='double'?(Number.isInteger(x.number)&&x.number>=0&&x.number<=14):Number.isFinite(x.multiplier)&&x.multiplier>=1);
+  details=d.status||{};rows=(d.items||[]).filter(x=>game.kind==='fortune-double'?(['red','purple','gold'].includes(x.color)&&(x.multiplier==null||x.color==='gold'&&Number.isFinite(x.multiplier)&&x.multiplier>=1)):game.kind==='double'?(Number.isInteger(x.number)&&x.number>=0&&x.number<=14):Number.isFinite(x.multiplier)&&x.multiplier>=1);
   render();
  }catch(e){if(selected===id){game={platform:'Plataforma',game:id,eligible:true};details={status:'erro',last_error:String(e.message).slice(0,120)};rows=[];render();}}
  finally{if(pendingGame===id){pending=null;pendingGame='';}}

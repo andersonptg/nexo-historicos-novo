@@ -1,0 +1,9 @@
+/* NEXO Fortune Double: apenas telas de histórico; não muda Double/Crash. */
+body.nx6-fortune-view .nx6-grid{grid-template-columns:repeat(8,minmax(0,1fr));gap:10px 7px}
+body.nx6-fortune-view .nx6-tile{height:53px;aspect-ratio:auto;width:100%;max-width:none;border-radius:9px;padding:3px}
+body.nx6-fortune-view .nx6-tile b{font-size:clamp(11px,1.25vw,16px);font-weight:850;white-space:nowrap;letter-spacing:-.03em}
+body.nx6-fortune-view .nx6-fortune-red{background:linear-gradient(145deg,#e94049,#9a1023);border-color:#e65b60;color:#fff}
+body.nx6-fortune-view .nx6-fortune-purple{background:linear-gradient(145deg,#8c53e9,#512b8d);border-color:#9362d1;color:#fff}
+body.nx6-fortune-view .nx6-fortune-gold{background:linear-gradient(145deg,#ffd76b,#c58518);border-color:#f8d269;color:#261a00}
+body.nx6-fortune-view .nx6-seq{display:none}
+@media(max-width:700px){body.nx6-fortune-view .nx6-grid{grid-template-columns:repeat(7,minmax(0,1fr));gap:8px 5px;padding:10px 10px 20px}body.nx6-fortune-view .nx6-tile{height:42px}body.nx6-fortune-view .nx6-tile b{font-size:10px}body.nx6-fortune-view .nx6-time{font-size:9px}}

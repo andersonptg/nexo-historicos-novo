@@ -31,3 +31,8 @@
 #nexo-cloud-adm select{padding:8px;background:#122d42;color:#f1faff}
 #nexo-cloud-adm .nx5-note{color:#9ebacd;font-size:12px;line-height:1.5}
 @media(max-width:540px){.nx5-grid{grid-template-columns:repeat(4,minmax(0,1fr));gap:5px}.nx5-result{padding:5px 1px}.nx5-result .nx5-circle{min-height:43px;font-size:13px}.nx5-result small{font-size:9px}.nx5-head b{font-size:16px}.nx5-stats{gap:4px}}
+
+/* NEXO Fortune V6.5 */
+.nx5-fortune-red .nx5-circle{background:#d42c46;color:#fff}
+.nx5-fortune-purple .nx5-circle{background:#713cbb;color:#fff}
+.nx5-fortune-gold .nx5-circle{background:#e3ac31;color:#17120a}

@@ -1,6 +1,7 @@
 // NEXO Cloud V5 - independent research collector, no Telegram dispatch.
 // Source snapshots are observational data, not guaranteed live/complete.
 import cloudCatalog from '../../catalog-cloud.json' with {type:'json'};
+import {parseFortuneV65} from './nexo-fortune-v65.js';
 const GAMES=cloudCatalog.games;
 const GAME_BY_ID=new Map(GAMES.map(g=>[g.id,g]));
 const ROOT='nexo-cloud-v5/';
@@ -11,7 +12,7 @@ const DEFAULT={running:false,tickSeconds:15,batch:3,consent:false,updated_at:0};
 const textSafe=(v,n=130)=>String(v||'').slice(0,n);
 const getR2=async(env,key,fallback=null)=>{const ob=await env.R2.get(ROOT+key);return ob?ob.json():fallback};
 const putR2=(env,key,value)=>env.R2.put(ROOT+key,JSON.stringify(value),{httpMetadata:{contentType:'application/json'}});
-const norm=(x,g)=>g.kind==='double'?`${x.minute_epoch}|${x.number}`:`${x.minute_epoch}|${Number(x.multiplier).toFixed(4)}`;
+const norm=(x,g)=>g.kind==='double'?`${x.minute_epoch}|${x.number}`:g.kind==='fortune-double'?`${x.minute_epoch}|${x.color}|${x.multiplier==null?'-':Number(x.multiplier).toFixed(3)}`:`${x.minute_epoch}|${Number(x.multiplier).toFixed(4)}`;
 const safeLimit=(value,def=90,max=200)=>Math.min(max,Math.max(1,Number(value)||def));
 const currentBR=()=>{
  const parts=new Intl.DateTimeFormat('en-US',{timeZone:'America/Sao_Paulo',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date());
@@ -72,6 +73,7 @@ function multiplierWindowV64(html,now=Date.now()){
 }
 
 function sourceRows(html,game,now=Date.now()){
+ if(game.kind==='fortune-double')return parseFortuneV65(html,now);
  if(game.kind==='multiplier')return multiplierWindowV64(html,now);
  const tokens=tokensFrom(html);
  let pos=-1;
@@ -274,7 +276,7 @@ export class NexoCloudCollector {
   try{
    const states=await this.ctx.storage.get('statuses')||{};
    const now=Date.now();const due=GAMES.filter(g=>g.eligible).map(g=>{
-    const s=states[g.id];const interval=(g.id==='blitz-crash'||g.id==='blitz-double')?30_000:300_000;
+    const s=states[g.id];const interval=(['blitz-crash','blitz-double','blitz-fortune-double'].includes(g.id))?30_000:300_000;
     const next=(s?.last_attempt||0)+interval;
     return {g,next};
    }).filter(x=>x.next<=now).sort((a,b)=>a.next-b.next);

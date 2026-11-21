@@ -20,9 +20,9 @@
       "platform_slug": "blitz",
       "game": "Fortune Double",
       "game_slug": "fortune-double",
-      "kind": "pending",
-      "source_url": null,
-      "eligible": false,
+      "kind": "fortune-double",
+      "source_url": "https://historicosblaze.com/results/blitz/fortune-double",
+      "eligible": true,
       "precision": "minute",
       "source": "historicosblaze.com"
     },
