@@ -3,65 +3,81 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#081521">
-<meta name="description" content="NEXO Históricos — resultados por plataforma e por jogo, em telas independentes.">
-<title>NEXO · Histórico por jogo</title>
-<link rel="stylesheet" href="/nexo-historicos-v6.css?v=6.0.0">
-<script src="/nexo-historicos-v6.js?v=6.5.0" defer></script>
-
-<link rel="stylesheet" href="/nexo-crash-visual-v6-3.css?v=6.3.0">
-<link rel="stylesheet" href="/nexo-fortune-v65.css?v=6.5.0">
-<link rel="stylesheet" href="/nexo-visual-v66.css?v=6.6.0">
+<meta name="theme-color" content="#07101c">
+<meta name="description" content="NEXO Históricos: plataformas, jogos e registros confirmados, organizados em um único ambiente.">
+<title>NEXO Históricos · Central de plataformas</title>
+<link rel="stylesheet" href="/nexo-v67.css?v=6.7.0">
+<script src="/nexo-v67.js?v=6.7.0" defer></script>
 </head>
-<body>
-<div class="nx6-shell">
-<header class="nx6-top">
-  <a class="nx6-brand" href="/" aria-label="NEXO, voltar à página inicial"><span class="nx6-emblem">N<span>•</span></span><span><b>NEXO</b><small>HISTÓRICOS</small></span></a>
-  <div class="nx6-top-actions">
-    <a class="nx6-home-link" href="/">Início</a>
-    <span id="nx6-clock" class="nx6-clock" aria-label="Relógio em Brasília">--:--:--</span>
-    <button type="button" class="nx6-dots" id="nx6-menu-open" aria-expanded="false" aria-controls="nx6-drawer" aria-label="Abrir plataformas e jogos" title="Plataformas e jogos">⋮</button>
-  </div>
-</header>
-<main class="nx6-content">
-<section class="nx6-hero">
-  <div class="nx6-overline"><span class="nx6-glow"></span> CENTRAL DE HISTÓRICOS <span class="nx6-sep">/</span> <span id="nx6-crumb">SELECIONE UM JOGO</span></div>
-  <div class="nx6-title-row">
-    <div><h1 id="nx6-title">Carregando jogo...</h1><p id="nx6-description">Cada histórico em sua própria tela, com os resultados confirmados.</p></div>
-    <button type="button" id="nx6-choose" class="nx6-pick">☰ Plataformas e jogos</button>
-  </div>
-  <div class="nx6-pills"><span>◷ Horário de Brasília</span><span>◉ Resultados observados</span><span>⛁ Arquivo na nuvem</span></div>
-</section>
-<section class="nx6-mainpanel" aria-label="Histórico do jogo selecionado">
- <div class="nx6-panelhead">
-  <div><p class="nx6-eyebrow">HISTÓRICO INDEPENDENTE</p><h2 id="nx6-section-title">Resultados recentes</h2><p id="nx6-source">Verificando fonte e registros...</p></div>
-  <button type="button" id="nx6-refresh" class="nx6-refresh">↻ Atualizar</button>
- </div>
- <div class="nx6-metrics">
-   <div><span>REGISTROS</span><b id="nx6-count">—</b></div>
-   <div><span>ÚLTIMO RESULTADO</span><b id="nx6-latest">—</b></div>
-   <div><span>ATUALIZAÇÃO</span><b id="nx6-updated">—</b></div>
-   <div><span>ESTADO</span><b id="nx6-state">Carregando</b></div>
- </div>
- <div class="nx6-controls">
-   <label class="nx6-game-select"><span>JOGO</span><select id="nx6-game" aria-label="Trocar de jogo"></select></label>
-   <label><span>FILTRAR</span><select id="nx6-filter" aria-label="Filtrar resultados"><option value="all">Todos os resultados</option></select></label>
-   <button type="button" id="nx6-reset" class="nx6-reset">Limpar filtro</button>
- </div>
- <div class="nx6-listhead"><span>RESULTADOS MAIS RECENTES</span><span id="nx6-visible">0 VISÍVEIS</span></div>
- <div id="nx6-notice" class="nx6-notice" role="status">Carregando histórico real...</div>
- <div id="nx6-grid" class="nx6-grid" aria-live="polite"></div>
- <div class="nx6-bottom"><span id="nx6-origin">Origem não confirmada</span><span>Horários informados pela fonte, geralmente com precisão de minuto.</span></div>
-</section>
-<footer class="nx6-footer"><span>NEXO Históricos · Plataforma independente</span><span>Históricos não garantem resultados futuros. Sem vínculo com os jogos monitorados.</span></footer>
-</main>
+<body class="n67">
+<div id="n67-splash" class="n67-splash" role="status" aria-label="Abrindo NEXO Históricos">
+ <div class="n67-splash-emblem">N<span>•</span></div>
+ <div class="n67-splash-word">NEXO</div><div class="n67-splash-sub">HISTÓRICOS</div>
+ <div class="n67-splash-line"><i></i></div><p>UMA CENTRAL. TODOS OS HISTÓRICOS.</p>
 </div>
-<div id="nx6-backdrop" class="nx6-backdrop" hidden></div>
-<aside id="nx6-drawer" class="nx6-drawer" role="dialog" aria-modal="true" aria-label="Selecionar plataforma e jogo" aria-hidden="true" hidden>
- <div class="nx6-drawer-title"><div><b>Plataformas e jogos</b><small id="nx6-drawer-count">Carregando catálogo...</small></div><button id="nx6-menu-close" type="button" aria-label="Fechar menu">✕</button></div>
- <label class="nx6-search-label"><span>BUSCAR JOGO OU PLATAFORMA</span><input id="nx6-search" type="search" placeholder="Ex.: Blitz, Crash, Double" autocomplete="off"></label>
- <nav id="nx6-nav" aria-label="Plataformas e jogos"><div class="nx6-menu-wait">Carregando plataformas...</div></nav>
- <a class="nx6-drawer-home" href="/">⌂ Voltar à página inicial</a>
+<div id="n67-celebration" class="n67-celebration" aria-hidden="true"></div>
+<div class="nx6-shell n67-shell">
+ <header class="nx6-top n67-top">
+  <a class="nx6-brand n67-brand" href="/historicos.html" id="n67-brand" aria-label="NEXO Históricos, página inicial">
+    <span class="n67-mark">N<span>•</span></span><span class="n67-word">NEXO <small>HISTÓRICOS</small></span>
+  </a>
+  <div class="n67-header-right">
+   <span class="n67-clock" id="nx6-clock" title="Horário de Brasília">--:--:--</span>
+   <a class="n67-adm" href="/adm.html" aria-label="Entrar no painel ADM"><span aria-hidden="true">⚙</span> <span>ADM</span></a>
+   <button type="button" class="nx6-dots n67-menu-trigger" id="nx6-menu-open" aria-expanded="false" aria-controls="nx6-drawer" aria-label="Abrir plataformas e jogos">⋮</button>
+  </div>
+ </header>
+ <main class="n67-main">
+  <section id="n67-start" class="n67-start">
+   <div class="n67-hero">
+    <span class="n67-eyebrow"><i></i> NEXO · CENTRAL DE RESULTADOS</span>
+    <div class="n67-hero-layout">
+      <div><h1>Todos os históricos.<br><em>Em um só lugar.</em></h1>
+      <p>Escolha uma plataforma, acompanhe resultados observados e consulte o histórico de cada jogo com a mesma organização.</p>
+      <button type="button" id="n67-explore" class="n67-primary">Explorar plataformas <span>↗</span></button></div>
+      <div class="n67-hero-decoration" aria-hidden="true"><span>N</span><i class="n67-orbit a"></i><i class="n67-orbit b"></i><i class="n67-orbit c"></i></div>
+    </div>
+    <div class="n67-summary"><span><b id="n67-platforms-count">—</b> Plataformas</span><span><b id="n67-games-count">—</b> Jogos catalogados</span><span><b id="n67-ready-count">—</b> Leitores habilitados</span></div>
+   </div>
+   <div class="n67-section-title"><div><span class="n67-eyebrow">ACESSO RÁPIDO</span><h2>Escolha sua plataforma</h2></div><button type="button" id="n67-all-platforms" class="n67-text-button">Ver todas ⋮</button></div>
+   <div id="n67-platform-cards" class="n67-platform-cards"><p class="n67-muted">Organizando plataformas...</p></div>
+   <div class="n67-explainer"><strong>Como funciona</strong><p>Os registros são apresentados conforme confirmação das fontes disponíveis. Cada jogo tem seu próprio histórico e sua própria situação de atualização.</p></div>
+  </section>
+
+  <section id="n67-history" class="n67-history" hidden>
+   <div class="n67-breadcrumb"><button id="n67-back" type="button">⌂ Início</button><span>›</span><strong id="nx6-crumb">PLATAFORMA / JOGO</strong></div>
+   <div class="n67-history-heading"><div><span class="n67-eyebrow">HISTÓRICO DA PLATAFORMA</span><h1 id="nx6-title">Carregando jogo</h1><p id="nx6-description">Acompanhamento de rodadas confirmadas</p></div><a href="/adm.html" class="n67-adm-inline">⚙ Painel ADM</a></div>
+   <section class="n67-preview" aria-label="Último resultado observado">
+    <div class="n67-preview-intro"><span class="n67-eyebrow">ÚLTIMO RESULTADO CONFIRMADO</span><h2 id="n67-latest-label">Aguardando dados</h2><p id="n67-latest-when">As rodadas aparecem aqui quando confirmadas pela fonte.</p><span id="n67-source-state" class="n67-status"><i></i><span>Consultando fonte</span></span></div>
+    <div class="n67-preview-stage"><div id="n67-latest-tile" class="n67-latest-tile" aria-label="Prévia do resultado">—</div></div>
+   </section>
+   <section class="n67-board" aria-label="Histórico do jogo selecionado">
+     <div class="n67-board-heading"><div><span class="n67-eyebrow">HISTÓRICO ORGANIZADO</span><h2 id="nx6-section-title">Rodadas recentes</h2></div><span id="nx6-count" class="n67-result-count">— registros</span></div>
+     <p id="nx6-source" class="n67-visually-muted">Registros observados e arquivados.</p>
+     <div class="n67-controls">
+       <label class="n67-filter-game"><span>JOGO</span><select id="nx6-game" aria-label="Escolher jogo desta plataforma"></select></label>
+       <label><span>COR / FAIXA</span><select id="nx6-filter" aria-label="Filtrar resultados"></select></label>
+       <label id="n67-number-label"><span>NÚMERO</span><select id="n67-number" aria-label="Filtrar número"></select></label>
+       <label><span>DATA</span><input type="date" id="n67-date" aria-label="Filtrar pela data dos registros carregados"></label>
+       <button id="nx6-reset" class="n67-clear" type="button">Limpar filtros</button>
+     </div>
+     <div class="n67-listhead"><span>RESULTADOS MAIS RECENTES</span><span id="nx6-visible">—</span></div>
+     <div id="nx6-grid" class="nx6-grid n67-grid" aria-live="off"></div>
+     <div id="n67-feed-foot" class="n67-feed-foot">Horários fornecidos pela fonte, normalmente com precisão de minuto.</div>
+     <div id="nx6-notice" class="n67-accessible-only" aria-live="polite"></div>
+     <span id="nx6-updated" hidden>—</span><span id="nx6-latest" hidden>—</span><span id="nx6-state" hidden>—</span><span id="nx6-origin" hidden>—</span>
+     <button type="button" id="nx6-refresh" hidden aria-label="Atualizar dados">Atualizar</button>
+   </section>
+  </section>
+  <footer class="n67-footer"><span>© NEXO HISTÓRICOS</span><span>Histórico informativo independente. As informações podem apresentar atrasos e não constituem previsões.</span><a href="/adm.html">Painel ADM</a></footer>
+ </main>
+</div>
+<div class="nx6-backdrop n67-backdrop" id="nx6-backdrop" hidden></div>
+<aside class="nx6-drawer n67-drawer" id="nx6-drawer" role="dialog" aria-modal="true" aria-label="Plataformas e jogos" aria-hidden="true" hidden>
+ <div class="n67-drawer-heading"><div><small>EXPLORAR NEXO</small><strong>PLATAFORMAS</strong><span id="nx6-drawer-count">Organizando jogos...</span></div><button type="button" id="nx6-menu-close" aria-label="Fechar menu">✕</button></div>
+ <label class="n67-search"><span>ENCONTRAR PLATAFORMA OU JOGO</span><input id="nx6-search" type="search" placeholder="Buscar..." autocomplete="off"></label>
+ <nav id="nx6-nav" class="n67-nav" aria-label="Plataformas e seus jogos"><p class="n67-muted">Carregando catálogo...</p></nav>
+ <div class="n67-drawer-footer"><a href="/historicos.html">⌂ Central de históricos</a><a href="/adm.html">⚙ Entrar no ADM</a></div>
 </aside>
 </body>
 </html>

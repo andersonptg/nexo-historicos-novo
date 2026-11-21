@@ -10,7 +10,7 @@ test('V6.6: Double usa grade oito, sem mudar estilos Crash/Fortune',()=>{
  assert.match(css,/body\.nx6-double-visual \.nx6-grid/);
  assert.match(css,/repeat\(8,minmax\(0,1fr\)\)/);
  assert.match(js,/classList\.toggle\('nx6-double-visual'/);
- assert.match(html,/nexo-visual-v66\.css/);
+ assert.match(html,/(?:nexo-visual-v66|nexo-v67)\.css/);
 });
 test('V6.6: histórico Blitz Double compara legado e Cloud; sem rodadas artificiais',()=>{
  const js=read('worker/public/nexo-historicos-v6.js');

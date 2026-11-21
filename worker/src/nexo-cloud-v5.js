@@ -233,7 +233,7 @@ export class NexoCloudCollector {
    // Cron ativa o coletor somente quando habilitado no wrangler.
    // Pausa manual sempre vence o auto-start para evitar gasto involuntario.
    if(!config.running&&this.env.NEXO_CLOUD_AUTOSTART==='1'&&!config.manualPause){
-    config={...config,running:true,tickSeconds:Math.max(15,Number(config.tickSeconds)||15),batch:Math.min(4,Math.max(1,Number(config.batch)||3)),updated_at:Date.now()};
+    config={...config,running:true,tickSeconds:Math.max(15,Number(config.tickSeconds)||15),batch:4,updated_at:Date.now()};
     await this.ctx.storage.put('config',config);
     await this.publish(config,await this.ctx.storage.get('statuses')||{});
    }
@@ -283,7 +283,7 @@ export class NexoCloudCollector {
   try{
    const states=await this.ctx.storage.get('statuses')||{};
    const now=Date.now();const due=GAMES.filter(g=>g.eligible).map(g=>{
-    const s=states[g.id];const interval=(['blitz-crash','blitz-double','blitz-fortune-double'].includes(g.id))?30_000:300_000;
+    const s=states[g.id];const interval=(['erro','bloqueado'].includes(s?.status))?300_000:(['blitz-crash','blitz-double','blitz-fortune-double'].includes(g.id))?30_000:120_000;
     const next=(s?.last_attempt||0)+interval;
     return {g,next};
    }).filter(x=>x.next<=now).sort((a,b)=>a.next-b.next);
