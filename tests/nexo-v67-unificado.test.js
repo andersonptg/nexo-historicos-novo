@@ -44,7 +44,7 @@ test('V6.7: novas chamadas nao enviam Telegram e rotas ADM sao links',()=>{
  assert.doesNotMatch(js,/api\/adm|sendMessage|sendSticker|sendAnimation/);
  assert.doesNotMatch(js,/method:\s*['"]POST['"]/);
 });
-test('V6.7: coletor usa exclusivamente jogos elegíveis e intervalo conservador',()=>{
- assert.match(cloud,/GAMES\.filter\(g=>g\.eligible\)/);assert.match(cloud,/120_000/);
- assert.match(cloud,/batch:4/);
+test('V6.9: coletor prioriza Crash e mantem jogos elegiveis',()=>{
+ assert.match(cloud,/GAMES\.filter\(g=>g\.eligible\)/);assert.match(cloud,/selectDueGames\(GAMES,states/);
+ assert.match(cloud,/batch:5/);
 });

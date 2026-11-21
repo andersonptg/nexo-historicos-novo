@@ -42,5 +42,5 @@ test('target-specific GREEN media, one RED, verified private test uses Crash bot
 });
 test('search analyses all 6 thresholds',async()=>{
  const {env,data}=setup();data.set('nexo-crash-v2/history.json',{items:[{seq:1,multiplier:1.5}],gaps:[],updated_at:3});
- const r=await pub(jsonReq('/api/crash/analysis-all?length=3&minimum=3'),env);const d=await r.json();assert.deepEqual(d.analyses.map(x=>x.target),[2,5,10,20,50,100]);
+ const r=await pub(jsonReq('/api/crash/analysis-all?length=3&minimum=3'),env);const d=await r.json();assert.deepEqual(d.analyses.map(x=>x.target),[2,5,10,25,50,100]);
 });

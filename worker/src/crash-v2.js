@@ -1,3 +1,4 @@
+import {readNewestCrash} from './crash-v69-source.js';
 // NEXO Crash V2 - isolated storage namespace and HTTP routes.
 // Never calls Double queue, white strategies, nor Telegram automatically.
 import {crashV3Public} from './crash-v3.js';
@@ -6,28 +7,39 @@ const h={'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-st
 const j=(x,status=200)=>new Response(JSON.stringify(x),{status,headers:h});
 const get=async(env,key,fallback=null)=>{const x=await env.R2.get(PREFIX+key);return x?x.json():fallback};
 const put=(env,key,x)=>env.R2.put(PREFIX+key,JSON.stringify(x),{httpMetadata:{contentType:'application/json'}});
-const targets=[2,5,10,20,50,100];
+const targets=[2,5,10,20,25,50,100];
 const ranges=['<2x','2-<4x','4-<10x','>=10x'];
 const defaultPalette=['#ef8296','#ffd16d','#61e3ad','#bb8cff'];
 const cat=x=>x<2?0:x<4?1:x<10?2:3;
 const valid=x=>x&&Number.isSafeInteger(x.seq)&&x.seq>0&&Number.isSafeInteger(x.minute_epoch)&&x.minute_epoch>1700000000&&x.minute_epoch<Math.floor(Date.now()/1000)+300&&typeof x.multiplier==='number'&&Number.isFinite(x.multiplier)&&x.multiplier>=1&&x.multiplier<=10000000;
-function analyze(items,{threshold=5,length=3,minimum=3,gaps=[]}={}){
-  threshold=Number(threshold);length=Number(length);minimum=Number(minimum);
-  if(!targets.includes(threshold)||!Number.isInteger(length)||length<1||length>8||!Number.isInteger(minimum)||minimum<1||minimum>100)throw Error('Filtros invalidos');
-  const seq=[...items].sort((a,b)=>a.seq-b.seq);const boundaries=new Set(gaps.map(g=>Number(g.after_seq)));const freq=new Map();let eligible=0,success=0;
-  for(let i=length;i<seq.length;i++){
-    const group=seq.slice(i-length,i+1);
-    if(group.some((v,n)=>n>0&&(v.seq!==group[n-1].seq+1||boundaries.has(group[n-1].seq))))continue;
-    const key=group.slice(0,-1).map(v=>cat(v.multiplier)).join(',');
-    let v=freq.get(key);if(!v){v={pattern:key.split(',').map(k=>ranges[Number(k)]),count:0,hits:0};freq.set(key,v)}
-    v.count++;eligible++;if(group.at(-1).multiplier>=threshold){v.hits++;success++}
+function analyze(items,{threshold=5,length=0,minimum=3,minHits=1,gaps=[]}={}){
+ threshold=Number(threshold);length=Number(length);minimum=Number(minimum);minHits=Number(minHits);
+ if(!targets.includes(threshold)||!Number.isInteger(length)||length<0||length>12||!Number.isInteger(minimum)||minimum<1||minimum>100||!Number.isInteger(minHits)||minHits<1||minHits>100)throw Error('Filtros invalidos');
+ const lengths=length===0?Array.from({length:10},(_,i)=>i+3):[length];
+ const seq=(Array.isArray(items)?items:[]).filter(valid).sort((a,b)=>a.seq-b.seq);
+ const boundaries=new Set((Array.isArray(gaps)?gaps:[]).map(g=>Number(g.after_seq)));
+ const freq=new Map();let eligible=0,success=0;
+ for(const n of lengths){
+  for(let i=n;i<seq.length;i++){
+   const group=seq.slice(i-n,i+1);
+   if(group.some((v,k)=>k>0&&(v.seq!==group[k-1].seq+1||boundaries.has(group[k-1].seq))))continue;
+   const key=group.slice(0,-1).map(v=>cat(v.multiplier)).join(',');
+   const composite=n+'|'+key;
+   let v=freq.get(composite);
+   if(!v){v={length:n,pattern:key.split(',').map(k=>ranges[Number(k)]),count:0,hits:0};freq.set(composite,v)}
+   v.count++;eligible++;
+   if(group[n].multiplier>=threshold){v.hits++;success++}
   }
-  const baseline=eligible?success/eligible:0;
-  return {threshold,length,minimum,baseline,eligible,patterns:[...freq.values()].filter(v=>v.count>=minimum).map(v=>({...v,rate:v.hits/v.count,baseline})).sort((a,b)=>b.count-a.count||b.rate-a.rate).slice(0,80)};
+ }
+ const baseline=eligible?success/eligible:0;
+ const patterns=[...freq.values()].filter(v=>v.count>=minimum&&v.hits>=minHits)
+  .map(v=>({...v,rate:v.hits/v.count,baseline}))
+  .sort((a,b)=>b.hits-a.hits||b.rate-a.rate||b.count-a.count||a.length-b.length).slice(0,80);
+ return {threshold,length,minimum,minHits,baseline,eligible,patterns,source_precision:'minute'};
 }
 function cleanStrategy(x,id){
  const name=String(x?.name||'').trim().slice(0,80),pattern=x?.pattern;
- if(name.length<2||!Array.isArray(pattern)||pattern.length<1||pattern.length>8||pattern.some(z=>!ranges.includes(z)))throw Error('Nome ou sequencia invalida');
+ if(name.length<2||!Array.isArray(pattern)||pattern.length<1||pattern.length>12||pattern.some(z=>!ranges.includes(z)))throw Error('Nome ou sequencia invalida');
  const target=Number(x.target);if(!targets.includes(target))throw Error('Multiplicador alvo invalido');
  return {id,name,pattern:[...pattern],target,entryText:String(x.entryText||'').slice(0,900),greenText:String(x.greenText||'').slice(0,900),enabled:x.enabled===true,createdAt:Number(x.createdAt)||Date.now(),updatedAt:Date.now()};
 }
@@ -42,7 +54,7 @@ export async function crashPublic(req,env,u){
    return j({ok:true,game_id:'blitz-crash',precision:'minute',items:(data.items||[]).slice(0,limit),updated_at:data.updated_at,gaps:data.gaps||[],palette:await get(env,'palette.json',defaultPalette)});
  }
  if(u.pathname==='/api/crash/analysis'&&req.method==='GET'){
-   try{const data=await get(env,'history.json',{items:[]});return j({ok:true,...analyze(data.items||[],{threshold:u.searchParams.get('target')||5,length:u.searchParams.get('length')||3,minimum:u.searchParams.get('minimum')||3,gaps:data.gaps||[]})})}catch(e){return j({ok:false,error:String(e.message)},400)}
+   try{const data=await readNewestCrash(env);return j({ok:true,...analyze(data.items||[],{threshold:u.searchParams.get('target')||5,length:u.searchParams.get('length')??0,minimum:u.searchParams.get('minimum')||3,minHits:u.searchParams.get('min_hits')||1,gaps:data.gaps||[]}),source:data.source_label,updated_at:data.updated_at})}catch(e){return j({ok:false,error:String(e.message)},400)}
  }
  if(u.pathname==='/api/crash/ingest'&&req.method==='POST'){
    const key=env.NEXO_V1_INGEST_TOKEN;const auth=req.headers.get('Authorization');

@@ -1,3 +1,4 @@
+import {selectDueGames} from './nexo-cloud-v69-scheduler.js';
 // NEXO Cloud V5 - independent research collector, no Telegram dispatch.
 // Source snapshots are observational data, not guaranteed live/complete.
 import cloudCatalog from '../../catalog-cloud.json' with {type:'json'};
@@ -8,7 +9,7 @@ const ROOT='nexo-cloud-v5/';
 const HEADER={'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'};
 const json=(v,s=200)=>new Response(JSON.stringify(v),{status:s,headers:HEADER});
 const MAX_HISTORY=1200;
-const DEFAULT={running:false,tickSeconds:15,batch:3,consent:false,manualPause:false,updated_at:0};
+const DEFAULT={running:false,tickSeconds:5,batch:5,consent:false,manualPause:false,updated_at:0};
 const textSafe=(v,n=130)=>String(v||'').slice(0,n);
 const getR2=async(env,key,fallback=null)=>{const ob=await env.R2.get(ROOT+key);return ob?ob.json():fallback};
 const putR2=(env,key,value)=>env.R2.put(ROOT+key,JSON.stringify(value),{httpMetadata:{contentType:'application/json'}});
@@ -233,7 +234,13 @@ export class NexoCloudCollector {
    // Cron ativa o coletor somente quando habilitado no wrangler.
    // Pausa manual sempre vence o auto-start para evitar gasto involuntario.
    if(!config.running&&this.env.NEXO_CLOUD_AUTOSTART==='1'&&!config.manualPause){
-    config={...config,running:true,tickSeconds:Math.max(15,Number(config.tickSeconds)||15),batch:4,updated_at:Date.now()};
+    config={...config,running:true,tickSeconds:5,batch:5,speedPolicyV69:true,updated_at:Date.now()};
+    await this.ctx.storage.put('config',config);
+    await this.publish(config,await this.ctx.storage.get('statuses')||{});
+   }
+   // Atualiza apenas o intervalo padrão da V6.7; preserva pausas e ajustes manuais.
+   if(config.running&&!config.speedPolicyV69&&Number(config.tickSeconds)===15){
+    config={...config,tickSeconds:5,batch:5,speedPolicyV69:true,updated_at:Date.now()};
     await this.ctx.storage.put('config',config);
     await this.publish(config,await this.ctx.storage.get('statuses')||{});
    }
@@ -242,8 +249,8 @@ export class NexoCloudCollector {
   }
   if(path==='/cloud/start'){
    let data={};try{data=await request.json()}catch{}
-   const tick=Math.max(15,Math.min(180,Number(data.tick_seconds)||15));
-   config={...config,running:true,manualPause:false,tickSeconds:tick,batch:Math.min(4,Math.max(1,Number(data.batch)||3)),updated_at:Date.now()};
+   const tick=Math.max(5,Math.min(180,Number(data.tick_seconds)||5));
+   config={...config,running:true,manualPause:false,tickSeconds:tick,batch:Math.min(5,Math.max(1,Number(data.batch)||5)),speedPolicyV69:true,updated_at:Date.now()};
    await this.ctx.storage.put('config',config);
    if(!await this.ctx.storage.getAlarm())await this.ctx.storage.setAlarm(Date.now()+1000);
    await this.publish(config,await this.ctx.storage.get('statuses')||{});
@@ -270,11 +277,16 @@ export class NexoCloudCollector {
   if(!g.eligible){statuses[g.id]={...prior,status:'sem_adaptador',last_attempt:now};return {ok:false};}
   try{
    const result=await collectGame(this.env,g);
-   statuses[g.id]={...prior,status:'atualizado',last_attempt:now,last_success:Date.now(),last_epoch:result.latest,added:result.added,last_error:null,gap:!!result.gap};
+   const freshness=Number(result.latest)>0?Math.max(0,Math.floor(Date.now()/1000)-Number(result.latest)):null;
+    statuses[g.id]={...prior,status:freshness!==null&&freshness>150?'atrasado':'atualizado',
+     last_attempt:now,last_success:Date.now(),last_epoch:result.latest,
+     freshness_seconds:freshness,collection_ms:Date.now()-now,consecutive_failures:0,
+     added:result.added,last_error:null,gap:!!result.gap};
    return {ok:true};
   }catch(error){
    const msg=textSafe(error?.message,100),blocked=/FONTE_HTTP_(?:403|429)|SEM_SOBREPOSICAO/.test(msg);
-   statuses[g.id]={...prior,status:blocked?'bloqueado':'erro',last_attempt:now,added:0,last_error:msg};
+   statuses[g.id]={...prior,status:blocked?'bloqueado':'erro',last_attempt:now,added:0,
+     collection_ms:Date.now()-now,consecutive_failures:Math.min(12,(Number(prior.consecutive_failures)||0)+1),last_error:msg};
    return {ok:false};
   }
  }
@@ -282,18 +294,19 @@ export class NexoCloudCollector {
   const conf=await this.config();if(!conf.running)return;
   try{
    const states=await this.ctx.storage.get('statuses')||{};
-   const now=Date.now();const due=GAMES.filter(g=>g.eligible).map(g=>{
-    const s=states[g.id];const interval=(['erro','bloqueado'].includes(s?.status))?300_000:(['blitz-crash','blitz-double','blitz-fortune-double'].includes(g.id))?30_000:120_000;
-    const next=(s?.last_attempt||0)+interval;
-    return {g,next};
-   }).filter(x=>x.next<=now).sort((a,b)=>a.next-b.next);
-   // Bounded concurrency and bandwidth: never hammer all sources simultaneously.
-   await Promise.all(due.slice(0,conf.batch||3).map(({g})=>this.runOne(g,states)));
-   await this.ctx.storage.put('statuses',states);
-   await this.publish(conf,states);
+   const due=selectDueGames(GAMES,states,Date.now(),conf.batch||5);
+    // Consultas paralelas limitadas; nenhuma chamada ao Telegram.
+    await Promise.all(due.map(({g})=>this.runOne(g,states)));
+    await this.ctx.storage.put('statuses',states);
+    // O painel de status publica no R2 no maximo a cada 15 s, salvo novos registros.
+    const stamp=Date.now(),last=Number(await this.ctx.storage.get('nexo-v69-overview-at')||0);
+    if(stamp-last>=15000||due.some(({g})=>Number(states[g.id]?.added)>0)){
+     await this.publish(conf,states);
+     await this.ctx.storage.put('nexo-v69-overview-at',stamp);
+    }
   }catch(e){console.error('NEXO Cloud collector alarm',textSafe(e?.message,120))}
   finally{
-   if((await this.config()).running)await this.ctx.storage.setAlarm(Date.now()+Math.max(15,Number(conf.tickSeconds)||15)*1000);
+   if((await this.config()).running)await this.ctx.storage.setAlarm(Date.now()+Math.max(5,Math.min(180,Number(conf.tickSeconds)||5))*1000);
   }
  }
 }

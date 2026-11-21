@@ -1,9 +1,11 @@
+import {readNewestCrash} from './crash-v69-source.js';
 // NEXO Crash V3: bot, media and signals isolated from Double.
 // NEVER queues automatic Telegram messages. Only explicit private tests.
 const ROOT='nexo-crash-v2/';
 const OWNER='nexo-v3/telegram/owner.json';
 const DOUBLE_BOT='nexo-v3/telegram/bot-encrypted.json';
-const T=[2,5,10,20,50,100];
+const T=[2,5,10,20,25,50,100];
+const ANALYSIS_TARGETS=[2,5,10,25,50,100];
 const enc=new TextEncoder();
 const H={'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'};
 const out=(v,status=200)=>new Response(JSON.stringify(v),{status,headers:H});
@@ -29,7 +31,7 @@ function normalize(src,lib){
   if(!/^[a-f0-9]{32}$/i.test(assetId)||!lib.some(z=>z.id===assetId&&z.kind===kind))throw Error('Escolha um '+kind+' recebido pelo bot do Crash');
   return {kind,text,assetId};};
  const o={version:3,targets:{},red:norm(src.red)};
- for(const t of T){const x=src.targets?.[String(t)];if(!x)throw Error('Configure o alvo '+t+'x');o.targets[String(t)]={entry:norm(x.entry),green:norm(x.green)}}return o;
+ for(const t of T){const x=src.targets?.[String(t)]||(t===25?base().targets['25']:null);if(!x)throw Error('Configure o alvo '+t+'x');o.targets[String(t)]={entry:norm(x.entry),green:norm(x.green)}}return o;
 }
 function format(s,target,strategy=''){return String(s||'').replace(/\{alvo\}/gi,String(target)).replace(/\{estrategia\}/gi,strategy).replace(/\{vela\}/gi,'—');}
 async function handleWebhook(req,env,u){
@@ -60,11 +62,11 @@ export async function crashV3Public(req,env,u,{analyze}={}){
  if(!env.R2)return null;
  if(u.pathname==='/api/crash/telegram/webhook'&&req.method==='POST')return handleWebhook(req,env,u);
  if(u.pathname!=='/api/crash/analysis-all'||req.method!=='GET')return null;
- const length=Number(u.searchParams.get('length')||3),minimum=Number(u.searchParams.get('minimum')||3);
- if(!Number.isInteger(length)||length<1||length>8||!Number.isInteger(minimum)||minimum<1||minimum>100)return out({ok:false,error:'Filtros inválidos'},400);
- const hist=await read(env,ROOT+'history.json',{items:[],gaps:[]});
- const analyses=T.map(target=>{const x=analyze(hist.items||[],{threshold:target,length,minimum,gaps:hist.gaps||[]});return {target,eligible:x.eligible,baseline:x.baseline,patterns:x.patterns.slice(0,10)}});
- return out({ok:true,analyses,updated_at:hist.updated_at||null,precision:'minute'});
+ const length=Number(u.searchParams.get('length')??0),minimum=Number(u.searchParams.get('minimum')||3),minHits=Number(u.searchParams.get('min_hits')||1);
+ if(!Number.isInteger(length)||length<0||length>12||!Number.isInteger(minimum)||minimum<1||minimum>100||!Number.isInteger(minHits)||minHits<1||minHits>100)return out({ok:false,error:'Filtros inválidos'},400);
+ const hist=await readNewestCrash(env);
+ const analyses=ANALYSIS_TARGETS.map(target=>{const x=analyze(hist.items||[],{threshold:target,length,minimum,minHits,gaps:hist.gaps||[]});return {target,eligible:x.eligible,baseline:x.baseline,patterns:x.patterns.slice(0,30)}});
+ return out({ok:true,analyses,updated_at:hist.updated_at||null,source:hist.source_label,precision:'minute',length,minimum,minHits});
 }
 export async function crashV3Admin(req,env,u,{ownerId}={}){
  if(!u.pathname.startsWith('/api/adm/crash/v3/'))return null;

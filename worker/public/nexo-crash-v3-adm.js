@@ -1,5 +1,5 @@
 (()=>{'use strict';
-const T=[2,5,10,20,50,100];
+const T=[2,5,10,25,50,100];
 const $=s=>document.querySelector(s);
 const mount=$('#nx-crash-adm');if(!mount)return;
 const style=document.createElement('style');style.textContent=`
@@ -39,7 +39,7 @@ const shell=document.createElement('section');shell.id='nxv3';shell.innerHTML=`
 <button type="button" id="nxv3-test" class="secondary">Enviar teste no meu privado</button></div><p class="v3info" id="nxv3-test-status">O teste usa SOMENTE o bot Crash. Texto primeiro, mídia depois. Não envia aos grupos.</p></div>
 <div class="v3card"><h3>🔎 Busca automática de padrões · todos os alvos</h3>
 <p class="v3info">Analisa as rodadas já recebidas pelo site, respeitando lacunas registradas. Taxas históricas não garantem o próximo resultado.</p>
-<div class="v3row"><label>Sequência anterior <select id="nxv3-length">${[1,2,3,4,5,6,7,8].map(n=>`<option value="${n}" ${n===3?'selected':''}>${n} velas</option>`).join('')}</select></label>
+<div class="v3row"><label>Sequência anterior <select id="nxv3-length">${[0,...Array.from({length:10},(_,i)=>i+3)].map(n=>`<option value="${n}" ${n===0?'selected':''}>${n===0?'Automático · 3 a 12 velas':n+' velas'}</option>`).join('')}</select></label>
 <label>Ocorrências mínimas <input id="nxv3-min" type="number" min="1" max="100" value="3" style="width:72px"></label>
 <button type="button" id="nxv3-search" class="secondary">↻ Analisar 2x a 100x</button></div>
 <p class="v3info" id="nxv3-search-status"></p><div class="v3table"><table><thead><tr><th>Alvo</th><th>Sequência anterior</th><th>Ocorrências</th><th>Acertos</th><th>Taxa histórica</th><th></th></tr></thead><tbody id="nxv3-results"></tbody></table></div></div>`;
@@ -91,8 +91,8 @@ $('#nxv3-test').onclick=async()=>{if(!confirm('Enviar apenas para o seu Telegram
 async function search(){const el=$('#nxv3-search-status'),root=$('#nxv3-results');el.textContent='Analisando seis alvos no histórico R2...';root.replaceChildren();
  try{const length=Number($('#nxv3-length').value),minimum=Number($('#nxv3-min').value);const d=await api('/api/crash/analysis-all?length='+length+'&minimum='+minimum);
   const sum=d.analyses.reduce((n,x)=>n+x.patterns.length,0);el.textContent=sum+' padrões encontrados nas seis categorias · histórico de precisão por minuto';
-  for(const r of d.analyses){const patterns=r.patterns.slice(0,3);if(!patterns.length){const tr=document.createElement('tr');const td=document.createElement('td');td.colSpan=6;td.textContent=r.target+'x · nenhuma sequência com a amostra mínima';tr.append(td);root.append(tr);continue;}
-   for(const p of patterns){const tr=document.createElement('tr');for(const v of [r.target+'x',p.pattern.join(' → '),String(p.count),String(p.hits),(p.rate*100).toFixed(1)+'%']){const td=document.createElement('td');td.textContent=v;tr.append(td)}
+  for(const r of d.analyses){const patterns=r.patterns.slice(0,20);if(!patterns.length){const tr=document.createElement('tr');const td=document.createElement('td');td.colSpan=6;td.textContent=r.target+'x · nenhuma sequência com a amostra mínima';tr.append(td);root.append(tr);continue;}
+   for(const p of patterns){const tr=document.createElement('tr');for(const v of [r.target+'x',p.pattern.join(' → ')+' ('+p.length+' velas)',String(p.count),String(p.hits),(p.rate*100).toFixed(1)+'%']){const td=document.createElement('td');td.textContent=v;tr.append(td)}
     const td=document.createElement('td'),b=document.createElement('button');b.type='button';b.className='secondary';b.textContent='Usar padrão';b.onclick=()=>{const name=$('#nx-strat-name'),target=$('#nx-strat-target'),pattern=$('#nx-strat-pattern'),enabled=$('#nx-strat-enabled');
      if(!name||!target||!pattern)return;name.value='Crash '+r.target+'x · '+p.pattern.join(' / ');target.value=String(r.target);pattern.value=p.pattern.join(', ');enabled.checked=false;
      const st=$('#nx-strat-status');if(st)st.textContent='Padrão transferido: revise e salve uma NOVA estratégia (sem ativar sinais).';$('#nx-strat-form')?.scrollIntoView({behavior:'smooth',block:'center'});};td.append(b);tr.append(td);root.append(tr)}}
