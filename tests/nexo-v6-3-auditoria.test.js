@@ -35,8 +35,11 @@ test('Visual V6.3 altera somente o Crash e mantem o Double',()=>{
  assert.match(css,/grid-template-columns:\s*repeat\(8/);
  assert.match(css,/\.nx6-tile\.nx6-c0/);
  assert.match(css,/\.nx6-tile\.nx6-c4/);
- assert.match(page,/nexo-crash-visual-v6-3.css/);
- assert.match(page,/nexo-historicos-v6\.js\?v=6\.5\.0/);
+ const novoCss=readFileSync('worker/public/nexo-v67.css','utf8');
+ assert.match(page,/nexo-v67\.css\?v=6\.7\.0/);
+ assert.match(page,/nexo-v67\.js\?v=6\.7\.0/);
+ assert.match(novoCss,/\.n67-grid\{display:grid;grid-template-columns:repeat\(8/);
+ assert.match(novoCss,/\.n67-stone-mul-high/);
  assert.doesNotMatch(page,/nexo-crash-visual-v6-1.js/);
 });
 test('Auditoria aparece somente no ADM autenticado, sem envio Telegram',()=>{
