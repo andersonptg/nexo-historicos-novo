@@ -4,6 +4,7 @@ import {routeWhiteAdmin} from './white.js';
 import {crashAdmin} from './crash-v2.js';
 import {cloudAdmin} from './nexo-cloud-v5.js';
 import {crashV3Admin} from './crash-v3.js';
+import {fortuneAdmin} from './nexo-fortune-v71-server.js';
 const ROOT='nexo-v3/';
 const K={settings:ROOT+'admin/settings.json',strategies:ROOT+'admin/strategies.json',groups:ROOT+'telegram/groups.json',media:ROOT+'media/catalog.json',bot:ROOT+'telegram/bot-encrypted.json',owner:ROOT+'telegram/owner.json',pair:ROOT+'telegram/pair.json'};
 const activeGame=env=>env?.NEXO_ACTIVE_GAME==='blitz-double'?'blitz-double':'brabet-double';
@@ -1050,7 +1051,8 @@ export async function routeAdmin(req,env,url){
  if(path==='/api/adm/login'&&req.method==='POST')return login(req,env);
  if(path==='/api/adm/me')return json({ok:await authenticated(req,env),configured:hasPassword(env)});
  if(!await authenticated(req,env))return err('Entre com a senha de administrador.',401);
- if(path.startsWith('/api/adm/crash/v3/')){const owner=(await getDoc(env,K.owner,null))?.id;const reply=await crashV3Admin(req,env,url,{ownerId:owner});if(reply)return reply;}
+ if(path.startsWith('/api/adm/fortune/')){const fortuneReply=await fortuneAdmin(req,env,url);if(fortuneReply)return fortuneReply;}
+  if(path.startsWith('/api/adm/crash/v3/')){const owner=(await getDoc(env,K.owner,null))?.id;const reply=await crashV3Admin(req,env,url,{ownerId:owner});if(reply)return reply;}
  if(path.startsWith('/api/adm/cloud/')){const r=await cloudAdmin(req,env,url);if(r)return r;}
  if(path.startsWith('/api/adm/crash/')){const crashReply=await crashAdmin(req,env,url,{sendTelegram:(method,body)=>tg(env,method,body),ownerId:(await getDoc(env,K.owner,null))?.id,groups:await getDoc(env,K.groups,[])});if(crashReply)return crashReply;}
   const whiteReply=await routeWhiteAdmin(req,env,url);if(whiteReply)return whiteReply;
