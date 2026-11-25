@@ -15,7 +15,11 @@ function render(){const d=state.config;$('enabled').checked=d.enabled;$('protect
  $('mediaList').innerHTML=(state.media||[]).map(mediaHTML).join('')||'<p class="muted">Nenhuma mídia capturada ainda.</p>';loadEvent();
 }
 function loadEvent(){const e=$('event').value,x=state.config.templates[e];$('template').value=x.text;$('mediaType').value=x.type;assetId=x.assetId||'';updatePreview();renderPicker()}
-function updatePreview(){$('msgPreview').textContent=template($('template').value,{hora:'19',minuto:'51',numero:'55',janela:'19:50 até 19:52',estrategia:'Branco + vizinhos'})}
+function updatePreview(){
+ const e=$('event').value;
+ if(e==='entry'){$('msgPreview').textContent='BLITZ PRO BRANCO\n     ▫️17:25▫️29\n(Principal 17:24–17:26 | Proteção 17:28–17:30)';return;}
+ $('msgPreview').textContent=template($('template').value,{hora:'17',minuto:'25',numero:'29',janela:'17:24–17:26 e 17:28–17:30',estrategia:'Branco + vizinhos'});
+}
 function renderPicker(){const type=$('mediaType').value;const media=(state.media||[]).filter(m=>m.kind===type);$('mediaPicker').innerHTML=type==='text'?'':media.map(mediaHTML).join('')||'<span class="muted">Envie uma mídia desse tipo ao bot e toque Atualizar biblioteca.</span>';
  for(const e of $('mediaPicker').querySelectorAll('.asset')){e.classList.toggle('selected',e.dataset.id===assetId);e.onclick=()=>{assetId=e.dataset.id;for(const other of $('mediaPicker').querySelectorAll('.asset'))other.classList.toggle('selected',other===e)}}}
 async function reload(){state=await api('');render()}

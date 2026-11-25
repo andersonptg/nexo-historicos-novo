@@ -5,8 +5,8 @@ const events=['attention','entry','green','red'];
 const defs=[
  {id:'branco-r1',name:'Pedra 4 → próxima dezena',description:'Depois da pedra 4, use o minuto da pedra seguinte e calcule a próxima dezena.'},
  {id:'branco-r2',name:'Pedra 11 → minuto final 4',description:'Pedra 11: um minuto anterior como referência; próximo minuto terminado em 4.'},
- {id:'branco-r3',name:'Branco + vizinhos',description:'Branco: número anterior + minuto do branco + número posterior; soma com transporte de hora.'},
- {id:'branco-r4',name:'Branco no minuto 0',description:'Branco em minuto 00, 10, 20, 30, 40 ou 50; somar números vizinhos ao minuto.'},
+ {id:'branco-r3',name:'Branco + vizinhos',description:'Padrão: vizinhos do branco. Ao confirmar, sinal imediato no minuto atual com proteção +4.'},
+ {id:'branco-r4',name:'Branco no minuto 0',description:'Padrão do branco no minuto 00/10/20/30/40/50; sinal no minuto em que fechar e proteção +4.'},
  {id:'branco-r5',name:'Pedra devedora após 4',description:'Número imediatamente depois da pedra 4: branco nas próximas N rodadas.'},
  {id:'branco-r6',name:'Pedra devedora antes do 11',description:'Número imediatamente antes da pedra 11: branco nas próximas N rodadas.'}
 ];
