@@ -246,7 +246,62 @@ export default {
    const cloudReply=await cloudPublic(request,env,url);if(cloudReply)return cloudReply;
    const crashReply=await crashPublic(request,env,url);if(crashReply)return crashReply;
     const fortuneReply=await fortunePublic(request,env,url);if(fortuneReply)return fortuneReply;
+// NEXO_REMOTE_CONTROL_V5: somente o Termux autenticado via token de ingest.
+   if(path==='/api/local-control/sync' && ['GET','POST'].includes(request.method)){
+     if(!tokenOK(request,env))return out({ok:false,error:'Nao autorizado'},401);
+     if(!env.R2)return out({ok:false,error:'R2 indisponivel'},503);
+     const key='nexo-v3/local-control/desired-v5.json';
+     const desired=await jsonGet(env.R2,key);
+     const remote=await jsonGet(env.R2,'nexo-v3/admin/settings.json');
+     if(request.method==='POST'){
+       let body;try{body=await request.json()}catch{return out({ok:false,error:'JSON invalido'},400)}
+       if(!body||typeof body.motor!=='boolean'||typeof body.collector!=='boolean'||
+          !Number.isSafeInteger(body.revision)||body.revision<0)return out({ok:false,error:'Status invalido'},400);
+       await jsonPut(env.R2,'nexo-v3/local-control/heartbeat-v5.json',{
+         at:now(),motor:body.motor,collector:body.collector,revision:body.revision});
+     }
+     return out({ok:true,desired:desired?.enabled ?? null,configured:!!desired,
+       revision:desired?.revision||0,remoteBotEnabled:remote?.botEnabled===true});
+   }
+
    const adminReply=await routeAdmin(request,env,url);if(adminReply)return adminReply;
+   // NEXO_LOCAL_SCORE_V4: sync de placares, sem qualquer envio ao Telegram.
+   if(path==='/api/local/score-sync'&&request.method==='POST'){
+     if(!tokenOK(request,env))return out({ok:false,error:'Nao autorizado'},401);
+     if(!env.R2)return out({ok:false,error:'R2 indisponivel'},503);
+     const st=await jsonGet(env.R2,'nexo-v3/admin/settings.json');
+     if(st?.botEnabled===true)return out({ok:false,error:'Desative primeiro o envio remoto de sinais'},409);
+     const raw=await request.text();
+     if(raw.length>30000)return out({ok:false,error:'Corpo excessivo'},413);
+     let b;try{b=JSON.parse(raw)}catch{return out({ok:false,error:'JSON invalido'},400)}
+     const day=dayOf(now());
+     const rows=b?.scores,seq=b?.last_seq;
+     if(b?.game_id!=='blitz-double'||b?.day!==day||!Number.isSafeInteger(seq)||seq<0
+        ||!Array.isArray(rows)||rows.length>500)return out({ok:false,error:'Lote invalido'},400);
+     const allowedData=await jsonGet(env.R2,'nexo-v3/admin/strategies-blitz-v1.json');
+     if(!Array.isArray(allowedData))return out({ok:false,error:'Estrategias R2 ausentes'},409);
+     const allowed=new Set(allowedData.filter(x=>x&&!x.archived).map(x=>x.id));
+     const names=['entries','green','white','red','gale1','gale2'];
+     const ids=new Set();
+     for(const s of rows){
+       if(!s||typeof s.id!=='string'||!allowed.has(s.id)||ids.has(s.id)||
+         names.some(k=>!Number.isSafeInteger(s[k])||s[k]<0||s[k]>1000000))
+         return out({ok:false,error:'Estrategia ou contador invalido'},400);
+       ids.add(s.id);
+     }
+     const key='nexo-v3/local-sync/score-checkpoint-blitz.json';
+     const previous=await jsonGet(env.R2,key);
+     if(previous?.day===day&&Number(previous.seq)>seq)
+        return out({ok:false,error:'Snapshot anterior ao ultimo publicado'},409);
+     const stamp=now();
+     // Registro R2 usado pelo painel administrativo, sem processar rodadas.
+     await Promise.all(rows.map(s=>jsonPut(env.R2,'nexo-v3/scores/'+s.id+'.json',
+         {day,entries:s.entries,green:s.green,white:s.white,red:s.red,
+          gale1:s.gale1,gale2:s.gale2,updatedAt:stamp,source:'termux'})));
+     await jsonPut(env.R2,key,{day,seq,updatedAt:stamp,count:rows.length});
+     return out({ok:true,updated:rows.length,last_seq:seq,day});
+   }
+
    if(path==='/api/public/preferences'&&request.method==='GET'){
     const p=await env.R2?.get('nexo-v3/admin/settings.json');let prefs={};if(p){try{prefs=await p.json()}catch{}}
     return out({showNumbers:prefs.showNumbers!==false});

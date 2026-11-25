@@ -1061,6 +1061,35 @@ export async function routeAdmin(req,env,url){
  const strategies=()=>getDoc(env,strategyStorage(env),[]);
   const groups=()=>getDoc(env,K.groups,[]);
   try{
+// NEXO_REMOTE_CONTROL_V5 - use within routeAdmin authenticated try{} block.
+  if(path==='/api/adm/local-control' && req.method==='GET'){
+    const current=await getDoc(env,'nexo-v3/local-control/desired-v5.json',null);
+    const heartbeat=await getDoc(env,'nexo-v3/local-control/heartbeat-v5.json',null);
+    const remote=await settings();
+    return json({ok:true,desired:current?.enabled ?? null,configured:!!current,
+      revision:current?.revision||0,heartbeat:heartbeat||null,
+      remoteBotEnabled:remote.botEnabled===true});
+  }
+  if(path==='/api/adm/local-control' && req.method==='POST'){
+    const b=await req.json().catch(()=>null);
+    if(!b || typeof b.enabled!=='boolean')return err('enabled deve ser booleano',400);
+    const remote=await settings();
+    if(b.enabled && remote.botEnabled===true)return err('Envio remoto Cloudflare ainda habilitado; desligue antes de ligar Termux',409);
+    const key='nexo-v3/local-control/desired-v5.json';
+    const previous=await getDoc(env,key,null);
+    const current={enabled:b.enabled,revision:(Number(previous?.revision)||0)+1,updatedAt:now(),source:'site-admin'};
+    await putDoc(env,key,current);
+    return json({ok:true,...current,notice:'Comando salvo; aguarde confirmacao do Termux no painel.'});
+  }
+  if(path==='/api/adm/local-control-panel' && req.method==='GET'){
+    return new Response(`<!doctype html><html lang="pt-BR"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>NEXO Termux • Controle</title><style>body{font:16px system-ui;background:#101319;color:#f4f5f7;max-width:560px;margin:32px auto;padding:18px}section{background:#1c232e;padding:24px;border-radius:18px}button{font-size:18px;font-weight:700;padding:16px 24px;border:0;border-radius:12px;margin:8px;cursor:pointer}button:disabled{opacity:.4}.on{background:#1cbd6c;color:#101810}.off{background:#e65353;color:#fff}pre{white-space:pre-wrap;background:#0d1118;padding:15px;border-radius:12px;line-height:1.6}a{color:#b5cbff}</style><section><h1>⚡ NEXO BLITZ PRO</h1><p>Controle do motor TERMUX. O site não envia sinais.</p><button class="on" id="on">LIGAR</button><button class="off" id="off">DESLIGAR</button><pre id="status">Carregando...</pre><p id="info"></p><a href="/adm/">Voltar ao ADM</a></section><script>
+const e=id=>document.getElementById(id);const endpoint='/api/adm/local-control';
+async function refresh(){try{const r=await fetch(endpoint,{credentials:'same-origin',cache:'no-store'});const j=await r.json();if(!r.ok)throw Error(j.error||'HTTP '+r.status);const h=j.heartbeat||{};const delta=h.at?Math.floor(Date.now()/1000)-h.at:null;const online=delta!==null&&delta<75;e('status').textContent='Comando salvo: '+(j.desired?'LIGADO':'DESLIGADO')+'\nTermux: '+(online?'CONECTADO':'SEM CONFIRMAÇÃO RECENTE')+'\nMotor real: '+(online?(h.motor?'ATIVO':'PARADO'):'DESCONHECIDO')+'\nColeta: '+(online?(h.collector?'ATIVA':'PARADA'):'DESCONHECIDA')+'\nÚltima comunicação: '+(delta===null?'nunca':delta+' s')+'\nRevisão aplicada: '+(h.revision||0)+' / '+j.revision+'\nEnvio pelo Worker: '+(j.remoteBotEnabled?'ATIVO (CONFLITO)':'desligado');e('on').disabled=j.remoteBotEnabled;e('info').textContent=j.configured?'O comando fica salvo até você alterá-lo.':'Estado inicial ainda não definido: clique LIGAR ou DESLIGAR para salvar.'}catch(err){e('status').textContent='Erro ao consultar: '+err.message}}
+async function set(enabled){if(!confirm(enabled?'Ligar sinais no Termux?':'Desligar sinais no Termux e manter desligado até novo comando?'))return;e('on').disabled=e('off').disabled=true;try{const r=await fetch(endpoint,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({enabled})});const j=await r.json();if(!r.ok)throw Error(j.error||'HTTP '+r.status);e('info').textContent='Comando salvo. Aguardando Termux confirmar.'}catch(err){e('info').textContent='Falha: '+err.message}finally{e('off').disabled=false;refresh()}}
+e('on').onclick=()=>set(true);e('off').onclick=()=>set(false);refresh();setInterval(refresh,10000);
+</script></html>`,{headers:{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'"}});
+  }
+
    if(path==='/api/adm/queue-health'&&req.method==='GET'){
     if(!env.NEXO_COORDINATOR)return err('Coordenador da fila indisponivel.',503);
     const id=env.NEXO_COORDINATOR.idFromName(activeGame(env)==='blitz-double'?'nexo-blitz-double-v11':'nexo-brabet-double-v11');
@@ -1071,7 +1100,7 @@ export async function routeAdmin(req,env,url){
    const active=ss.filter(x=>!x.archived);
    const scoresData=await scores(env,active);
    const latest=await recentR2(env,activeGame(env));
-   const stored=await botInfo(env),owner=await getDoc(env,K.owner,null);return json({ok:true,settings:st,strategies:active,groups:gs,media,scores:scoresData,latestCount:latest.items?.length||0,telegramConfigured:!!stored||!!env.NEXO_TELEGRAM_BOT_TOKEN,botName:stored?.username||'',ownerPaired:!!owner?.id,webhookSecretConfigured:!!await webhookSecret(env)});
+   const stored=await botInfo(env),owner=await getDoc(env,K.owner,null);return json({ok:true,settings:st,strategies:active.map((s,i)=>({...s,displayNumber:i+1})),groups:gs,media,scores:scoresData,latestCount:latest.items?.length||0,telegramConfigured:!!stored||!!env.NEXO_TELEGRAM_BOT_TOKEN,botName:stored?.username||'',ownerPaired:!!owner?.id,webhookSecretConfigured:!!await webhookSecret(env)});
   }
   if(path==='/api/adm/global-signals'&&req.method==='GET')return json({ok:true,config:await globalDoc(env)});
   if(path==='/api/adm/global-signals'&&req.method==='PUT'){
