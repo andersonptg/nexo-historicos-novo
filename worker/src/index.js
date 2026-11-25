@@ -1,4 +1,6 @@
 import catalog from '../../catalog.json' with {type:'json'};
+// NEXO_BRANCO_VIP_V1
+import {brancoVipSync} from './branco-vip.js';
 import {crashPublic} from './crash-v2.js';
 import {fortunePublic} from './nexo-fortune-v71-server.js';
 import {cloudPublic,cloudHeartbeat} from './nexo-cloud-v5.js';
@@ -243,6 +245,7 @@ export default {
  async fetch(request,env){
   const url=new URL(request.url);const path=url.pathname;
   try{
+   const brancoReply=await brancoVipSync(request,env,url,tokenOK);if(brancoReply)return brancoReply;
    const cloudReply=await cloudPublic(request,env,url);if(cloudReply)return cloudReply;
    const crashReply=await crashPublic(request,env,url);if(crashReply)return crashReply;
     const fortuneReply=await fortunePublic(request,env,url);if(fortuneReply)return fortuneReply;

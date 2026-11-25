@@ -1,6 +1,8 @@
 // NEXO V3 ADM. Isolated from the V2 history archive and ingestion authentication.
 // NEXO V13 BRANCO POR MINUTO
 import {routeWhiteAdmin} from './white.js';
+// NEXO_BRANCO_VIP_V1
+import {brancoVipAdmin} from './branco-vip.js';
 import {crashAdmin} from './crash-v2.js';
 import {cloudAdmin} from './nexo-cloud-v5.js';
 import {crashV3Admin} from './crash-v3.js';
@@ -1051,6 +1053,7 @@ export async function routeAdmin(req,env,url){
  if(path==='/api/adm/login'&&req.method==='POST')return login(req,env);
  if(path==='/api/adm/me')return json({ok:await authenticated(req,env),configured:hasPassword(env)});
  if(!await authenticated(req,env))return err('Entre com a senha de administrador.',401);
+ const brancoAdm=await brancoVipAdmin(req,env,url);if(brancoAdm)return brancoAdm;
  if(path.startsWith('/api/adm/fortune/')){const fortuneReply=await fortuneAdmin(req,env,url);if(fortuneReply)return fortuneReply;}
   if(path.startsWith('/api/adm/crash/v3/')){const owner=(await getDoc(env,K.owner,null))?.id;const reply=await crashV3Admin(req,env,url,{ownerId:owner});if(reply)return reply;}
  if(path.startsWith('/api/adm/cloud/')){const r=await cloudAdmin(req,env,url);if(r)return r;}
