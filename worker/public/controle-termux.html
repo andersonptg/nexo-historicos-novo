@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex,nofollow"><title>NEXO — Motor Termux Cores</title>
+<style>
+:root{color-scheme:dark}*{box-sizing:border-box}body{background:#081321;color:#ecf8ff;font:16px system-ui,Arial;margin:0;padding:18px}main{max-width:680px;margin:12px auto}header{display:flex;justify-content:space-between;gap:16px;align-items:center}a{color:#80dcca}h1{font-size:1.6rem}.panel{background:#14253a;border:1px solid #34506a;border-radius:17px;padding:20px;margin:18px 0}p{line-height:1.5}.muted{color:#b6c8d9}button{padding:15px;border:0;border-radius:11px;font-size:1rem;font-weight:800;cursor:pointer;min-height:48px}button:disabled{opacity:.45;cursor:not-allowed}.on{background:#16c08c;color:#092a25}.off{background:#c94b60;color:white}.alt{background:#31536e;color:white}input{width:100%;border-radius:10px;background:#081321;border:1px solid #52718f;padding:14px;color:white;margin:12px 0;font-size:1rem}.kv{display:flex;justify-content:space-between;gap:12px;padding:12px 0;border-bottom:1px solid #314960}.kv:last-child{border:0}.ok{color:#43e6ad}.bad{color:#ff929a}.warn{color:#ffdb87}.buttons{display:flex;flex-wrap:wrap;gap:12px}.buttons button{flex:1}#message{background:#283d52;padding:14px;border-radius:10px;white-space:pre-wrap}#login[hidden],#control[hidden]{display:none}
+</style></head><body><main>
+<header><a href="/adm">← Voltar ao ADM</a><b>⚡ NEXO CORES</b></header>
+<h1>Ligar / desligar motor Termux</h1><p class="muted">Controle exclusivo das Cores. A coleta Blitz, o R2 e o Robô Branco permanecem independentes.</p>
+<section id="login" class="panel" hidden><h2>Autenticação do administrador</h2><p>Use a senha do próprio ADM. Ela não é armazenada aqui.</p><form id="loginForm"><label for="password">Senha do ADM</label><input id="password" type="password" minlength="16" autocomplete="current-password" required><button class="alt" type="submit">Entrar</button></form></section>
+<section id="control" class="panel" hidden><h2>Situação do envio de Cores</h2><div class="kv"><span>Envio remoto Cloudflare</span><b id="remote">Verificando</b></div><div class="kv"><span>Ordem salva para Termux</span><b id="desired">Verificando</b></div><div class="kv"><span>Motor de Cores confirmado</span><b id="motor">Verificando</b></div><div class="kv"><span>Coletor Blitz</span><b id="collector">Verificando</b></div><div class="kv"><span>Última confirmação</span><b id="heartbeat">Verificando</b></div><p class="warn" id="warning" hidden>Envio Cloudflare ainda LIGADO. No ADM → Telegram e grupos, use <b>Desligar envios</b> antes de ligar o motor Termux. Não desligue o R2.</p><div class="buttons"><button class="on" id="on" type="button" disabled>LIGAR CORES NO TERMUX</button><button class="off" id="off" type="button" disabled>DESLIGAR CORES</button></div><p><small>O site salva a ordem no R2. O controlador Termux a recebe automaticamente. Rodadas antigas não são reenviadas por este painel.</small></p></section>
+<div id="message" role="status" aria-live="polite">Verificando autenticação...</div><button id="refresh" class="alt" style="margin-top:12px" type="button">Atualizar situação</button>
+<p><small>Não informe sua senha se o Chrome apresentar alerta de site perigoso: primeiro verifique a segurança do domínio.</small></p></main>
+<script>
+'use strict';
+const $=id=>document.getElementById(id);let authenticated=false,busy=false;
+function status(s){$('message').textContent=s}
+function display(id,value,cls=''){const e=$(id);e.textContent=value;e.className=cls}
+async function request(path,method='GET',body){
+ const response=await fetch('/api/adm/'+path,{method,credentials:'same-origin',cache:'no-store',headers:{'Content-Type':'application/json'},...(body===undefined?{}:{body:JSON.stringify(body)})});
+ let obj;try{obj=await response.json()}catch{throw Error('Resposta inválida HTTP '+response.status)}
+ if(response.status===401){authenticated=false;$('login').hidden=false;$('control').hidden=true;throw Error('É necessário entrar com a senha do ADM.')}
+ if(!response.ok||obj.ok===false)throw Error(obj.error||'HTTP '+response.status);
+ return obj;
+}
+async function refresh(){
+ if(busy)return;
+ try{
+  const s=await request('local-control');authenticated=true;$('login').hidden=true;$('control').hidden=false;
+  const remote=s.remoteBotEnabled===true;const desired=s.configured?s.desired:null;const h=s.heartbeat||{};
+  const age=h.at?Math.max(0,Math.floor(Date.now()/1000)-Number(h.at)):null;const fresh=age!==null&&age<75;
+  display('remote',remote?'LIGADO':'DESLIGADO',remote?'bad':'ok');display('desired',desired===true?'LIGAR':desired===false?'DESLIGAR':'SEM ORDEM',desired===true?'ok':'warn');
+  display('motor',fresh?(h.motor?'ATIVO':'PARADO'):'SEM CONFIRMAÇÃO',fresh&&h.motor?'ok':'warn');
+  display('collector',fresh?(h.collector?'ATIVO':'PARADO'):'SEM CONFIRMAÇÃO',fresh&&h.collector?'ok':'warn');
+  display('heartbeat',age===null?'Aguardando':age+' segundos atrás',fresh?'ok':'warn');
+  $('on').disabled=busy||remote;$('off').disabled=busy;$('warning').hidden=!remote;
+  status(remote?'Desligue primeiro o emissor Cloudflare no ADM.':desired===true?'Ordem LIGAR salva. Aguarde a confirmação do Termux.':'Emissor Cloudflare desligado: é possível ativar o Termux.');
+ }catch(e){status(e.message);if(!authenticated){$('on').disabled=true;$('off').disabled=true}}
+}
+async function change(enabled){
+ if(busy)return;
+ if(enabled&&!confirm('Você confirmou que o emissor Cloudflare de Cores está desligado?'))return;
+ busy=true;$('on').disabled=true;$('off').disabled=true;
+ try{const answer=await request('local-control','POST',{enabled});status(answer.notice||'Ordem salva.')}catch(e){status('Comando não aplicado: '+e.message)}
+ finally{busy=false;await refresh()}
+}
+$('on').onclick=()=>change(true);$('off').onclick=()=>change(false);$('refresh').onclick=refresh;
+$('loginForm').onsubmit=async event=>{
+ event.preventDefault();const password=$('password').value;$('password').value='';
+ try{await request('login','POST',{password});authenticated=true;$('login').hidden=true;await refresh()}
+ catch(e){$('login').hidden=false;status('Login não confirmado: '+e.message)}
+};
+refresh();setInterval(()=>{if(authenticated&&!busy)refresh()},12000);
+</script></body></html>

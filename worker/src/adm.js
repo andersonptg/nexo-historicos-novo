@@ -1052,6 +1052,7 @@ export async function routeAdmin(req,env,url){
  if(!sameOrigin(req)&&req.method!=='GET')return err('Origem nao permitida',403);
  if(path==='/api/adm/login'&&req.method==='POST')return login(req,env);
  if(path==='/api/adm/me')return json({ok:await authenticated(req,env),configured:hasPassword(env)});
+ if(path==='/api/adm/local-control-panel'&&req.method==='GET')return Response.redirect(new URL('/controle-termux',req.url),302); // NEXO_TERMO_CONTROL_PUBLIC_SHELL
  if(!await authenticated(req,env))return err('Entre com a senha de administrador.',401);
  const brancoAdm=await brancoVipAdmin(req,env,url);if(brancoAdm)return brancoAdm;
  if(path.startsWith('/api/adm/fortune/')){const fortuneReply=await fortuneAdmin(req,env,url);if(fortuneReply)return fortuneReply;}
