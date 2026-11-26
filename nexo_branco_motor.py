@@ -139,6 +139,13 @@ def recipients(cfg):
  if owner and owner not in result:result.append(owner)
  return result
 
+def missing_message(exc):
+ import urllib.error
+ if isinstance(exc,urllib.error.HTTPError) and exc.code==400:
+  try:return 'message to delete not found' in exc.read().decode(errors='replace').lower()
+  except Exception:return False
+ return 'message to delete not found' in str(exc).lower()
+
 def erase_attention(db,cfg,w):
  """Best-effort Telegram deletion of previously issued attention messages."""
  token=cfg.get('botToken')
@@ -147,7 +154,7 @@ def erase_attention(db,cfg,w):
   try:
    tg(token,'deleteMessage',{'chat_id':row['chat'],'message_id':int(row['message_id'])})
   except Exception as ex:
-   log('Aviso antigo nao apagado: '+str(ex)[:85])
+   if not missing_message(ex):log('Aviso antigo nao apagado: '+str(ex)[:85])
   with db:db.execute('DELETE FROM attention_messages WHERE window_id=? AND chat=?',(w['id'],row['chat']))
 
 # NEXO_BIBLIOTECA_CENTRAL_V7: text OR media; GREEN timestamp from the actual white round.
@@ -236,7 +243,10 @@ def v11_clear_houses(db,cfg,w,force=False):
   try:
    tg(cfg.get('botToken'),'deleteMessage',{'chat_id':r['chat'],'message_id':int(r['message_id'])})
    with db:db.execute('DELETE FROM v11_house_messages WHERE window_id=? AND chat=? AND message_id=?',(w['id'],r['chat'],r['message_id']))
-  except Exception as e:log('V11 casa nao apagada: '+str(e)[:80])
+  except Exception as e:
+   if missing_message(e):
+    with db:db.execute('DELETE FROM v11_house_messages WHERE window_id=? AND chat=? AND message_id=?',(w['id'],r['chat'],r['message_id']))
+   else:log('V11 casa nao apagada: '+str(e)[:80])
 
 
 def store_window(db,strategy,target,ref,seq,kind='main'):
@@ -421,7 +431,8 @@ def settle(db,cfg,now=None,sync_only=False):
     result='green'
    elif all(n>=1 for n in counts) and latest_round_at_or_after(protect_end):
     # RED quando ha rodadas em ambas as janelas e a fonte ja passou do ultimo minuto.
-    signal(db,cfg,w,'red');result='red'
+    if cfg['config'].get('redNotifications',True):signal(db,cfg,w,'red')
+    result='red'
    elif now>=protect_end+180:result='incomplete'
    else:continue
   if result is None:continue
