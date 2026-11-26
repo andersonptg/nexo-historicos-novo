@@ -45,7 +45,7 @@ test('V6.7: novas chamadas nao enviam Telegram e rotas ADM sao links',()=>{
  assert.doesNotMatch(js,/method:\s*['"]POST['"]/);
 });
 test('V6.9: coletor prioriza Crash e mantem jogos elegiveis',()=>{
- assert.match(cloud,/GAMES\.filter\(g=>g\.eligible\)/);assert.match(cloud,/selectDueGames\([A-Za-z_$][\w$]*,states/);
+ assert.match(cloud,/GAMES\.filter\(g=>g\.eligible\)/);assert.match(cloud,/selectDueGames\(GAMES\.filter\(g=>g\.id==='blitz-double'\),states/);
  assert.match(cloud,/blitz-double/);
  assert.match(cloud,/batch:5/);
 });
