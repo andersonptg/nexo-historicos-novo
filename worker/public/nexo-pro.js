@@ -7,16 +7,19 @@ function button(label,title){const b=document.createElement('button');b.type='bu
 function ensureNode(){
  const history=$('n67-history'),board=history?.querySelector('.n67-board'),preview=history?.querySelector('.n67-preview');if(!board||!preview)return;
  // A ultima rodada aparece depois da grade de pedras (sem duplicacao).
- board.after(preview);
+ const listHead=board.querySelector('.n67-listhead');
+ if(!listHead)throw Error('NEXO V14: cabecalho da grade de historico ausente');
+ listHead.before(preview);
  const toolbar=document.createElement('div');toolbar.className='npro-toolbar';toolbar.id='npro-toolbar';
- const direction=button('⬅️ Direção: esquerda','Inverter o lado de chegada dos resultados');
+ const direction=button('↔ Reverter direção','Inverter o lado de chegada dos resultados');
  const theme=button('☀️ Modo claro','Alternar tema');
- const alert=button('🔔 Alerta branco: desligado','Ativar alerta visual, notificacao e som dos fogos');
- const sound=button('🔇 Fogos: sem som','Ativar o som de fogos com toque');
+ const alert=button('🔔 Alerta de branco','Ativar notificacao quando uma rodada branca for confirmada');
+ const sound=button('🔊 Fogos com som','Ativar o som de fogos com toque');
  const link=document.createElement('a');link.className='npro-play-badge npro-platform';link.hidden=true;link.target='_blank';link.rel='noopener noreferrer external';link.textContent='Abrir plataforma ↗';
  toolbar.append(direction,theme,alert,sound,link);
+ toolbar.setAttribute('role','group');toolbar.setAttribute('aria-label','Opções do histórico, deslize lateralmente');
  board.insertBefore(toolbar,board.querySelector('.n67-controls')||board.firstChild);
- const grid=$('nx6-grid');const refresh=()=>{const rev=saved('reverse')==='1';grid?.classList.toggle('npro-reverse',rev);direction.textContent=rev?'➡️ Direção: direita':'⬅️ Direção: esquerda';direction.setAttribute('aria-pressed',rev?'true':'false');const light=saved('light')==='1';document.body.classList.toggle('npro-light',light);theme.textContent=light?'🌙 Modo escuro':'☀️ Modo claro';theme.setAttribute('aria-pressed',light?'true':'false');alert.textContent=state.alerts?'🔔 Alerta branco: ligado':'🔕 Alerta branco: desligado';alert.setAttribute('aria-pressed',state.alerts?'true':'false');sound.textContent=state.sound?'🔊 Fogos: som ligado':'🔇 Fogos: sem som';sound.setAttribute('aria-pressed',state.sound?'true':'false');};
+ const grid=$('nx6-grid');const refresh=()=>{const rev=saved('reverse')==='1';grid?.classList.toggle('npro-reverse',rev);direction.textContent='↔ Reverter direção';direction.title=rev?'Direita → esquerda':'Esquerda → direita';direction.setAttribute('aria-pressed',rev?'true':'false');const light=saved('light')==='1';document.body.classList.toggle('npro-light',light);theme.textContent=light?'🌙 Modo escuro':'☀️ Modo claro';theme.setAttribute('aria-pressed',light?'true':'false');alert.textContent='🔔 Alerta de branco';alert.setAttribute('aria-pressed',state.alerts?'true':'false');sound.textContent='🔊 Fogos com som';sound.setAttribute('aria-pressed',state.sound?'true':'false');};
  direction.onclick=()=>{saved('reverse',saved('reverse')==='1'?'0':'1');refresh();};
  theme.onclick=()=>{saved('light',saved('light')==='1'?'0':'1');refresh();};
  alert.onclick=async()=>{state.alerts=!state.alerts;saved('alerts',state.alerts?'1':'0');if(state.alerts){unlock();if('Notification' in window&&Notification.permission==='default'){try{await Notification.requestPermission();}catch{}}}refresh();};

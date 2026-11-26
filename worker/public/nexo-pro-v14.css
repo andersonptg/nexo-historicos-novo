@@ -1,0 +1,34 @@
+/* NEXO PRO V14. Sem mudanças na coleta, sessões ou bots. */
+/* Faixa de controles compacta, uma linha e rolagem horizontal natural em celular. */
+body.n67 .npro-toolbar{display:flex!important;flex-wrap:nowrap!important;overflow-x:auto;overflow-y:hidden;overscroll-behavior-x:contain;scroll-snap-type:x proximity;-webkit-overflow-scrolling:touch;scrollbar-width:thin;gap:7px;padding:9px 10px!important;max-width:100%;align-items:center;min-height:54px}
+body.n67 .npro-toolbar button{display:inline-flex;flex:0 0 auto;align-items:center;gap:8px;white-space:nowrap;min-height:36px!important;height:37px;padding:6px 9px!important;border-radius:999px!important;font-size:11px!important;background:#102d39!important;color:#efffff!important;border:1px solid #39857c!important;box-shadow:none!important;scroll-snap-align:start}
+/* Bolinha deslizante de ligado/desligado a direita do proprio nome. */
+body.n67 .npro-toolbar button::after{content:"";display:inline-block;flex:none;width:24px;height:14px;border-radius:20px;background:#365368;border:1px solid #668b93;box-shadow:inset 0 1px 2px #0008;transition:background .2s}
+body.n67 .npro-toolbar button[aria-pressed="true"]::after{background:radial-gradient(circle at 77% 50%,#fff 0 4px,transparent 5px),#12c7a2;border-color:#31e6c1}
+body.n67 .npro-toolbar button[aria-pressed="false"]::after{background:radial-gradient(circle at 23% 50%,#fff 0 4px,transparent 5px),#365368}
+/* Modo claro e escuro é um unico botão, sem interruptor duplicado. */
+body.n67 .npro-toolbar button:nth-child(2)::after{display:none}
+body.n67 .npro-toolbar button:nth-child(2){background:#143f46!important}
+body.n67 .npro-toolbar .npro-platform{flex:0 0 auto!important;min-height:34px!important;padding:6px 11px!important;white-space:nowrap}
+body.n67 .n67-board .n67-preview{margin:12px 10px 8px!important;width:auto;min-height:125px;border-radius:16px}
+body.n67 .n67-board .n67-preview .n67-preview-intro h2{font-size:clamp(19px,4.3vw,30px)}
+body.n67 .n67-board .n67-preview .n67-preview-intro p{font-size:11px}
+body.n67 .n67-board .n67-preview .n67-preview-stage{width:clamp(70px,15vw,115px)}
+body.n67 .n67-board .n67-listhead{margin-top:0}
+/* Pedra branca: PNG oficial enviado pelo usuario, sem outros raios ou quadrados extras. */
+body.n67 .n67-stone-tile.n67-stone-white,
+body.n67 .n67-latest-tile.n67-stone-white{background:#fff url('/nexo-pro-white.png') center/contain no-repeat!important;border-color:#dbe6ed!important;color:transparent!important;box-shadow:0 4px 9px #0004!important}
+body.n67 .n67-stone-tile.n67-stone-white .n67-circle,
+body.n67 .n67-latest-tile.n67-stone-white .n67-circle{visibility:hidden!important}
+body.n67 .n67-board .n67-preview[data-n12-color="white"]{background:linear-gradient(115deg,#07362f,#075c50 60%,#092833)!important;color:#f3fffd!important}
+body.n67 .n67-board .n67-preview[data-n12-color="white"] :is(.n67-eyebrow,.n67-preview-intro h2,.n67-preview-intro p){color:#f2fffc!important}
+body.n67 .n67-board .n67-preview[data-n12-color="white"] .n67-status{color:#e5fff7!important;background:#073b36!important}
+/* Reuso visual do branco em outros elementos do ADM e telas do bot. */
+#shell .stone.white,#shell .v12-ball.white,#shell .v12-stone-white,
+body:not(.n67) .stone.white,body:not(.n67) .v12-ball.white,
+body:not(.n67) .n67-stone-white{
+ background:#fff url('/nexo-pro-white.png') center/contain no-repeat!important;
+ color:transparent!important;text-shadow:none!important;border-color:#dfeef0!important;
+}
+#shell .stone.white:not(input),#shell .v12-ball.white,body:not(.n67) .v12-ball.white{font-size:0!important}
+@media(max-width:600px){body.n67 .n67-board .n67-preview{margin:10px 7px 7px!important;padding:12px!important;min-height:116px}body.n67 .npro-toolbar{padding:8px 7px!important}body.n67 .npro-toolbar button{font-size:10px!important;height:35px}}
