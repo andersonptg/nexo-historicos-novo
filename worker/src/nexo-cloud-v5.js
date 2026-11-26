@@ -3,7 +3,7 @@ import {selectDueGames} from './nexo-cloud-v69-scheduler.js';
 // Source snapshots are observational data, not guaranteed live/complete.
 import cloudCatalog from '../../catalog-cloud.json' with {type:'json'};
 import {parseFortuneV65} from './nexo-fortune-v65.js';
-const GAMES=cloudCatalog.games;
+const GAMES=cloudCatalog.games.filter(g=>g.id==='blitz-double'); // NEXO_BLITZ_DOUBLE_SO_V1
 const GAME_BY_ID=new Map(GAMES.map(g=>[g.id,g]));
 const ROOT='nexo-cloud-v5/';
 const HEADER={'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'};
