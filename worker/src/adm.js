@@ -178,7 +178,7 @@ async function saveReceivedMedia(env,msg){
  if(all.some(x=>x.fileUniqueId===unique&&x.kind===kind))return false;
  if(all.length>=200)throw Error('Biblioteca cheia (200 itens).');
  const filename=kind==='sticker'?'STICKER '+String(sticker.emoji||'').slice(0,12):'GIF TELEGRAM';
- const meta={id:crypto.randomUUID().replaceAll('-',''),name:filename+' · '+new Date(now()*1000).toLocaleDateString('pt-BR'),kind,mime:sticker?'image/webp':String(media.mime_type||'video/mp4'),size:Number(media.file_size)||0,createdAt:now(),origin:'telegram',fileId:media.file_id,fileUniqueId:unique,previewFileId:media.thumbnail?.file_id||media.file_id};
+ const meta={id:crypto.randomUUID().replaceAll('-',''),name:filename+' · '+new Date(now()*1000).toLocaleDateString('pt-BR'),kind,mime:sticker?(sticker.is_animated?'application/x-tgsticker':sticker.is_video?'video/webm':'image/webp'):String(media.mime_type||'video/mp4'),size:Number(media.file_size)||0,createdAt:now(),origin:'telegram',fileId:media.file_id,fileUniqueId:unique,previewFileId:media.thumbnail?.file_id||media.file_id,animated:!!sticker?.is_animated,videoSticker:!!sticker?.is_video};
  await putDoc(env,K.media,[...all,meta]);return true;
 }
 async function handlePrivateMessage(env,msg){
@@ -1071,7 +1071,7 @@ export async function routeAdmin(req,env,url){
     if(!r.ok)return err('Nao foi possivel baixar a figurinha da biblioteca Cores',502);
     bytes=await r.arrayBuffer();
     const ext=f.file_path.toLowerCase().split('.').pop();
-    mime=({webp:'image/webp',png:'image/png',gif:'image/gif',mp4:'video/mp4'})[ext]||mime;
+    mime=({webp:'image/webp',png:'image/png',gif:'image/gif',mp4:'video/mp4',tgs:'application/x-tgsticker',webm:'video/webm'})[ext]||mime;
    }catch(e){return err('Erro ao obter midia do bot Cores: '+String(e.message||e).slice(0,100),502)}
   }else{
    const object=await env.R2.get(ROOT+'media/files/'+id);
@@ -1084,8 +1084,10 @@ export async function routeAdmin(req,env,url){
   const isWebp=content[0]===82&&content[1]===73&&content[2]===70&&content[3]===70&&String.fromCharCode(...content.slice(8,12))==='WEBP';
   const isGif=String.fromCharCode(...content.slice(0,3))==='GIF';
   const isMp4=String.fromCharCode(...content.slice(4,8))==='ftyp';
-  mime=isWebp?'image/webp':isPng?'image/png':isGif?'image/gif':isMp4?'video/mp4':'';
-  if(!mime||(item.kind==='sticker'&&!['image/webp','image/png'].includes(mime))||(item.kind==='gif'&&!['image/gif','video/mp4'].includes(mime)))return err('Formato nao suportado pelo Branco. Reenvie como sticker WEBP/PNG ou GIF/MP4',415);
+  const isTgs=content[0]===31&&content[1]===139&&content[2]===8;
+  const isWebm=content[0]===26&&content[1]===69&&content[2]===223&&content[3]===163;
+  mime=isWebp?'image/webp':isPng?'image/png':isGif?'image/gif':isMp4?'video/mp4':isTgs?'application/x-tgsticker':isWebm?'video/webm':'';
+  if(!mime||(item.kind==='sticker'&&!['image/webp','image/png','application/x-tgsticker','video/webm'].includes(mime))||(item.kind==='gif'&&!['image/gif','video/mp4'].includes(mime)))return err('Formato nao suportado pelo Branco. Use sticker WEBP/PNG/TGS/WEBM ou GIF/MP4',415);
   const whiteCatalog=await getDoc(env,'nexo-branco-vip/v1/media.json',[]);
   const previous=whiteCatalog.find(m=>m.colorsId===id);
   if(previous)return json({ok:true,id:previous.id,kind:previous.kind,reused:true});
@@ -1478,7 +1480,7 @@ e('on').onclick=()=>set(true);e('off').onclick=()=>set(false);refresh();setInter
   if(mf&&req.method==='GET'){
    const meta=(await getDoc(env,K.media,[])).find(x=>x.id===mf[1]);if(!meta)return err('Midia nao encontrada',404);
    if(meta.fileId){
-    const motion=new URL(req.url).searchParams.get('motion')==='1';const previewId=motion&&meta.kind==='gif'?meta.fileId:(meta.previewFileId||meta.fileId);
+    const motion=new URL(req.url).searchParams.get('motion')==='1';const previewId=motion&&(meta.kind==='gif'||meta.videoSticker)?meta.fileId:(meta.previewFileId||meta.fileId);
     const file=await tg(env,'getFile',{file_id:previewId});
     if(!file.file_path||Number(file.file_size||0)>20*1024*1024)return err('Previa indisponivel',404);
     const t=await botToken(env);const res=await fetch('https://api.telegram.org/file/bot'+t+'/'+file.file_path,{signal:AbortSignal.timeout(10000)});

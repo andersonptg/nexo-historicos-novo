@@ -68,7 +68,7 @@ export async function brancoVipAdmin(req,env,url){
   if(!b||typeof b.data!=='string'||b.data.length>6800000||typeof b.mime!=='string'||typeof b.name!=='string')return fail('Arquivo invalido ou excede limite',400);
   if(!owner?.id)return fail('Vincule primeiro o ID privado do administrador',409);
   const mime=b.mime,kind=b.kind;
-  if(!(kind==='sticker'&&['image/webp','image/png'].includes(mime)||kind==='gif'&&['image/gif','video/mp4'].includes(mime)))return fail('Stickers: PNG/WEBP; GIFs: GIF/MP4',400);
+  if(!(kind==='sticker'&&['image/webp','image/png','application/x-tgsticker','video/webm'].includes(mime)||kind==='gif'&&['image/gif','video/mp4'].includes(mime)))return fail('Stickers: PNG/WEBP/TGS/WEBM; GIFs: GIF/MP4',400);
   if(!/^[A-Za-z0-9+/]*={0,2}$/.test(b.data))return fail('Arquivo codificado incorretamente',400);
   let raw;try{raw=Uint8Array.from(atob(b.data),c=>c.charCodeAt(0))}catch{return fail('Arquivo invalido',400)}
   if(raw.length<30||raw.length>4*1024*1024)return fail('Arquivo deve ter entre 30 bytes e 4 MB',413);
@@ -76,12 +76,14 @@ export async function brancoVipAdmin(req,env,url){
   const png=raw.length>8&&raw[0]===137&&raw[1]===80&&raw[2]===78&&raw[3]===71;
   const gif=raw.length>6&&String.fromCharCode(...raw.slice(0,3))==='GIF';
   const mp4=raw.length>8&&String.fromCharCode(...raw.slice(4,8))==='ftyp';
-  if(!(mime==='image/webp'&&webp||mime==='image/png'&&png||mime==='image/gif'&&gif||mime==='video/mp4'&&mp4))return fail('Extensao e formato real do arquivo nao correspondem',400);
+  const tgs=raw.length>10&&raw[0]===31&&raw[1]===139&&raw[2]===8;
+  const webm=raw.length>10&&raw[0]===26&&raw[1]===69&&raw[2]===223&&raw[3]===163;
+  if(!(mime==='image/webp'&&webp||mime==='image/png'&&png||mime==='image/gif'&&gif||mime==='video/mp4'&&mp4||mime==='application/x-tgsticker'&&tgs||mime==='video/webm'&&webm))return fail('Extensao e formato real do arquivo nao correspondem',400);
   if(media.length>=100)return fail('Biblioteca cheia (100). Exclua uma midia nao utilizada antes de importar',409);
   let token;try{token=await openToken(env)}catch{return fail('Chave do bot Branco indisponivel',503)}
   if(!token)return fail('Cadastre o bot Branco antes de importar',409);
   const method=kind==='sticker'?'sendSticker':'sendAnimation',field=kind==='sticker'?'sticker':'animation';
-  const form=new FormData();form.append('chat_id',String(owner.id));form.append(field,new Blob([raw],{type:mime}),kind==='sticker'?'branco.'+(webp?'webp':'png'):'branco.'+(gif?'gif':'mp4'));
+  const form=new FormData();form.append('chat_id',String(owner.id));form.append(field,new Blob([raw],{type:mime}),kind==='sticker'?'branco.'+(webp?'webp':png?'png':tgs?'tgs':'webm'):'branco.'+(gif?'gif':'mp4'));
   let telegramResp;
   try{const r=await fetch('https://api.telegram.org/bot'+token+'/'+method,{method:'POST',body:form,signal:AbortSignal.timeout(25000)});telegramResp=await r.json();if(!r.ok||!telegramResp.ok)throw Error(String(telegramResp?.description||r.status).slice(0,120))}
   catch(e){return fail('Telegram recusou importar: '+String(e.message||e).slice(0,130),502)}
