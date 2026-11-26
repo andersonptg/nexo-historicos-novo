@@ -86,7 +86,7 @@ test('V3 discovers only group where the bot is ADM, and Telegram sends only afte
   async function ingest(seq,color,n){const r={id:seq.toString(16).padStart(32,'a'),minute_epoch:stamp+seq*60,color,number:n,seq};return worker.fetch(req('/api/ingest',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+env.NEXO_V1_INGEST_TOKEN},body:JSON.stringify({game_id:'brabet-double',items:[r]})}),env)}
   await ingest(1,'black',9);assert.equal(outbound.filter(x=>x.method==='sendMessage').length,0);
   // NEXO_BLITZ_TESTES_V3: transferencia segura - Termux desligado e feed Blitz recente.
-  const tNow=Math.floor(Date.now()/60)*60;
+  const tNow=Math.floor(Date.now()/60000)*60;
   await env.R2.put('nexo-v3/local-control/desired-v5.json',JSON.stringify({enabled:false,revision:1}));
   await env.R2.put('nexo-v3/local-control/heartbeat-v5.json',JSON.stringify({at:Math.floor(Date.now()/1000),motor:false,collector:true,revision:1}));
   await env.R2.put('nexo-v1/games/blitz-double/latest.json',JSON.stringify({items:[{id:'f'.repeat(32),seq:1,minute_epoch:tNow,number:1,color:'red'}]}));

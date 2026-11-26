@@ -38,7 +38,7 @@ test('V9: liga com chat privado verificado sem mensagem global, envia ativacao e
   assert.equal(r.status,200);
   sent.length=0;
   // NEXO_BLITZ_TESTES_V3: ativacao valida apenas com Termux parado e feed fresco.
-  const tNow=Math.floor(Date.now()/60)*60;
+  const tNow=Math.floor(Date.now()/60000)*60;
   store.set('nexo-v3/local-control/desired-v5.json',JSON.stringify({enabled:false,revision:1}));
   store.set('nexo-v3/local-control/heartbeat-v5.json',JSON.stringify({at:Math.floor(Date.now()/1000),motor:false,collector:true,revision:1}));
   store.set('nexo-v1/games/blitz-double/latest.json',JSON.stringify({items:[{id:'f'.repeat(32),seq:1,minute_epoch:tNow,number:1,color:'red'}]}));
