@@ -1,0 +1,17 @@
+/* NEXO V15: link da plataforma visível, único no topo e repetido acima das pedras. */
+body.n67 .npro-toolbar .npro-platform{display:none!important}
+body.n67 .npro-playtop,body.n67 .npro-playmiddle{display:flex;align-items:center;justify-content:center;gap:11px;box-sizing:border-box;text-decoration:none!important;background:linear-gradient(135deg,#fff 0%,#f1fff9 62%,#c4ffee 100%);border:1px solid #8af4dc;border-radius:999px;color:#062a37!important;box-shadow:0 4px 0 #059a8d,0 0 22px #20e7c455,0 8px 22px #0006;font:850 clamp(13px,3.7vw,17px)/1.2 system-ui,sans-serif;min-height:45px;padding:10px 17px;text-align:center;white-space:normal}
+body.n67 .npro-playtop::before,body.n67 .npro-playmiddle::before{content:'↗';display:inline-grid;place-items:center;color:#075749;background:#dbfff1;border-radius:50%;width:28px;height:28px;flex:none;font-size:20px}
+body.n67 .npro-playtop{flex:0 1 auto;margin-inline:auto;max-width:100%;min-width:0;padding:8px 12px;min-height:42px;box-shadow:0 0 13px #30e5bd62;font-size:clamp(11px,2.5vw,15px)}
+body.n67 .npro-playtop::before{width:22px;height:22px;font-size:17px}
+body.n67 .n67-header-right{display:flex;align-items:center;flex:1;justify-content:flex-end;gap:9px;min-width:0}
+body.n67 .n67-brand{flex:0 0 auto;min-width:0}
+body.n67 .npro-playmiddle{width:calc(100% - 24px);margin:9px 12px 16px}
+body.n67 .npro-playtop[hidden],body.n67 .npro-playmiddle[hidden]{display:none!important}
+body.n67 .npro-playtop:hover,body.n67 .npro-playmiddle:hover{filter:brightness(1.04)}
+body.n67 .npro-playtop:focus-visible,body.n67 .npro-playmiddle:focus-visible{outline:3px solid #fff;outline-offset:3px}
+@media(max-width:460px){body.n67 .n67-header-right{gap:5px}body.n67 .npro-playtop{font-size:11px;line-height:1.05;padding:6px 8px}body.n67 .npro-playtop::before{display:none}body.n67 .npro-playmiddle{font-size:14px}}
+/* Login Google separado da senha, mostrado só quando o servidor estiver configurado. */
+.npro-g-login{display:grid;gap:10px;margin:14px 0;padding-top:13px;border-top:1px solid #345466}
+.npro-g-login p{margin:0;font-size:12px;color:#a8c5c6}
+.npro-g-login [role=status]{font-size:12px;color:#a8e9dd}

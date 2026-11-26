@@ -1044,11 +1044,52 @@ async function v26ScheduleStrategyPurge(env,ids){
  return json({ok:true,deleted:found.length,ids:found.map(s=>s.id),cleanup:'scheduled'});
 }
 
+
+// NEXO_PRO_V15_GOOGLE: identidade Google validada no servidor, nunca apenas pelo email do navegador.
+const nproGoogleB64=s=>{if(typeof s!=='string'||!/^[A-Za-z0-9_-]+$/.test(s))throw Error('Base64URL invalida');const b=s.replace(/-/g,'+').replace(/_/g,'/');return Uint8Array.from(atob(b+'='.repeat((4-b.length%4)%4)),c=>c.charCodeAt(0));};
+async function nproGoogleVerified(jwt,env){
+ if(!env.NEXO_GOOGLE_CLIENT_ID||!env.NEXO_GOOGLE_ADMIN_EMAIL||!hasPassword(env))throw Error('Google nao configurado');
+ if(typeof jwt!=='string'||jwt.length>6500)throw Error('Token invalido');
+ const p=jwt.split('.');if(p.length!==3)throw Error('JWT invalido');
+ const header=JSON.parse(new TextDecoder().decode(nproGoogleB64(p[0]))),claims=JSON.parse(new TextDecoder().decode(nproGoogleB64(p[1])));
+ if(header.alg!=='RS256'||typeof header.kid!=='string'||header.kid.length>180)throw Error('Algoritmo rejeitado');
+ const nowTs=now();
+ if(!['accounts.google.com','https://accounts.google.com'].includes(claims.iss)||claims.aud!==env.NEXO_GOOGLE_CLIENT_ID||
+   (claims.azp&&claims.azp!==env.NEXO_GOOGLE_CLIENT_ID)||claims.email_verified!==true||
+   String(claims.email||'').toLowerCase()!==String(env.NEXO_GOOGLE_ADMIN_EMAIL).trim().toLowerCase()||
+   !/^[0-9]{5,30}$/.test(String(claims.sub||''))||
+   !Number.isInteger(claims.exp)||claims.exp<=nowTs||claims.exp>nowTs+3700||
+   !Number.isInteger(claims.iat)||claims.iat>nowTs+60||claims.iat<nowTs-3700)throw Error('Conta Google nao autorizada');
+ const keysResponse=await fetch('https://www.googleapis.com/oauth2/v3/certs',{headers:{Accept:'application/json'}});
+ if(!keysResponse.ok)throw Error('Certificado Google indisponivel');
+ const keys=await keysResponse.json(),jwk=keys.keys?.find(k=>k.kid===header.kid&&k.kty==='RSA'&&k.use==='sig'&&k.alg==='RS256');
+ if(!jwk)throw Error('Assinatura Google nao reconhecida');
+ const key=await crypto.subtle.importKey('jwk',jwk,{name:'RSASSA-PKCS1-v1_5',hash:'SHA-256'},false,['verify']);
+ const ok=await crypto.subtle.verify('RSASSA-PKCS1-v1_5',key,nproGoogleB64(p[2]),UTF.encode(p[0]+'.'+p[1]));
+ if(!ok)throw Error('Assinatura Google invalida');
+ return claims;
+}
+
 export async function routeAdmin(req,env,url){
  const path=url.pathname;
  if(path==='/api/telegram/webhook'&&req.method==='POST')return telegramWebhook(req,env);
  if(!path.startsWith('/api/adm/'))return null;
  if(!env.R2)return err('Binding R2 indisponivel',503);
+
+ // Google Sign-In: o Client ID e publico, mas a identidade só vale após verificacao RS256.
+ if(path==='/api/adm/google-config'&&req.method==='GET'){
+   return json({ok:true,enabled:!!(env.NEXO_GOOGLE_CLIENT_ID&&env.NEXO_GOOGLE_ADMIN_EMAIL&&hasPassword(env)),clientId:env.NEXO_GOOGLE_CLIENT_ID||''});
+ }
+ if(path==='/api/adm/google-login'&&req.method==='POST'){
+   if(!sameOrigin(req))return err('Origem nao permitida',403);
+   try{
+     if(Number(req.headers.get('Content-Length')||0)>8000)return err('Requisicao muito grande',413);
+     const body=await req.json();await nproGoogleVerified(body?.credential,env);
+     const exp=String(now()+7200),sig=await sign(exp,env);
+     return json({ok:true,expires_at:Number(exp)},200,{'Set-Cookie':sessionCookie(exp+'.'+sig,7200)});
+   }catch{return err('Conta Google nao autorizada ou validacao indisponivel',401);}
+ }
+
  // NEXO_PRO_V13: only the explicitly public platform link is readable without a session.
  if(path==='/api/adm/nexo-pro-public'&&req.method==='GET'){
   const c=await getDoc(env,'nexo-pro/v13/public-link.json',{enabled:false,name:'Acessar plataforma',url:''});
