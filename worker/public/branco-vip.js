@@ -1,5 +1,6 @@
 'use strict';
-let state=null,assetId='',sharedMedia=[]; // NEXO_BIBLIOTECA_CENTRAL_V7const $=id=>document.getElementById(id);const events=['attention','entry','green','red'];
+let state=null,assetId='',sharedMedia=[]; // NEXO_BIBLIOTECA_CENTRAL_V7
+const $=id=>document.getElementById(id);const events=['attention','entry','green','red'];
 function say(msg,error=false){const e=$('message');e.style.display='block';e.style.background=error?'#66303a':'#194735';e.textContent=msg;setTimeout(()=>e.style.display='none',6500)}
 async function api(path,method='GET',data){const r=await fetch('/api/adm/branco-vip'+path,{method,credentials:'same-origin',cache:'no-store',headers:{'Content-Type':'application/json'},...(data===undefined?{}:{body:JSON.stringify(data)})});let j;try{j=await r.json()}catch{throw Error('Resposta invalida do servidor')};if(!r.ok||j.ok!==true)throw Error(j.error||'HTTP '+r.status);return j}
 const esc=s=>String(s??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;');
