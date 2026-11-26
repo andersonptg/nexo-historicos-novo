@@ -62,6 +62,57 @@ export async function brancoVipAdmin(req,env,url){
   if(next.enabled&&!owner?.id&&!groups.some(x=>x.selected&&x.admin))return fail('Vincule o privado ou selecione grupo autorizado',409);
   await put(env,KEY.cfg,next);return j({ok:true,config:next})
  }
+ // NEXO_BRANCO_MEDIA_V5: isolated under nexo-branco-vip/v1/, never touches Crash or Cores.
+ if(p==='/api/adm/branco-vip/media/import'&&req.method==='POST'){
+  const b=await req.json().catch(()=>null);
+  if(!b||typeof b.data!=='string'||b.data.length>6800000||typeof b.mime!=='string'||typeof b.name!=='string')return fail('Arquivo invalido ou excede limite',400);
+  if(!owner?.id)return fail('Vincule primeiro o ID privado do administrador',409);
+  const mime=b.mime,kind=b.kind;
+  if(!(kind==='sticker'&&['image/webp','image/png'].includes(mime)||kind==='gif'&&['image/gif','video/mp4'].includes(mime)))return fail('Stickers: PNG/WEBP; GIFs: GIF/MP4',400);
+  if(!/^[A-Za-z0-9+/]*={0,2}$/.test(b.data))return fail('Arquivo codificado incorretamente',400);
+  let raw;try{raw=Uint8Array.from(atob(b.data),c=>c.charCodeAt(0))}catch{return fail('Arquivo invalido',400)}
+  if(raw.length<30||raw.length>4*1024*1024)return fail('Arquivo deve ter entre 30 bytes e 4 MB',413);
+  const webp=raw.length>12&&String.fromCharCode(...raw.slice(0,4))==='RIFF'&&String.fromCharCode(...raw.slice(8,12))==='WEBP';
+  const png=raw.length>8&&raw[0]===137&&raw[1]===80&&raw[2]===78&&raw[3]===71;
+  const gif=raw.length>6&&String.fromCharCode(...raw.slice(0,3))==='GIF';
+  const mp4=raw.length>8&&String.fromCharCode(...raw.slice(4,8))==='ftyp';
+  if(!(mime==='image/webp'&&webp||mime==='image/png'&&png||mime==='image/gif'&&gif||mime==='video/mp4'&&mp4))return fail('Extensao e formato real do arquivo nao correspondem',400);
+  if(media.length>=100)return fail('Biblioteca cheia (100). Exclua uma midia nao utilizada antes de importar',409);
+  let token;try{token=await openToken(env)}catch{return fail('Chave do bot Branco indisponivel',503)}
+  if(!token)return fail('Cadastre o bot Branco antes de importar',409);
+  const method=kind==='sticker'?'sendSticker':'sendAnimation',field=kind==='sticker'?'sticker':'animation';
+  const form=new FormData();form.append('chat_id',String(owner.id));form.append(field,new Blob([raw],{type:mime}),kind==='sticker'?'branco.'+(webp?'webp':'png'):'branco.'+(gif?'gif':'mp4'));
+  let telegramResp;
+  try{const r=await fetch('https://api.telegram.org/bot'+token+'/'+method,{method:'POST',body:form,signal:AbortSignal.timeout(25000)});telegramResp=await r.json();if(!r.ok||!telegramResp.ok)throw Error(String(telegramResp?.description||r.status).slice(0,120))}
+  catch(e){return fail('Telegram recusou importar: '+String(e.message||e).slice(0,130),502)}
+  const x=telegramResp.result?.sticker||telegramResp.result?.animation;
+  if(!x?.file_id)return fail('Telegram aceitou mas nao informou file_id; revise o privado do bot',502);
+  const id='b'+crypto.randomUUID().replaceAll('-',''),name=b.name.slice(0,60).trim()||('BRANCO '+kind);
+  try{
+   await env.R2.put(ROOT+'preview/'+id,raw,{httpMetadata:{contentType:mime}});
+   await put(env,KEY.media,[...media,{id,kind,fileId:x.file_id,mime,name,createdAt:Date.now(),origin:'admin-upload-branco'}].slice(-100));
+  }catch(e){return fail('Telegram recebeu, mas R2 nao salvou. Nao repita sem conferir biblioteca: '+String(e.message||e).slice(0,90),502)}
+  return j({ok:true,id,name,kind,notice:'Importado para a biblioteca Branco VIP e enviado ao privado do bot Branco.'});
+ }
+ if(p==='/api/adm/branco-vip/media/remove'&&req.method==='POST'){
+  const b=await req.json().catch(()=>null),id=String(b?.id||'');
+  if(!/^b[a-f0-9]{32}$/.test(id))return fail('ID invalido',400);
+  const item=media.find(x=>x.id===id);if(!item)return fail('Midia nao encontrada',404);
+  if(Object.values(cfg.templates||{}).some(t=>t.assetId===id))return fail('Midia esta sendo utilizada em uma mensagem: altere a mensagem primeiro',409);
+  await put(env,KEY.media,media.filter(x=>x.id!==id));await env.R2.delete(ROOT+'preview/'+id);
+  return j({ok:true,notice:'Removida somente da biblioteca do Branco VIP'});
+ }
+ if(p==='/api/adm/branco-vip/media/bot-status'&&req.method==='GET'){
+  let token;try{token=await openToken(env)}catch{return fail('Chave do bot Branco indisponivel',503)}
+  if(!token)return j({ok:true,configured:false});
+  try{
+   const [meReq,webReq]=await Promise.all([fetch('https://api.telegram.org/bot'+token+'/getMe',{signal:AbortSignal.timeout(9000)}),fetch('https://api.telegram.org/bot'+token+'/getWebhookInfo',{signal:AbortSignal.timeout(9000)})]);
+   const me=await meReq.json(),web=await webReq.json();
+   if(!me.ok||!web.ok)return fail('Telegram nao confirmou o bot ou webhook',502);
+   return j({ok:true,configured:true,username:me.result.username||'',webhookActive:!!web.result?.url,ownerConfigured:!!owner?.id,mediaCount:media.length});
+  }catch{return fail('Nao foi possivel consultar Telegram agora',502)}
+ }
+
  if(p==='/api/adm/branco-vip/groups'&&req.method==='POST'){
   const b=await req.json().catch(()=>null);if(!Array.isArray(b?.selected))return fail('Lista invalida');const ids=new Set(b.selected.map(String));
   if([...ids].some(id=>!groups.some(g=>g.id===id&&g.admin)))return fail('Grupo nao autorizado',409);
