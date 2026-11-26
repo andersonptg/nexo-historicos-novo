@@ -33,7 +33,7 @@ function validCfg(b,prev){
  cfg.offset=4;
  for(const field of ['houses4','houses11']){if(b[field]!==undefined){if(!Number.isInteger(b[field])||b[field]<1||b[field]>30)throw Error('Casas devem ficar de 1 a 30');cfg[field]=b[field]}}
  if(b.strategies!==undefined){if(!Array.isArray(b.strategies)||b.strategies.length!==6||defs.some((d,i)=>b.strategies[i]?.id!==d.id||typeof b.strategies[i].enabled!=='boolean'))throw Error('As seis estrategias sao fixas e nao podem ser excluidas');cfg.strategies=defs.map((d,i)=>({...d,enabled:b.strategies[i].enabled}))}
- if(b.templates!==undefined){if(!b.templates||typeof b.templates!=='object')throw Error('Modelos invalidos');const all=cfg.templates={...cfg.templates};for(const e of events){if(!b.templates[e])continue;const x=b.templates[e],type=x.type||'text';if(!['text','sticker','gif'].includes(type)||typeof x.text!=='string'||x.text.length>1500)throw Error('Modelo invalido em '+e);all[e]={type,text:x.text,assetId:type==='text'?'':String(x.assetId||'')};}}
+ if(b.templates!==undefined){if(!b.templates||typeof b.templates!=='object')throw Error('Modelos invalidos');const all=cfg.templates={...cfg.templates};for(const e of events){if(!b.templates[e])continue;const x=b.templates[e],type=x.type||'text';if(!['text','sticker','gif'].includes(type)||typeof x.text!=='string'||x.text.length>1500)throw Error('Modelo invalido em '+e);all[e]={type,text:type==='text'?x.text:'',assetId:type==='text'?'':String(x.assetId||'')}; /* NEXO_BIBLIOTECA_CENTRAL_V7 */}}
  cfg.revision=(Number(prev.revision)||0)+1;cfg.updatedAt=Math.floor(Date.now()/1000);return cfg;
 }
 // Called from routeAdmin AFTER cookie authorization.

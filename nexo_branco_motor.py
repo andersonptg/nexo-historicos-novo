@@ -134,7 +134,8 @@ def erase_attention(db,cfg,w):
    log('Aviso antigo nao apagado: '+str(ex)[:85])
   with db:db.execute('DELETE FROM attention_messages WHERE window_id=? AND chat=?',(w['id'],row['chat']))
 
-def signal(db,cfg,w,event):
+# NEXO_BIBLIOTECA_CENTRAL_V7: text OR media; GREEN timestamp from the actual white round.
+def signal(db,cfg,w,event,white_time=None):
  delivered=0
  bot=cfg.get('botToken');tm=cfg['config'].get('templates',{}).get(event,{})
  chats=recipients(cfg)
@@ -144,6 +145,8 @@ def signal(db,cfg,w,event):
   text='Pedra '+str(int(w['ref']))+' puxa o próximo branco em até '+str(houses)+' casas 🏡 ⚪'
  elif event=='entry':text=entry_message(w)
  else:text=interpolate(tm.get('text',''),w)
+ if event=='green' and white_time is not None:text=text.replace('{hora_branco}',slot(white_time))
+ if tm.get('type','text')!='text':text=''
  if event=='entry':erase_attention(db,cfg,w)
  for chat in chats:
   key=w['id']+':'+event
@@ -270,7 +273,9 @@ def settle(db,cfg,now=None,sync_only=False):
    elif now>=protect_end and all(n>=6 for n in counts):result='red'
    elif now>=protect_end+180:result='incomplete'
   if result is None:continue
-  if result in ('green','red'):signal(db,cfg,w,result)
+  if result in ('green','red'):
+   white_time=next((int(r.get('minute_epoch') or r.get('first_seen') or 0) for r in readings if int(r.get('number',-1))==0 and int(r.get('first_seen',0))>=int(w['entered_at'])),None) if result=='green' else None
+   signal(db,cfg,w,result,white_time=white_time)
   erase_attention(db,cfg,w)
   with db:
    db.execute('UPDATE windows SET settled=? WHERE id=?',(result,w['id']))

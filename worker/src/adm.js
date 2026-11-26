@@ -1054,6 +1054,56 @@ export async function routeAdmin(req,env,url){
  if(path==='/api/adm/me')return json({ok:await authenticated(req,env),configured:hasPassword(env)});
  if(path==='/api/adm/local-control-panel'&&req.method==='GET')return Response.redirect(new URL('/controle-termux',req.url),302); // NEXO_TERMO_CONTROL_PUBLIC_SHELL
  if(!await authenticated(req,env))return err('Entre com a senha de administrador.',401);
+ // NEXO_BIBLIOTECA_CENTRAL_V7: only the Cores catalog is a shared source; no Crash data.
+ if(path==='/api/adm/shared-media/for-branco'&&req.method==='POST'){
+  const payload=await req.json().catch(()=>null),id=String(payload?.id||'');
+  if(!/^[a-f0-9]{32}$/.test(id))return err('ID da biblioteca Cores invalido',400);
+  const catalog=await getDoc(env,K.media,[]),item=catalog.find(m=>m.id===id&&['sticker','gif'].includes(m.kind));
+  if(!item)return err('Sticker ou GIF nao encontrado na biblioteca das Cores',404);
+  // Never use a Telegram file_id from one bot in another bot.
+  let bytes,mime=String(item.mime||'');
+  if(item.fileId){
+   try{
+    const f=await tg(env,'getFile',{file_id:item.fileId});
+    if(!f?.file_path||Number(f.file_size||0)>4*1024*1024)return err('Arquivo maior que 4 MB ou indisponivel',413);
+    const colorsToken=await botToken(env);
+    const r=await fetch('https://api.telegram.org/file/bot'+colorsToken+'/'+f.file_path,{signal:AbortSignal.timeout(14000)});
+    if(!r.ok)return err('Nao foi possivel baixar a figurinha da biblioteca Cores',502);
+    bytes=await r.arrayBuffer();
+    const ext=f.file_path.toLowerCase().split('.').pop();
+    mime=({webp:'image/webp',png:'image/png',gif:'image/gif',mp4:'video/mp4'})[ext]||mime;
+   }catch(e){return err('Erro ao obter midia do bot Cores: '+String(e.message||e).slice(0,100),502)}
+  }else{
+   const object=await env.R2.get(ROOT+'media/files/'+id);
+   if(!object)return err('Arquivo original da biblioteca Cores nao encontrado',404);
+   bytes=await object.arrayBuffer();
+  }
+  if(bytes.byteLength<30||bytes.byteLength>4*1024*1024)return err('Midia excede limite de 4 MB do Branco',413);
+  const content=new Uint8Array(bytes);
+  const isPng=content[0]===137&&content[1]===80&&content[2]===78&&content[3]===71;
+  const isWebp=content[0]===82&&content[1]===73&&content[2]===70&&content[3]===70&&String.fromCharCode(...content.slice(8,12))==='WEBP';
+  const isGif=String.fromCharCode(...content.slice(0,3))==='GIF';
+  const isMp4=String.fromCharCode(...content.slice(4,8))==='ftyp';
+  mime=isWebp?'image/webp':isPng?'image/png':isGif?'image/gif':isMp4?'video/mp4':'';
+  if(!mime||(item.kind==='sticker'&&!['image/webp','image/png'].includes(mime))||(item.kind==='gif'&&!['image/gif','video/mp4'].includes(mime)))return err('Formato nao suportado pelo Branco. Reenvie como sticker WEBP/PNG ou GIF/MP4',415);
+  const whiteCatalog=await getDoc(env,'nexo-branco-vip/v1/media.json',[]);
+  const previous=whiteCatalog.find(m=>m.colorsId===id);
+  if(previous)return json({ok:true,id:previous.id,kind:previous.kind,reused:true});
+  const chunks=[];for(let i=0;i<content.length;i+=16384)chunks.push(String.fromCharCode(...content.slice(i,i+16384)));
+  const b64=btoa(chunks.join(''));
+  const url=new URL('/api/adm/branco-vip/media/import',req.url);
+  const delegated=new Request(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kind:item.kind,mime,name:String(item.name||'STICKER CORES').slice(0,60),data:b64})});
+  const reply=await brancoVipAdmin(delegated,env,url);
+  if(!reply)return err('Importador Branco indisponivel',503);
+  if(!reply.ok)return reply;
+  const result=await reply.json();
+  if(!result.ok)return json(result,reply.status);
+  // Link source for deterministic reuse while keeping White bot-specific file_id isolated.
+  const list=await getDoc(env,'nexo-branco-vip/v1/media.json',[]);
+  const matched=list.find(m=>m.id===result.id);
+  if(matched){matched.colorsId=id;await putDoc(env,'nexo-branco-vip/v1/media.json',list)}
+  return json({ok:true,id:result.id,kind:item.kind,reused:false});
+ }
  const brancoAdm=await brancoVipAdmin(req,env,url);if(brancoAdm)return brancoAdm;
  if(path.startsWith('/api/adm/fortune/')){const fortuneReply=await fortuneAdmin(req,env,url);if(fortuneReply)return fortuneReply;}
   if(path.startsWith('/api/adm/crash/v3/')){const owner=(await getDoc(env,K.owner,null))?.id;const reply=await crashV3Admin(req,env,url,{ownerId:owner});if(reply)return reply;}
