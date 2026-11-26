@@ -1049,11 +1049,25 @@ export async function routeAdmin(req,env,url){
  if(path==='/api/telegram/webhook'&&req.method==='POST')return telegramWebhook(req,env);
  if(!path.startsWith('/api/adm/'))return null;
  if(!env.R2)return err('Binding R2 indisponivel',503);
+ // NEXO_PRO_V13: only the explicitly public platform link is readable without a session.
+ if(path==='/api/adm/nexo-pro-public'&&req.method==='GET'){
+  const c=await getDoc(env,'nexo-pro/v13/public-link.json',{enabled:false,name:'Acessar plataforma',url:''});
+  return json({ok:true,enabled:c.enabled===true,name:String(c.name||'Acessar plataforma'),url:c.enabled===true?String(c.url||''):''});
+ }
  if(!sameOrigin(req)&&req.method!=='GET')return err('Origem nao permitida',403);
  if(path==='/api/adm/login'&&req.method==='POST')return login(req,env);
  if(path==='/api/adm/me')return json({ok:await authenticated(req,env),configured:hasPassword(env)});
  if(path==='/api/adm/local-control-panel'&&req.method==='GET')return Response.redirect(new URL('/controle-termux',req.url),302); // NEXO_TERMO_CONTROL_PUBLIC_SHELL
  if(!await authenticated(req,env))return err('Entre com a senha de administrador.',401);
+ if(path==='/api/adm/nexo-pro-public'&&req.method==='POST'){
+  const c=await req.json().catch(()=>null);
+  if(!c||typeof c.enabled!=='boolean'||typeof c.name!=='string'||typeof c.url!=='string')return err('Parametros invalidos',400);
+  const label=c.name.trim(),raw=c.url.trim();if(label.length>55||raw.length>600)return err('Nome ou URL muito longos',400);
+  let valid='';if(raw){try{const u=new URL(raw);if(u.protocol!=='https:'||u.username||u.password||!u.hostname||u.hostname==='localhost')return err('Use URL publica HTTPS',400);valid=u.href;}catch{return err('URL invalida',400)}}
+  if(c.enabled&&(!label||!valid))return err('Informe nome e link HTTPS antes de ativar',400);
+  const next={enabled:c.enabled,name:label||'Acessar plataforma',url:valid};
+  await putDoc(env,'nexo-pro/v13/public-link.json',next);return json({ok:true,...next});
+ }
  // NEXO_BIBLIOTECA_CENTRAL_V7: only the Cores catalog is a shared source; no Crash data.
  if(path==='/api/adm/shared-media/for-branco'&&req.method==='POST'){
   const payload=await req.json().catch(()=>null),id=String(payload?.id||'');

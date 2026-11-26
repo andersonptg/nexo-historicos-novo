@@ -1,0 +1,54 @@
+/* NEXO PRO V13 - adicao isolada: sem alterar regras de coleta */
+.npro-toolbar{display:flex;flex-wrap:wrap;gap:9px;padding:14px 18px;background:#0d2233;border-block:1px solid #2d5665;align-items:center}
+.npro-toolbar button{border-radius:13px;padding:11px 13px;font:700 12px system-ui,sans-serif;border:1px solid #3d827a;background:#123c41;color:#dcfff9;cursor:pointer;min-height:42px;box-shadow:inset 0 1px #ffffff1a}
+.npro-toolbar button[aria-pressed="true"]{background:#c7fff1;color:#10232c;border-color:#8ce8d1}
+.npro-toolbar .npro-platform{background:#fff;color:#0b2233;border-color:#d3efee;font-weight:850}
+.npro-toolbar .npro-platform[hidden]{display:none!important}
+.npro-footer-toolbar{padding:14px 17px 24px}
+.npro-footer-toolbar button{border:1px solid #40677a;border-radius:12px;background:#203c4f;color:#e6f8ff;padding:11px;font-weight:700}
+.npro-dialog{background:#0d1d2c;color:#edffff;border:1px solid #4ebca3;border-radius:19px;max-width:min(92vw,500px);padding:24px;box-shadow:0 16px 65px #000b}
+.npro-dialog::backdrop{background:#0009}
+.npro-dialog img{width:min(70%,220px);display:block;margin:0 auto 18px}
+.npro-dialog button{border:0;border-radius:10px;background:#157e65;color:#fff;padding:12px 18px}
+.npro-history-controls{display:flex;gap:9px;flex-wrap:wrap}
+body.n67 .n67-history .n67-preview{margin:17px 0 5px}
+body.n67 .n67-grid.npro-reverse{direction:rtl}
+body.n67 .n67-grid.npro-reverse .n67-stone{direction:ltr}
+body.n67 .n67-grid .n67-stone-tile{transition:filter .2s ease}
+/* Substitui confetes repetidos por explosoes em camadas, apenas no branco */
+body.n67 .n67-preview[data-n12-color="white"]::before{animation:none!important;opacity:0!important;background:none!important}
+.npro-fireworks{position:absolute;inset:0;pointer-events:none;overflow:hidden;border-radius:inherit;z-index:0}
+.npro-firework{position:absolute;left:var(--x);top:var(--y);width:4px;height:4px;border-radius:50%;opacity:0;box-shadow:0 0 10px currentColor;animation:npro-burst 2.3s ease-out infinite;animation-delay:var(--delay)}
+.npro-firework>i{position:absolute;width:4px;height:15px;border-radius:5px;background:currentColor;transform-origin:50% 0;transform:rotate(calc(var(--n)*30deg)) translateY(-3px);animation:npro-ray 2.3s ease-out infinite;animation-delay:var(--delay)}
+@keyframes npro-burst{0%,12%{opacity:0;transform:scale(.2)}24%{opacity:1;transform:scale(1)}60%,100%{opacity:0;transform:scale(1.6)}}
+@keyframes npro-ray{0%,15%{opacity:0;transform:rotate(calc(var(--n)*30deg)) translateY(0) scaleY(.5)}30%{opacity:1}60%,100%{opacity:0;transform:rotate(calc(var(--n)*30deg)) translateY(-42px) scaleY(.65)}}
+.npro-icon{width:44px;height:44px;object-fit:contain;filter:drop-shadow(0 0 5px #46eac455)}
+.npro-splash-logo{width:min(72vw,340px);height:auto;object-fit:contain;filter:drop-shadow(0 0 18px #48ed9f55)}
+.npro-play-badge{display:inline-block;border:1px solid #4fc5a4;border-radius:12px;padding:8px 11px;background:#123c34;color:#d6fff2;font-weight:700;text-decoration:none;margin:10px 0}
+body.npro-light{background:#eef6fa!important;color:#142b36!important}
+body.npro-light .n67-top,body.npro-light .n67-board,body.npro-light .n67-platform-card,body.npro-light .n67-controls,body.npro-light .n67-hero,body.npro-light .n67-preview:not([data-n12-color="white"]){background:#f9fcff!important;color:#163047!important;border-color:#adc7d0!important}
+body.npro-light .n67-history-heading h1,body.npro-light .n67-hero h1,body.npro-light .n67-section-title h2,body.npro-light .n67-board-heading h2,body.npro-light .n67-platform-card strong{color:#123044!important}
+body.npro-light .n67-history-heading p,body.npro-light .n67-hero p,body.npro-light .n67-platform-card p{color:#325263!important}
+body.npro-light .npro-toolbar{background:#edf9f6;border-color:#b6d3da}
+body.npro-light .n67-preview[data-n12-color="black"]{background:#17212c!important;color:#fff!important}
+body.npro-light .n67-preview[data-n12-color="orange"]{background:#ac5a13!important;color:#fff!important}
+.npro-platform-illustration{position:absolute;right:8%;top:9%;font-size:54px;opacity:.24;pointer-events:none;text-shadow:0 0 18px #3cffba}
+.n67-platform-card{position:relative;overflow:hidden}
+.n67-platform-card[data-npro-platform="blitz"]{background:radial-gradient(circle at 85% 15%,#15718a66,transparent 60%),linear-gradient(130deg,#143e53,#0c1930)!important}
+.n67-platform-card[data-npro-platform="brabet"]{background:radial-gradient(circle at 85% 15%,#16a28155,transparent 60%),linear-gradient(130deg,#163b3d,#0d1930)!important}
+.n67-platform-card[data-npro-platform="813bet"]{background:radial-gradient(circle at 85% 15%,#344eae66,transparent 60%),linear-gradient(130deg,#20295d,#0c1930)!important}
+.npro-adm-control{background:linear-gradient(135deg,#0b2d37,#0c1d30);border:1px solid #357f79;padding:18px;margin:20px 0;border-radius:17px;max-width:980px;color:#e7f7f9}
+.npro-adm-control input[type=text],.npro-adm-control input[type=url]{display:block;width:100%;border:1px solid #386b72;border-radius:10px;padding:11px 12px;margin:6px 0 12px;color:#fff;background:#102737;font:inherit;box-sizing:border-box}
+.npro-adm-control label{font-size:13px;font-weight:700;display:block}
+.npro-adm-control .npro-switch{display:flex;gap:10px;align-items:center}
+.npro-adm-control .npro-switch input{width:20px;height:20px;accent-color:#2cbd94}
+.npro-adm-control button{background:#1c9476;border:0;border-radius:10px;padding:11px 20px;color:#fff;font-weight:800}
+.npro-adm-control output{display:block;margin-top:11px;font-size:12px;white-space:pre-wrap}
+@media(max-width:650px){.npro-toolbar{gap:6px;padding:11px}.npro-toolbar button{font-size:11px;padding:9px 10px}.npro-history-controls{flex-direction:column}.npro-icon{width:38px;height:38px}}
+@media(prefers-reduced-motion:reduce){.npro-firework,.npro-firework>i{animation:none!important;opacity:0!important}}
+/* Unico acesso administrativo no publico: somente via sessao verificada. */
+body.n67 a[href="/adm.html"],body.n67 a[href^="/adm.html#"]{display:none!important}
+body.n67 .n12-float-nav[href="/adm.html"]{display:inline-flex!important}
+.v5-dock{grid-template-columns:repeat(4,minmax(0,1fr))!important}
+.v5-dock-icon{font-size:22px;filter:drop-shadow(0 0 5px #31d8bd55)}
+.v5-dock-item{border-radius:12px!important}

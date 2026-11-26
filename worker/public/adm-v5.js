@@ -51,9 +51,8 @@
     const dock = el('nav','v5-dock');
     dock.id = 'v5-dock';
     for (const [id,icon,label] of [
-      ['geral','⌂','Início'], ['branco','⚪','Branco VIP'], ['estrategias','◇','Regras'],
-      ['midias','▣','Mídias'],
-      ['telegram','➤','Robô']
+      ['geral','⌂','Início'], ['branco','🤖','Robô Branco'], ['estrategias','◇','Regras Cores'],
+      ['midias','▣','Mídias']
     ]) {
       if (id==='branco') { const a=el('a','v5-dock-item');a.href='/branco-vip.html';a.append(el('span','v5-dock-icon',icon),el('span','',label));dock.append(a);continue; }
       const b = el('button','v5-dock-item');

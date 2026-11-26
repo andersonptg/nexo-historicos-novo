@@ -217,6 +217,18 @@ def signal(db,cfg,w,event,white=None,override=None,house=False):
    log('Entrega incerta '+event+' '+str(e)[:115])
  return delivered
 
+# NEXO_PRO_V13: optional second message, per destination and idempotent.
+def npro_entry_link(db,cfg,w,sent):
+ if not sent:return
+ c=cfg.get('config',{})
+ if not c.get('entryLinkEnabled'):return
+ import urllib.parse as _up
+ name=str(c.get('entryLinkName','Entre aqui')).strip()[:70]
+ link=str(c.get('entryLinkUrl','')).strip()[:600]
+ u=_up.urlsplit(link)
+ if not name or u.scheme!='https' or not u.netloc or u.username or u.password:return
+ signal(db,cfg,w,'extra',override=name+'\n'+link)
+
 def v11_clear_houses(db,cfg,w,force=False):
  if not force and not cfg.get('config',{}).get('deleteHouseMessages',True):return
  rows=db.execute('SELECT chat,message_id FROM v11_house_messages WHERE window_id=?',(w['id'],)).fetchall()
@@ -254,6 +266,7 @@ def v11_queue_send(db,cfg):
    continue
   w['protection_only']=bool(db.execute('SELECT 1 FROM protection_only_windows WHERE window_id=?',(wid,)).fetchone())
   sent=signal(db,cfg,w,'entry')
+  npro_entry_link(db,cfg,w,sent)
   with db:
    db.execute('UPDATE windows SET entered=?,entered_at=? WHERE id=?',(1 if sent else 2,now,wid))
    db.execute('DELETE FROM v11_queue WHERE window_id=?',(wid,))
@@ -286,6 +299,7 @@ def v11_trigger_debts(db,cfg,r,enabled):
   wrow=db.execute('SELECT * FROM windows WHERE id=?',(wid,)).fetchone()
   if not wrow:continue
   w=dict(wrow);sent=signal(db,cfg,w,'entry')
+  npro_entry_link(db,cfg,w,sent)
   with db:
    db.execute('UPDATE windows SET entered=?,entered_at=? WHERE id=?',(1 if sent else 2,now,wid))
    if sent:

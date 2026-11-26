@@ -1,0 +1,11 @@
+/* NEXO PRO V13 - mensagem opcional com link apos entrada do Branco */
+(()=>{'use strict';
+function mount(){const target=document.getElementById('tab-strategies');if(!target||document.getElementById('npro-white-card'))return;
+const card=document.createElement('section');card.id='npro-white-card';card.className='npro-adm-control';card.innerHTML=`<h2>🔗 Link personalizado após a entrada</h2><p>Se ativado, o bot envia outra mensagem, logo depois da entrada confirmada, em cada destino autorizado. Funciona com todas as estratégias do Branco.</p><label class="npro-switch"><input type="checkbox" id="npro-white-enabled"> Enviar link após sinal de entrada</label><label>Nome da mensagem<input id="npro-white-label" type="text" maxlength="70" placeholder="Entre aqui"></label><label>Link externo<input id="npro-white-url" type="url" maxlength="600" placeholder="https://..."></label><button type="button" id="npro-white-save">💾 Salvar opção de link</button><output id="npro-white-status" role="status"></output>`;
+ target.append(card);const $=id=>document.getElementById(id),status=$('npro-white-status');
+ async function api(method,body){const r=await fetch('/api/adm/branco-vip'+(method==='GET'?'':'/config'),{method,credentials:'same-origin',cache:'no-store',headers:{'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});const j=await r.json().catch(()=>({}));if(!r.ok||!j.ok)throw Error(j.error||'HTTP '+r.status);return j;}
+ api('GET').then(j=>{const c=j.config||{};$('npro-white-enabled').checked=c.entryLinkEnabled===true;$('npro-white-label').value=c.entryLinkName||'Entre aqui';$('npro-white-url').value=c.entryLinkUrl||'';}).catch(e=>status.textContent='Falha ao carregar: '+e.message);
+ $('npro-white-save').onclick=async()=>{const cfg={entryLinkEnabled:$('npro-white-enabled').checked,entryLinkName:$('npro-white-label').value.trim(),entryLinkUrl:$('npro-white-url').value.trim()};status.textContent='Salvando...';try{await api('POST',cfg);status.textContent='✓ Configuração salva. Termux aplicará na próxima sincronização.';}catch(e){status.textContent='Erro: '+e.message;}};
+}
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',mount,{once:true});else mount();
+})();

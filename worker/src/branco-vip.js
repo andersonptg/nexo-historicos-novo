@@ -11,7 +11,7 @@ const defs=[
  {id:'branco-r5',name:'Pedra devedora após 4',description:'Número imediatamente depois da pedra 4: branco nas próximas N rodadas.'},
  {id:'branco-r6',name:'Pedra devedora antes do 11',description:'Número imediatamente antes da pedra 11: branco nas próximas N rodadas.'}
 ];
-const defaults=()=>({version:1,enabled:false,revision:0,protection:true,offset:4,houses4:4,houses11:4,captureEnabled:false,replyToEntry:true,debtPriority:true,debtEnterNow:true,debtHouseMessages:true,deleteHouseMessages:true,templates:{attention:{text:'⚠️ ATENÇÃO · BRANCO',type:'text',assetId:''},entry:{text:'BLITZ PRO BRANCO\n     ▫️{hora}:{minuto}▫️{numero}',type:'text',assetId:''},green:{text:'✅ GREEN BRANCO',type:'text',assetId:''},red:{text:'🔴 RED BRANCO',type:'text',assetId:''}},strategies:defs.map(x=>({...x,enabled:true})),updatedAt:0});
+const defaults=()=>({version:1,enabled:false,revision:0,protection:true,offset:4,houses4:4,houses11:4,captureEnabled:false,entryLinkEnabled:false,entryLinkName:'Entre aqui',entryLinkUrl:'',replyToEntry:true,debtPriority:true,debtEnterNow:true,debtHouseMessages:true,deleteHouseMessages:true,templates:{attention:{text:'⚠️ ATENÇÃO · BRANCO',type:'text',assetId:''},entry:{text:'BLITZ PRO BRANCO\n     ▫️{hora}:{minuto}▫️{numero}',type:'text',assetId:''},green:{text:'✅ GREEN BRANCO',type:'text',assetId:''},red:{text:'🔴 RED BRANCO',type:'text',assetId:''}},strategies:defs.map(x=>({...x,enabled:true})),updatedAt:0});
 const normalizeCfg=x=>({...defaults(),...x,captureEnabled:x?.captureEnabled===true,replyToEntry:x?.replyToEntry!==false,debtPriority:x?.debtPriority!==false,debtEnterNow:x?.debtEnterNow!==false,debtHouseMessages:x?.debtHouseMessages!==false,deleteHouseMessages:x?.deleteHouseMessages!==false,protection:true,offset:4,strategies:defs.map(d=>({...d,enabled:x?.strategies?.find(s=>s.id===d.id)?.enabled??true})),houses4:Number.isInteger(x?.houses4)?x.houses4:4,houses11:Number.isInteger(x?.houses11)?x.houses11:4});
 const j=(x,status=200)=>new Response(JSON.stringify(x),{status,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
 const fail=(e,status=400)=>j({ok:false,error:e},status);
@@ -30,6 +30,11 @@ function validCfg(b,prev){
  const cfg={...prev};
  if(typeof b.enabled==='boolean')cfg.enabled=b.enabled;
  if(b.captureEnabled!==undefined){if(typeof b.captureEnabled!=='boolean')throw Error('Captura deve ser verdadeiro ou falso');cfg.captureEnabled=b.captureEnabled;}
+ if(b.entryLinkEnabled!==undefined){if(typeof b.entryLinkEnabled!=='boolean')throw Error('Link ativo invalido');cfg.entryLinkEnabled=b.entryLinkEnabled}
+ if(b.entryLinkName!==undefined){if(typeof b.entryLinkName!=='string'||b.entryLinkName.trim().length>70)throw Error('Nome do link muito longo');cfg.entryLinkName=b.entryLinkName.trim()}
+ if(b.entryLinkUrl!==undefined){if(typeof b.entryLinkUrl!=='string'||b.entryLinkUrl.trim().length>600)throw Error('URL de entrada excede 600 caracteres');const s=b.entryLinkUrl.trim();if(s){let u;try{u=new URL(s)}catch{throw Error('URL de entrada invalida')}if(u.protocol!=='https:'||u.username||u.password||!u.hostname||u.hostname==='localhost')throw Error('Use link externo HTTPS');cfg.entryLinkUrl=u.href}else cfg.entryLinkUrl=''}
+ if(cfg.entryLinkEnabled&&(!cfg.entryLinkUrl||!cfg.entryLinkName))throw Error('Informe nome e link antes de habilitar');
+
  for(const key of ['replyToEntry','debtPriority','debtEnterNow','debtHouseMessages','deleteHouseMessages']){if(b[key]!==undefined){if(typeof b[key]!=='boolean')throw Error('Opcao '+key+' deve ser booleana');cfg[key]=b[key]}}
  cfg.protection=true;
  cfg.offset=4;

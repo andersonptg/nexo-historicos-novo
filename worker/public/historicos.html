@@ -5,10 +5,11 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#07101c">
 <meta name="description" content="NEXO Históricos: plataformas, jogos e registros confirmados, organizados em um único ambiente.">
-<title>NEXO Históricos · Central de plataformas</title>
+<title>NEXO HISTÓRICO PRO · Central de plataformas</title>
 <link rel="stylesheet" href="/nexo-v67.css?v=6.7.0">
 <script src="/nexo-v67.js?v=6.7.0" defer></script>
 <link rel="stylesheet" href="/nexo-v12-historico.css?v=12.0.1">
+<link rel="manifest" href="/nexo-pro.webmanifest"><meta name="application-name" content="NEXO HISTÓRICO PRO"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><link rel="apple-touch-icon" href="/nexo-pro-192.png"><link rel="icon" type="image/png" href="/nexo-pro-192.png"><link rel="stylesheet" href="/nexo-pro.css?v=13.0.0">
 </head>
 <body class="n67">
 <div id="n67-splash" class="n67-splash" role="status" aria-label="Abrindo NEXO Históricos">
@@ -20,7 +21,7 @@
 <div class="nx6-shell n67-shell">
  <header class="nx6-top n67-top">
   <a class="nx6-brand n67-brand" href="/historicos.html" id="n67-brand" aria-label="NEXO Históricos, página inicial">
-    <span class="n67-mark">N<span>•</span></span><span class="n67-word">NEXO <small>HISTÓRICOS</small></span>
+    <span class="n67-mark">N<span>•</span></span><span class="n67-word">NEXO <small>HISTÓRICO PRO</small></span>
   </a>
   <div class="n67-header-right">
    <span class="n67-clock" id="nx6-clock" title="Horário de Brasília">--:--:--</span>
@@ -35,7 +36,7 @@
     <div class="n67-hero-layout">
       <div><h1>Todos os históricos.<br><em>Em um só lugar.</em></h1>
       <p>Escolha uma plataforma, acompanhe resultados observados e consulte o histórico de cada jogo com a mesma organização.</p>
-      <button type="button" id="n67-explore" class="n67-primary">Explorar plataformas <span>↗</span></button></div>
+      <button type="button" id="n67-explore" class="n67-primary">Explorar plataformas <span>↗</span></button> <button type="button" class="n67-primary" data-npro-install hidden>📲 Instalar aplicativo</button></div>
       <div class="n67-hero-decoration" aria-hidden="true"><span>N</span><i class="n67-orbit a"></i><i class="n67-orbit b"></i><i class="n67-orbit c"></i></div>
     </div>
     <div class="n67-summary"><span><b id="n67-platforms-count">—</b> Plataformas</span><span><b id="n67-games-count">—</b> Jogos catalogados</span><span><b id="n67-ready-count">—</b> Leitores habilitados</span></div>
@@ -80,7 +81,8 @@
  <nav id="nx6-nav" class="n67-nav" aria-label="Plataformas e seus jogos"><p class="n67-muted">Carregando catálogo...</p></nav>
  <div class="n67-drawer-footer"><a href="/historicos.html">⌂ Central de históricos</a><a href="/adm.html">⚙ Entrar no ADM</a></div>
 </aside>
-<a class="n12-float-nav" href="/adm.html" aria-label="Abrir painel administrativo">⚙ ADM</a>
+<!-- ADM shown by /nexo-pro.js only after authenticated session -->
 <script defer src="/nexo-v12-historico.js?v=12.0.1"></script>
+<script defer src="/nexo-pro.js?v=13.0.0"></script>
 </body>
 </html>
