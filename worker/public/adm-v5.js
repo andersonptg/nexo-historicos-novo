@@ -1,3 +1,4 @@
+// NEXO_BRANCO_V11_UNIFICADO
 /* NEXO V5 | interface administrativa renovada, sem tokens no navegador. */
 'use strict';
 (() => {
@@ -50,10 +51,11 @@
     const dock = el('nav','v5-dock');
     dock.id = 'v5-dock';
     for (const [id,icon,label] of [
-      ['geral','⌂','Início'], ['estrategias','◇','Regras'],
-      ['mensagens','✉','Sinais'], ['midias','▣','Mídias'],
+      ['geral','⌂','Início'], ['branco','⚪','Branco VIP'], ['estrategias','◇','Regras'],
+      ['midias','▣','Mídias'],
       ['telegram','➤','Robô']
     ]) {
+      if (id==='branco') { const a=el('a','v5-dock-item');a.href='/branco-vip.html';a.append(el('span','v5-dock-icon',icon),el('span','',label));dock.append(a);continue; }
       const b = el('button','v5-dock-item');
       b.type = 'button';b.dataset.v5Page = id;
       b.append(el('span','v5-dock-icon',icon),el('span','',label));

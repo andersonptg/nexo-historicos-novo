@@ -1,6 +1,10 @@
+# NEXO_BRANCO_V11_UNIFICADO
 name: Publicar NEXO HISTORICOS NOVO V1
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - nexo-v7-1-fortune-double-20261121
 jobs:
   validar-e-publicar:
     runs-on: ubuntu-latest

@@ -56,6 +56,13 @@ def connect():
  CREATE TABLE IF NOT EXISTS attention_messages(window_id TEXT,chat TEXT,message_id INTEGER,PRIMARY KEY(window_id,chat));
   CREATE TABLE IF NOT EXISTS white_hits(window_id TEXT,seq INTEGER,minute_epoch INTEGER,observed_at INTEGER,PRIMARY KEY(window_id,seq));''')
  db.execute('CREATE TABLE IF NOT EXISTS protection_only_windows(window_id TEXT PRIMARY KEY)')
+ db.executescript('''
+ CREATE TABLE IF NOT EXISTS v11_debts (strategy TEXT, number INTEGER, reference_seq INTEGER, created INTEGER, triggered INTEGER DEFAULT 0, PRIMARY KEY(strategy,reference_seq));
+ CREATE TABLE IF NOT EXISTS v11_queue (window_id TEXT PRIMARY KEY, target INTEGER, origin INTEGER, added INTEGER);
+ CREATE TABLE IF NOT EXISTS v11_entry_messages (window_id TEXT,chat TEXT,message_id INTEGER,PRIMARY KEY(window_id,chat));
+ CREATE TABLE IF NOT EXISTS v11_house_messages (window_id TEXT,chat TEXT,message_id INTEGER,PRIMARY KEY(window_id,chat,message_id));
+ ''')
+
  return db
 
 def meta(db,key,default='0'):
@@ -140,19 +147,17 @@ def erase_attention(db,cfg,w):
   with db:db.execute('DELETE FROM attention_messages WHERE window_id=? AND chat=?',(w['id'],row['chat']))
 
 # NEXO_BIBLIOTECA_CENTRAL_V7: text OR media; GREEN timestamp from the actual white round.
-def signal(db,cfg,w,event,white=None):
- """Um unico formato por evento; cada pedra branca tem chave exclusiva.
- Incerto nunca e reenviado automaticamente, para evitar duplicidade.
- """
- delivered=0
- bot=cfg.get('botToken');tm=cfg['config'].get('templates',{}).get(event,{})
- chats=recipients(cfg)
- mode=tm.get('type','text')
+def signal(db,cfg,w,event,white=None,override=None,house=False):
+ """Idempotente, com respostas opcionais a cada entrada confirmada no Telegram."""
+ bot=cfg.get('botToken');options=cfg.get('config',{})
+ tm=options.get('templates',{}).get(event,{})
+ mode='text' if override is not None else tm.get('type','text')
  if mode not in ('text','sticker','gif'):mode='text'
- if mode=='text':
+ if override is not None:message=override
+ elif mode=='text':
   if event=='entry' and w['strategy'] in ('branco-r5','branco-r6'):
-   houses=max(1,min(30,int(cfg['config'].get('houses4' if w['strategy']=='branco-r5' else 'houses11',4))))
-   message='Pedra '+str(int(w['ref']))+' puxa o próximo branco em até '+str(houses)+' casas 🏡 ⚪'
+   houses=max(1,min(30,int(options.get('houses4' if w['strategy']=='branco-r5' else 'houses11',4))))
+   message='Pedra '+str(int(w['ref']))+' puxa o próximo branco em até '+str(houses)+' casas 🏡⚪'
   elif event=='entry':message=entry_message(w)
   elif event=='green':message=interpolate(tm.get('text') or 'GREEN ✅✅✅✅ {hora_branco}',w,white)
   else:message=interpolate(tm.get('text',''),w,white)
@@ -161,29 +166,53 @@ def signal(db,cfg,w,event,white=None):
  if mode in ('sticker','gif'):
   media=next((x for x in cfg.get('media',[]) if x.get('id')==tm.get('assetId') and x.get('kind')==mode),None)
   if not media or not media.get('fileId'):
-   log('AVISO: evento '+event+' configurado como '+mode+' mas sem midia validada para o Branco')
-   return 0
+   log('V11 midia ausente para '+event);return 0
  if event=='entry':erase_attention(db,cfg,w)
  unique=':seq:'+str(white['seq']) if white is not None and event=='green' else ''
+ if override is not None:unique+=':extra:'+str(override)
  key=w['id']+':'+event+unique
- for chat in chats:
+ delivered=0
+ for chat in recipients(cfg):
+  if event in ('green','red','extra','house'):
+   confirmed=db.execute('SELECT state FROM delivery WHERE event=? AND chat=?',(w['id']+':entry',chat)).fetchone()
+   if not confirmed or confirmed['state']!='sent':continue
   if db.execute('SELECT 1 FROM delivery WHERE event=? AND chat=?',(key,chat)).fetchone():continue
   with db:db.execute('INSERT INTO delivery VALUES(?,?,?,?)',(key,chat,'pending',stamp()))
   try:
+   args={'chat_id':chat}
+   if options.get('replyToEntry',False) and event!='entry':
+    orig=db.execute('SELECT message_id FROM v11_entry_messages WHERE window_id=? AND chat=?',(w['id'],chat)).fetchone()
+    if orig:args['reply_parameters']={'message_id':int(orig['message_id']),'allow_sending_without_reply':True}
    if mode=='text':
-    if not message:raise RuntimeError('Texto do evento vazio')
-    result=tg(bot,'sendMessage',{'chat_id':chat,'text':message,'disable_web_page_preview':True})
-    if event=='attention' and result.get('message_id'):
-     with db:db.execute('INSERT OR REPLACE INTO attention_messages(window_id,chat,message_id) VALUES (?,?,?)',(w['id'],chat,int(result['message_id'])))
+    if not message:raise RuntimeError('Texto vazio no evento '+event)
+    args.update(text=message,disable_web_page_preview=True)
+    result=tg(bot,'sendMessage',args)
    else:
     field='sticker' if mode=='sticker' else 'animation'
-    tg(bot,'sendSticker' if mode=='sticker' else 'sendAnimation',{'chat_id':chat,field:media['fileId']})
+    args[field]=media['fileId']
+    result=tg(bot,'sendSticker' if mode=='sticker' else 'sendAnimation',args)
+   if event=='entry' and result.get('message_id'):
+    with db:db.execute('INSERT OR REPLACE INTO v11_entry_messages VALUES(?,?,?)',(w['id'],chat,int(result['message_id'])))
+   if event=='attention' and result.get('message_id'):
+    with db:db.execute('INSERT OR REPLACE INTO attention_messages VALUES(?,?,?)',(w['id'],chat,int(result['message_id'])))
+   if house and result.get('message_id'):
+    with db:db.execute('INSERT OR IGNORE INTO v11_house_messages VALUES(?,?,?)',(w['id'],chat,int(result['message_id'])))
    with db:db.execute('UPDATE delivery SET state=?,updated=? WHERE event=? AND chat=?',('sent',stamp(),key,chat))
    delivered+=1
   except Exception as e:
    with db:db.execute('UPDATE delivery SET state=?,updated=? WHERE event=? AND chat=?',('uncertain',stamp(),key,chat))
    log('Entrega incerta '+event+' '+str(e)[:115])
  return delivered
+
+def v11_clear_houses(db,cfg,w):
+ if not cfg.get('config',{}).get('deleteHouseMessages',True):return
+ rows=db.execute('SELECT chat,message_id FROM v11_house_messages WHERE window_id=?',(w['id'],)).fetchall()
+ for r in rows:
+  try:
+   tg(cfg.get('botToken'),'deleteMessage',{'chat_id':r['chat'],'message_id':int(r['message_id'])})
+   with db:db.execute('DELETE FROM v11_house_messages WHERE window_id=? AND chat=? AND message_id=?',(w['id'],r['chat'],r['message_id']))
+  except Exception as e:log('V11 casa nao apagada: '+str(e)[:80])
+
 
 def store_window(db,strategy,target,ref,seq,kind='main'):
  # If window start already passed, do not generate old entries from delayed collection.
@@ -192,12 +221,72 @@ def store_window(db,strategy,target,ref,seq,kind='main'):
  id=f'{strategy}:{target}:{kind}'
  with db:db.execute('INSERT OR IGNORE INTO windows(id,strategy,target,ref,origin,kind,created) VALUES(?,?,?,?,?,?,?)',(id,strategy,target,ref,seq,kind,stamp()))
 
+def v11_queue_send(db,cfg):
+ """Seleciona o alvo mais proximo e nao disputa com janelas de minuto ativas."""
+ now=stamp()
+ active=db.execute("SELECT 1 FROM windows WHERE settled='' AND entered=1 AND kind='main' LIMIT 1").fetchone()
+ if active:return
+ if cfg['config'].get('debtPriority',True) and db.execute("SELECT 1 FROM windows WHERE kind='debt' AND settled='' AND entered=1 LIMIT 1").fetchone():return
+ rows=db.execute("SELECT q.window_id,w.* FROM v11_queue q JOIN windows w ON w.id=q.window_id WHERE w.settled='' ORDER BY q.target,q.origin LIMIT 60").fetchall()
+ for row in rows:
+  w=dict(row);target=int(w['target']);wid=w['id']
+  if now<target-120:return
+  if now<target-60:pass
+  elif now<target+120:
+   with db:db.execute('INSERT OR IGNORE INTO protection_only_windows VALUES (?)',(wid,))
+  else:
+   with db:
+    db.execute("UPDATE windows SET settled='expired' WHERE id=?",(wid,))
+    db.execute('DELETE FROM v11_queue WHERE window_id=?',(wid,))
+   continue
+  w['protection_only']=bool(db.execute('SELECT 1 FROM protection_only_windows WHERE window_id=?',(wid,)).fetchone())
+  sent=signal(db,cfg,w,'entry')
+  with db:
+   db.execute('UPDATE windows SET entered=?,entered_at=? WHERE id=?',(1 if sent else 2,now,wid))
+   db.execute('DELETE FROM v11_queue WHERE window_id=?',(wid,))
+   if sent:
+    day=dt.datetime.fromtimestamp(now,TZ).strftime('%Y-%m-%d')
+    db.execute('INSERT INTO scores(day,strategy,entries) VALUES (?,?,1) ON CONFLICT(day,strategy) DO UPDATE SET entries=entries+1',(day,w['strategy']))
+  log('V11 fila '+w['strategy']+' alvo '+slot(target)+' '+('protecao' if w['protection_only'] else 'principal')+' | '+('entrega confirmada' if sent else 'entrega incerta'))
+  return
+
+def v11_register_debt(db,strategy,number,seq):
+ if not 1<=int(number)<=14:return
+ with db:db.execute('INSERT OR IGNORE INTO v11_debts(strategy,number,reference_seq,created) VALUES(?,?,?,?)',(strategy,int(number),int(seq),stamp()))
+
+def v11_trigger_debts(db,cfg,r,enabled):
+ """O numero so dispara em uma rodada POSTERIOR a sua referencia."""
+ num=int(r['number']);seq=int(r['seq']);now=stamp()
+ if num==0:return
+ rows=db.execute('SELECT * FROM v11_debts WHERE number=? AND triggered=0 AND reference_seq<? ORDER BY reference_seq',(num,seq)).fetchall()
+ for row in rows:
+  strategy=row['strategy']
+  if strategy not in enabled:continue
+  # Uma ativacao por numero e tipo; referencias anteriores do mesmo numero sao consumidas.
+  active=db.execute("SELECT 1 FROM windows WHERE kind='debt' AND settled='' AND strategy=? LIMIT 1",(strategy,)).fetchone()
+  if active:continue
+  if not cfg['config'].get('debtPriority',True) and db.execute("SELECT 1 FROM windows WHERE settled='' AND entered=1 AND kind='main' LIMIT 1").fetchone():continue
+  wid=f'{strategy}:repeat:{seq}:debt'
+  with db:
+   db.execute('UPDATE v11_debts SET triggered=1 WHERE strategy=? AND number=? AND reference_seq<=?',(strategy,num,seq))
+   db.execute('INSERT OR IGNORE INTO windows(id,strategy,target,ref,origin,kind,created) VALUES(?,?,?,?,?,?,?)',(wid,strategy,now,num,seq,'debt',now))
+  wrow=db.execute('SELECT * FROM windows WHERE id=?',(wid,)).fetchone()
+  if not wrow:continue
+  w=dict(wrow);sent=signal(db,cfg,w,'entry')
+  with db:
+   db.execute('UPDATE windows SET entered=?,entered_at=? WHERE id=?',(1 if sent else 2,now,wid))
+   if sent:
+    day=dt.datetime.fromtimestamp(now,TZ).strftime('%Y-%m-%d')
+    db.execute('INSERT INTO scores(day,strategy,entries) VALUES (?,?,1) ON CONFLICT(day,strategy) DO UPDATE SET entries=entries+1',(day,strategy))
+  if sent and cfg['config'].get('debtEnterNow',False):signal(db,cfg,w,'extra',override='Entrar agora 🚀')
+  log('V11 devedora '+str(num)+' repetiu seq '+str(seq)+' | '+('entrada confirmada' if sent else 'entrega incerta'))
+  return
+
 def process_new(db,cfg):
- """Dispara entrada no fechamento do padrao, usando minuto ALVO calculado.
- Uma janela por vez: nunca enfileira sinal sobreposto nem retroativo.
- """
  current=int(meta(db,'seq','0'));items=source_rows(current)
- if not items:return
+ if not items:
+  if cfg['config'].get('enabled'):v11_queue_send(db,cfg)
+  return
  if current==0:
   with db:setmeta(db,'seq',max(x['seq'] for x in items));setmeta(db,'history','[]')
   log('Baseline: rodadas antigas ignoradas');return
@@ -209,50 +298,26 @@ def process_new(db,cfg):
  for r in items:
   recent.append(r);recent=recent[-8:]
   settle(db,cfg,now=stamp())
-  busy=bool(db.execute("SELECT 1 FROM windows WHERE settled='' AND kind IN ('main','debt') LIMIT 1").fetchone())
-  if cfg['config'].get('enabled') and not busy:
-   candidates=targets(recent)
-   candidates.sort(key=lambda x:(0 if x[0] in ('branco-r4','branco-r5') else 1,x[0]))
-   for strategy,computed,ref in candidates:
-    if strategy not in enabled:continue
-    now=stamp()
-    if now-int(r['first_seen'])>85:continue
-    lane='debt' if strategy in ('branco-r5','branco-r6') else 'main'
-    if lane=='debt' and strategy=='branco-r5' and int(r['number'])==0:continue
-    # Ao chegar a pedra seguinte a do branco, usar o calculo do padrao.
-    target=int(computed) if lane=='main' else now
-    protection_only=False
-    if lane=='main':
-     if target-now>86400:continue
-     if now<target-60:
-      protection_only=False
-     elif now<target+120:
-      # Inicio da protecao = alvo +3 min. Exigir 60s de antecedencia.
-      protection_only=True
-     else:
-      log('Padrao '+strategy+' descartado: principal e protecao sem antecedencia segura')
-      continue
-    wid=f'{strategy}:seq:{r["seq"]}:{lane}'
-    with db:
-     db.execute('INSERT OR IGNORE INTO windows(id,strategy,target,ref,origin,kind,created) VALUES(?,?,?,?,?,?,?)',
-                (wid,strategy,target,int(ref),int(r['seq']),lane,now))
-    if lane=='main' and protection_only:
-     with db:db.execute('INSERT OR IGNORE INTO protection_only_windows(window_id) VALUES (?)',(wid,))
-    wrow=db.execute('SELECT * FROM windows WHERE id=? AND settled=?',(wid,'')).fetchone()
-    if wrow is None:continue
-    w=dict(wrow)
-    if lane=='main':w['protection_only']=protection_only
-    sent=signal(db,cfg,w,'entry')
-    # '2' e entrega incerta. Nao presumir que houve postagem.
-    with db:
-     db.execute('UPDATE windows SET entered=?,entered_at=? WHERE id=?',(1 if sent else 2,now,wid))
-     if sent:
-      day=dt.datetime.fromtimestamp(now,TZ).strftime('%Y-%m-%d')
-      db.execute('INSERT INTO scores(day,strategy,entries) VALUES (?,?,1) ON CONFLICT(day,strategy) DO UPDATE SET entries=entries+1',(day,strategy))
-    log('Padrao '+strategy+' confirmado na rodada '+str(r['seq'])+' | '+('SOMENTE PROTECAO ' if protection_only else 'PRINCIPAL E PROTECAO ')+slot(target)+' | '+('entrada enviada' if sent else 'entrega incerta')+' | janela exclusiva')
-    break
+  if cfg['config'].get('enabled'):
+   # Repeticoes antigas antes da nova referencia; referencia criada nesta rodada NAO conta.
+   v11_trigger_debts(db,cfg,r,enabled)
+   if len(recent)>=2:
+    a,b=recent[-2:]
+    if int(a['number'])==4 and 'branco-r5' in enabled and int(b['number']) not in (0,4):v11_register_debt(db,'branco-r5',b['number'],b['seq'])
+    if int(b['number'])==11 and 'branco-r6' in enabled and int(a['number']) not in (0,11):v11_register_debt(db,'branco-r6',a['number'],b['seq'])
+   if stamp()-int(r['first_seen'])<=85:
+    for strategy,target,ref in targets(recent):
+     if strategy not in enabled or strategy in ('branco-r5','branco-r6'):continue
+     if target-stamp()<65 or target-stamp()>86400:continue
+     wid=f'{strategy}:seq:{r["seq"]}:main'
+     with db:
+      db.execute('INSERT OR IGNORE INTO windows(id,strategy,target,ref,origin,kind,created) VALUES(?,?,?,?,?,?,?)',(wid,strategy,int(target),int(ref),int(r['seq']),'main',stamp()))
+      db.execute('INSERT OR IGNORE INTO v11_queue VALUES(?,?,?,?)',(wid,int(target),int(r['seq']),stamp()))
+   v11_queue_send(db,cfg)
   with db:
    setmeta(db,'seq',r['seq']);setmeta(db,'history',json.dumps(recent,separators=(',',':')))
+ if cfg['config'].get('enabled'):v11_queue_send(db,cfg)
+
 
 def settle(db,cfg,now=None,sync_only=False):
  """Mantem a janela principal e a protecao ate o ultimo giro.
@@ -276,12 +341,27 @@ def settle(db,cfg,now=None,sync_only=False):
    with closing(sqlite3.connect('file:'+str(ORIGINAL)+'?mode=ro',uri=True,timeout=8)) as src:
     src.row_factory=sqlite3.Row
     readings=[dict(x) for x in src.execute('SELECT seq,number,first_seen,minute_epoch FROM rounds WHERE game_id=? AND seq>? ORDER BY seq LIMIT ?',('blitz-double',int(w['origin']),houses))]
-   white=next((x for x in readings if int(x['number'])==0),None)
-   if white:result='green'
-   elif len(readings)>=houses:result='red'
+   green_found=False
+   for idx,stone in enumerate(readings,1):
+    existed=db.execute('SELECT 1 FROM white_hits WHERE window_id=? AND seq=?',(w['id'],int(stone['seq']))).fetchone()
+    if existed:continue
+    with db:db.execute('INSERT OR IGNORE INTO white_hits VALUES(?,?,?,?)',(w['id'],int(stone['seq']),int(stone['minute_epoch']),stamp()))
+    if int(stone['number'])==0:
+     v11_clear_houses(db,cfg,w)
+     d=signal(db,cfg,w,'green',white=stone)
+     with db:
+      day=dt.datetime.fromtimestamp(int(w['entered_at']),TZ).strftime('%Y-%m-%d')
+      db.execute('UPDATE scores SET green=green+1 WHERE day=? AND strategy=?',(day,strategy))
+     log('V11 devedora GREEN seq '+str(stone['seq'])+' entregas '+str(d))
+    elif cfg['config'].get('debtHouseMessages',True):
+     # Avisos temporarios ate um GREEN; cada casa e idempotente.
+     if not any(int(a['number'])==0 for a in readings[:idx]):
+      signal(db,cfg,w,'house',override=str(idx)+'° CASA 🏡',house=True)
+   if len(readings)>=houses:
+    result='green' if any(int(a['number'])==0 for a in readings) else 'red'
+    if result=='red':signal(db,cfg,w,'red')
+    v11_clear_houses(db,cfg,w)
    elif now-int(w['created'])>3600:result='incomplete'
-   if result in ('green','red'):
-    signal(db,cfg,w,result,white=white)
   else:
    protection_only=bool(db.execute('SELECT 1 FROM protection_only_windows WHERE window_id=?',(w['id'],)).fetchone())
    before=target-60;end=target+120
@@ -324,9 +404,7 @@ def settle(db,cfg,now=None,sync_only=False):
    if result=='red':
     day=dt.datetime.fromtimestamp(int(w['entered_at']),TZ).strftime('%Y-%m-%d')
     db.execute('UPDATE scores SET red=red+1 WHERE day=? AND strategy=?',(day,strategy))
-   if result=='green' and kind=='debt':
-    day=dt.datetime.fromtimestamp(int(w['entered_at']),TZ).strftime('%Y-%m-%d')
-    db.execute('UPDATE scores SET green=green+1 WHERE day=? AND strategy=?',(day,strategy))
+
   log('Sinal '+w['id']+' finalizado: '+result+' | proxima estrategia liberada')
 
 def score_snapshot(db):
@@ -422,6 +500,7 @@ def get_updates(db,cfg):
   else:
    with db:setmeta(db,'telegram_offset',nextoff)
 
+# NEXO_BRANCO_V11_UNIFICADO
 def run():
  DATA.mkdir(parents=True,exist_ok=True);APP.mkdir(parents=True,exist_ok=True);APP.chmod(0o700)
  with LOCK.open('a+') as lock:

@@ -1,3 +1,4 @@
+// NEXO_BRANCO_V11_UNIFICADO
 // NEXO BRANCO VIP V1 — isolated R2 namespace, standalone Telegram bot.
 const ROOT='nexo-branco-vip/v1/';
 const KEY={cfg:ROOT+'config.json',token:ROOT+'bot-aes.json',groups:ROOT+'groups.json',media:ROOT+'media.json',owner:'nexo-v3/telegram/owner.json'};
@@ -10,8 +11,8 @@ const defs=[
  {id:'branco-r5',name:'Pedra devedora após 4',description:'Número imediatamente depois da pedra 4: branco nas próximas N rodadas.'},
  {id:'branco-r6',name:'Pedra devedora antes do 11',description:'Número imediatamente antes da pedra 11: branco nas próximas N rodadas.'}
 ];
-const defaults=()=>({version:1,enabled:false,revision:0,protection:true,offset:4,houses4:4,houses11:4,captureEnabled:false,templates:{attention:{text:'⚠️ ATENÇÃO · BRANCO',type:'text',assetId:''},entry:{text:'BLITZ PRO BRANCO\n     ▫️{hora}:{minuto}▫️{numero}',type:'text',assetId:''},green:{text:'✅ GREEN BRANCO',type:'text',assetId:''},red:{text:'🔴 RED BRANCO',type:'text',assetId:''}},strategies:defs.map(x=>({...x,enabled:true})),updatedAt:0});
-const normalizeCfg=x=>({...defaults(),...x,captureEnabled:x?.captureEnabled===true,protection:true,offset:4,strategies:defs.map(d=>({...d,enabled:x?.strategies?.find(s=>s.id===d.id)?.enabled??true})),houses4:Number.isInteger(x?.houses4)?x.houses4:4,houses11:Number.isInteger(x?.houses11)?x.houses11:4});
+const defaults=()=>({version:1,enabled:false,revision:0,protection:true,offset:4,houses4:4,houses11:4,captureEnabled:false,replyToEntry:true,debtPriority:true,debtEnterNow:true,debtHouseMessages:true,deleteHouseMessages:true,templates:{attention:{text:'⚠️ ATENÇÃO · BRANCO',type:'text',assetId:''},entry:{text:'BLITZ PRO BRANCO\n     ▫️{hora}:{minuto}▫️{numero}',type:'text',assetId:''},green:{text:'✅ GREEN BRANCO',type:'text',assetId:''},red:{text:'🔴 RED BRANCO',type:'text',assetId:''}},strategies:defs.map(x=>({...x,enabled:true})),updatedAt:0});
+const normalizeCfg=x=>({...defaults(),...x,captureEnabled:x?.captureEnabled===true,replyToEntry:x?.replyToEntry!==false,debtPriority:x?.debtPriority!==false,debtEnterNow:x?.debtEnterNow!==false,debtHouseMessages:x?.debtHouseMessages!==false,deleteHouseMessages:x?.deleteHouseMessages!==false,protection:true,offset:4,strategies:defs.map(d=>({...d,enabled:x?.strategies?.find(s=>s.id===d.id)?.enabled??true})),houses4:Number.isInteger(x?.houses4)?x.houses4:4,houses11:Number.isInteger(x?.houses11)?x.houses11:4});
 const j=(x,status=200)=>new Response(JSON.stringify(x),{status,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
 const fail=(e,status=400)=>j({ok:false,error:e},status);
 const get=async(env,k,d)=>{const r=await env.R2.get(k);if(!r)return structuredClone(d);try{return await r.json()}catch{throw Error('JSON corrompido em '+k)}};
@@ -29,6 +30,7 @@ function validCfg(b,prev){
  const cfg={...prev};
  if(typeof b.enabled==='boolean')cfg.enabled=b.enabled;
  if(b.captureEnabled!==undefined){if(typeof b.captureEnabled!=='boolean')throw Error('Captura deve ser verdadeiro ou falso');cfg.captureEnabled=b.captureEnabled;}
+ for(const key of ['replyToEntry','debtPriority','debtEnterNow','debtHouseMessages','deleteHouseMessages']){if(b[key]!==undefined){if(typeof b[key]!=='boolean')throw Error('Opcao '+key+' deve ser booleana');cfg[key]=b[key]}}
  cfg.protection=true;
  cfg.offset=4;
  for(const field of ['houses4','houses11']){if(b[field]!==undefined){if(!Number.isInteger(b[field])||b[field]<1||b[field]>30)throw Error('Casas devem ficar de 1 a 30');cfg[field]=b[field]}}
