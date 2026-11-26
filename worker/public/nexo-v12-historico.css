@@ -1,0 +1,26 @@
+/* NEXO_V12_GREEN_HISTORICO - visual exclusivo do historico */
+/* Menos repeticao: ADM somente flutuante na parte inferior. */
+body.n67 .n67-adm,body.n67 .n67-adm-inline{display:none!important}
+.n12-float-nav{position:fixed;right:16px;bottom:calc(18px + env(safe-area-inset-bottom,0px));z-index:49;display:inline-flex;gap:9px;align-items:center;justify-content:center;min-width:116px;padding:12px 19px;border-radius:99px;border:1.5px solid #74ffe5;background:linear-gradient(120deg,#062e37,#065246);color:#faffff!important;text-decoration:none!important;font:800 14px system-ui,sans-serif;box-shadow:0 0 11px #36e6c680,0 0 29px #2affa54c,0 12px 25px #0009;backdrop-filter:blur(12px)}
+.n12-float-nav:focus-visible{outline:3px solid white;outline-offset:3px}
+/* Pedras menores, mantendo legibilidade em celular. */
+body.n67 .n67-grid{gap:11px 7px}
+body.n67 .n67-stone-tile{max-width:88px;transform:scale(.91);transform-origin:center}
+body.n67 .n67-white-bolt{background:#121820!important;color:#ffffff!important;border:1px solid #ffffffb0!important;box-shadow:0 0 0 1px #111!important}
+/* Card inteiro muda junto do ultimo resultado confirmado. */
+body.n67 .n67-preview{transition:background .4s ease,border-color .4s ease;isolation:isolate}
+body.n67 .n67-preview[data-n12-color="orange"]{background:linear-gradient(120deg,#653006,#ac5609 56%,#d8831e)!important;border-color:#ffbc67}
+body.n67 .n67-preview[data-n12-color="black"]{background:linear-gradient(125deg,#111318,#1b2430 55%,#080c13)!important;border-color:#475568}
+body.n67 .n67-preview[data-n12-color="white"]{background:linear-gradient(115deg,#e8f7fd,#fff 50%,#e4f8ff)!important;border-color:#a7e5ff;color:#152430!important}
+body.n67 .n67-preview[data-n12-color="white"] .n67-preview-intro h2,
+body.n67 .n67-preview[data-n12-color="white"] .n67-eyebrow{color:#172b36!important}
+body.n67 .n67-preview[data-n12-color="white"] .n67-preview-intro p{color:#48606e!important}
+body.n67 .n67-preview[data-n12-color="white"] .n67-status{color:#12473e;background:#d7f9ee;border-color:#65c3a7}
+body.n67 .n67-preview[data-n12-color="white"] .n67-status i{background:#1f9175}
+/* Sem celebracao em tela inteira; a celebracao fica somente dentro do card do branco. */
+body.n67 #n67-celebration{display:none!important}
+body.n67 .n67-preview[data-n12-color="white"]::before{content:"";position:absolute;inset:0;pointer-events:none;z-index:0;opacity:.86;background-image:radial-gradient(circle,#ffd248 2px,transparent 4px),radial-gradient(circle,#36c2e9 2px,transparent 4px),radial-gradient(circle,#f39fda 2px,transparent 4px),radial-gradient(circle,#62c99c 2px,transparent 4px);background-size:90px 84px,112px 100px,76px 98px,134px 83px;background-position:4px 8px,45px 39px,12px 63px,70px 21px;animation:n12-fireworks 1.6s ease-in-out infinite alternate}
+@keyframes n12-fireworks{from{opacity:.15;transform:scale(.95)}to{opacity:.9;transform:scale(1.05)}}
+body.n67 .n67-preview[data-n12-color="white"] .n67-latest-tile{background:#fff!important;color:#151b24!important;border-color:#b3c1cc!important;box-shadow:0 0 20px #f7bd64,0 0 36px #55d5ff8c}
+@media(max-width:650px){body.n67 .n67-stone-tile{transform:scale(.90)}.n12-float-nav{right:12px;bottom:calc(13px + env(safe-area-inset-bottom,0px));padding:11px 17px}}
+@media(prefers-reduced-motion:reduce){body.n67 .n67-preview::before{animation:none!important}}

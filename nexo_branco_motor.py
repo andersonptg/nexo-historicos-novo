@@ -1,3 +1,4 @@
+# NEXO_V12_GREEN_HISTORICO
 #!/usr/bin/env python3
 """NEXO BRANCO VIP: isolated Termux motor; does not send games to Worker.
 The historical patterns below are NOT predictions of random outcomes.
@@ -112,6 +113,9 @@ def interpolate(template,window,white=None):
  'janela':before.strftime('%H:%M')+' até '+after.strftime('%H:%M'),
  'estrategia':{'branco-r1':'Pedra 4','branco-r2':'Pedra 11','branco-r3':'Branco + vizinhos','branco-r4':'Branco minuto 0','branco-r5':'Devedora apos 4','branco-r6':'Devedora antes do 11'}.get(window['strategy'],'Branco'),
  'hora_branco':actual.strftime('%H:%M') if actual else '--:--'}
+ if white is not None:
+  table['hora']=actual.strftime('%H')
+  table['minuto']=actual.strftime('%M')
  import re
  return re.sub(r'\{(hora|minuto|numero|janela|estrategia|hora_branco)\}',lambda m:table[m.group(1)],template or '')
 
@@ -159,7 +163,16 @@ def signal(db,cfg,w,event,white=None,override=None,house=False):
    houses=max(1,min(30,int(options.get('houses4' if w['strategy']=='branco-r5' else 'houses11',4))))
    message='Pedra '+str(int(w['ref']))+' puxa o próximo branco em até '+str(houses)+' casas 🏡⚪'
   elif event=='entry':message=entry_message(w)
-  elif event=='green':message=interpolate(tm.get('text') or 'GREEN ✅✅✅✅ {hora_branco}',w,white)
+  elif event=='green':
+   # NEXO V12: horario da pedra branca confirmada, nunca horario do alvo.
+   raw=tm.get('text') or 'GREEN ✅✅✅✅ {hora_branco}'
+   if white is not None:
+    # Editor antigo guardava hora fixa; normalizar uma hora literal no FINAL do texto.
+    if not any(p in raw for p in ('{hora_branco}','{hora}','{minuto}')):
+     import re as _re
+     raw=_re.sub(r'(?<!\d)(?:[01]\d|2[0-3]):[0-5]\d\s*$', '{hora_branco}',raw)
+     if '{hora_branco}' not in raw:raw=raw.rstrip()+' {hora_branco}'
+   message=interpolate(raw,w,white)
   else:message=interpolate(tm.get('text',''),w,white)
  else:message=''
  media=None
@@ -204,8 +217,8 @@ def signal(db,cfg,w,event,white=None,override=None,house=False):
    log('Entrega incerta '+event+' '+str(e)[:115])
  return delivered
 
-def v11_clear_houses(db,cfg,w):
- if not cfg.get('config',{}).get('deleteHouseMessages',True):return
+def v11_clear_houses(db,cfg,w,force=False):
+ if not force and not cfg.get('config',{}).get('deleteHouseMessages',True):return
  rows=db.execute('SELECT chat,message_id FROM v11_house_messages WHERE window_id=?',(w['id'],)).fetchall()
  for r in rows:
   try:
@@ -308,7 +321,7 @@ def process_new(db,cfg):
    if stamp()-int(r['first_seen'])<=85:
     for strategy,target,ref in targets(recent):
      if strategy not in enabled or strategy in ('branco-r5','branco-r6'):continue
-     if target-stamp()<65 or target-stamp()>86400:continue
+     if target-stamp()<=-120 or target-stamp()>86400:continue
      wid=f'{strategy}:seq:{r["seq"]}:main'
      with db:
       db.execute('INSERT OR IGNORE INTO windows(id,strategy,target,ref,origin,kind,created) VALUES(?,?,?,?,?,?,?)',(wid,strategy,int(target),int(ref),int(r['seq']),'main',stamp()))
@@ -358,9 +371,9 @@ def settle(db,cfg,now=None,sync_only=False):
      if not any(int(a['number'])==0 for a in readings[:idx]):
       signal(db,cfg,w,'house',override=str(idx)+'° CASA 🏡',house=True)
    if len(readings)>=houses:
-    result='green' if any(int(a['number'])==0 for a in readings) else 'red'
-    if result=='red':signal(db,cfg,w,'red')
-    v11_clear_houses(db,cfg,w)
+    result='green' if any(int(a['number'])==0 for a in readings) else 'completed-no-white'
+    # Devedoras nunca enviam RED. Apenas limpam os avisos das casas.
+    v11_clear_houses(db,cfg,w,force=(result=='completed-no-white'))
    elif now-int(w['created'])>3600:result='incomplete'
   else:
    protection_only=bool(db.execute('SELECT 1 FROM protection_only_windows WHERE window_id=?',(w['id'],)).fetchone())
