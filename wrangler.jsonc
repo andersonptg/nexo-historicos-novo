@@ -45,6 +45,6 @@
   ],
   "vars": {
     "NEXO_ACTIVE_GAME": "blitz-double",
-    "NEXO_CLOUD_AUTOSTART": "0"
+    "NEXO_CLOUD_AUTOSTART": "1"
   }
 }
