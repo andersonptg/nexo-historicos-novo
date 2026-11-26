@@ -10,8 +10,8 @@ const defs=[
  {id:'branco-r5',name:'Pedra devedora após 4',description:'Número imediatamente depois da pedra 4: branco nas próximas N rodadas.'},
  {id:'branco-r6',name:'Pedra devedora antes do 11',description:'Número imediatamente antes da pedra 11: branco nas próximas N rodadas.'}
 ];
-const defaults=()=>({version:1,enabled:false,revision:0,protection:true,offset:4,houses4:4,houses11:4,templates:{attention:{text:'⚠️ ATENÇÃO · BRANCO',type:'text',assetId:''},entry:{text:'BLITZ PRO BRANCO\n     ▫️{hora}:{minuto}▫️{numero}',type:'text',assetId:''},green:{text:'✅ GREEN BRANCO',type:'text',assetId:''},red:{text:'🔴 RED BRANCO',type:'text',assetId:''}},strategies:defs.map(x=>({...x,enabled:true})),updatedAt:0});
-const normalizeCfg=x=>({...defaults(),...x,protection:true,offset:4,strategies:defs.map(d=>({...d,enabled:x?.strategies?.find(s=>s.id===d.id)?.enabled??true})),houses4:Number.isInteger(x?.houses4)?x.houses4:4,houses11:Number.isInteger(x?.houses11)?x.houses11:4});
+const defaults=()=>({version:1,enabled:false,revision:0,protection:true,offset:4,houses4:4,houses11:4,captureEnabled:false,templates:{attention:{text:'⚠️ ATENÇÃO · BRANCO',type:'text',assetId:''},entry:{text:'BLITZ PRO BRANCO\n     ▫️{hora}:{minuto}▫️{numero}',type:'text',assetId:''},green:{text:'✅ GREEN BRANCO',type:'text',assetId:''},red:{text:'🔴 RED BRANCO',type:'text',assetId:''}},strategies:defs.map(x=>({...x,enabled:true})),updatedAt:0});
+const normalizeCfg=x=>({...defaults(),...x,captureEnabled:x?.captureEnabled===true,protection:true,offset:4,strategies:defs.map(d=>({...d,enabled:x?.strategies?.find(s=>s.id===d.id)?.enabled??true})),houses4:Number.isInteger(x?.houses4)?x.houses4:4,houses11:Number.isInteger(x?.houses11)?x.houses11:4});
 const j=(x,status=200)=>new Response(JSON.stringify(x),{status,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
 const fail=(e,status=400)=>j({ok:false,error:e},status);
 const get=async(env,k,d)=>{const r=await env.R2.get(k);if(!r)return structuredClone(d);try{return await r.json()}catch{throw Error('JSON corrompido em '+k)}};
@@ -28,6 +28,7 @@ function validCfg(b,prev){
  if(!b||typeof b!=='object')throw Error('JSON invalido');
  const cfg={...prev};
  if(typeof b.enabled==='boolean')cfg.enabled=b.enabled;
+ if(b.captureEnabled!==undefined){if(typeof b.captureEnabled!=='boolean')throw Error('Captura deve ser verdadeiro ou falso');cfg.captureEnabled=b.captureEnabled;}
  cfg.protection=true;
  cfg.offset=4;
  for(const field of ['houses4','houses11']){if(b[field]!==undefined){if(!Number.isInteger(b[field])||b[field]<1||b[field]>30)throw Error('Casas devem ficar de 1 a 30');cfg[field]=b[field]}}
@@ -41,7 +42,7 @@ export async function brancoVipAdmin(req,env,url){
  if(!env.R2)return fail('R2 indisponivel',503);
  const cfg=normalizeCfg(await get(env,KEY.cfg,defaults())),owner=await get(env,KEY.owner,null);
  const groups=await get(env,KEY.groups,[]),media=await get(env,KEY.media,[]);
- if(p==='/api/adm/branco-vip'&&req.method==='GET')return j({ok:true,config:cfg,ownerIdConfigured:!!owner?.id,tokenConfigured:!!await get(env,KEY.token,null),groups,media,scores:await stats(env),heartbeat:await get(env,ROOT+'heartbeat.json',null)});
+ if(p==='/api/adm/branco-vip'&&req.method==='GET')return j({ok:true,config:cfg,ownerIdConfigured:!!owner?.id,tokenConfigured:!!await get(env,KEY.token,null),groups,media,scores:await stats(env),heartbeat:await get(env,ROOT+'heartbeat.json',null),captureHeartbeat:await get(env,ROOT+'capture-heartbeat.json',null)});
  if(p.startsWith('/api/adm/branco-vip/preview/')&&req.method==='GET'){
   const id=p.split('/').pop(),item=media.find(x=>x.id===id);if(!item)return fail('Midia nao encontrada',404);
   const file=await env.R2.get(ROOT+'preview/'+id);if(!file)return fail('Previa ainda nao enviada',404);
@@ -79,6 +80,24 @@ export async function brancoVipSync(req,env,url,tokenOK){
   let token=null;try{token=await openToken(env)}catch(e){return fail('Chave de criptografia indisponivel',503)}
   return j({ok:true,config:cfg,groups,media,ownerId:String(owner?.id||''),botToken:token});
  }
+ if(p==='/api/branco-vip/capture-events'&&req.method==='GET'){
+  const queue=await get(env,ROOT+'capture-queue.json',[]);
+  const nowMs=Date.now();
+  return j({ok:true,enabled:cfg.captureEnabled,items:cfg.captureEnabled?queue.filter(x=>nowMs-x.at<600000):[]});
+ }
+ if(p==='/api/branco-vip/capture-ack'&&req.method==='POST'){
+  const body=await req.json().catch(()=>null),id=String(body?.id||'');
+  if(!/^\d{4}-\d{2}-\d{2}-\d{1,12}$/.test(id))return fail('ID invalido');
+  const queue=await get(env,ROOT+'capture-queue.json',[]);
+  await put(env,ROOT+'capture-queue.json',queue.filter(x=>x.id!==id));
+  return j({ok:true});
+ }
+ if(p==='/api/branco-vip/capture-status'&&req.method==='POST'){
+  const body=await req.json().catch(()=>null);
+  if(!body||typeof body.running!=='boolean'||typeof body.last!=='string')return fail('Status invalido');
+  await put(env,ROOT+'capture-heartbeat.json',{running:body.running,last:body.last.slice(0,60),at:Math.floor(Date.now()/1000)});
+  return j({ok:true});
+ }
  if(p==='/api/branco-vip/status'&&req.method==='POST'){
   const b=await req.json().catch(()=>null);if(!b||!Number.isSafeInteger(b.seq)||b.seq<0||typeof b.running!=='boolean')return fail('Status invalido');
   await put(env,ROOT+'heartbeat.json',{seq:b.seq,running:b.running,at:Math.floor(Date.now()/1000)});return j({ok:true})
@@ -102,7 +121,27 @@ export async function brancoVipSync(req,env,url,tokenOK){
   const previous=await get(env,ROOT+'scores-checkpoint.json',null);
   if(previous&&previous.day===b.day&&b.seq<previous.seq)return fail('Snapshot anterior',409);
   const out={};for(const x of b.scores){if(!defs.some(d=>d.id===x.id)||out[x.id]||!['entries','green','red'].every(k=>Number.isSafeInteger(x[k])&&x[k]>=0&&x[k]<=1000000))return fail('Contador invalido');out[x.id]={day:b.day,entries:x.entries,green:x.green,red:x.red,accuracy:(x.green+x.red)?Math.round(x.green*1000/(x.green+x.red))/10:null}}
-  await put(env,ROOT+'scores.json',out);await put(env,ROOT+'scores-checkpoint.json',{day:b.day,seq:b.seq,updatedAt:Date.now()});return j({ok:true,updated:Object.keys(out).length})
+  await put(env,ROOT+'scores.json',out);
+  await put(env,ROOT+'scores-checkpoint.json',{day:b.day,seq:b.seq,updatedAt:Date.now()});
+  // Captura V2: evento nasce somente de GREEN contabilizado pelo motor Branco.
+  // Precisa ser branco exatamente na rodada informada, nunca so uma pedra aleatoria.
+  if(cfg.captureEnabled && previous && previous.day===b.day && b.seq>previous.seq){
+    const before=await get(env,ROOT+'capture-score-snapshot.json',null);
+    const prior=before?.day===b.day?before.scores:{};
+    const increased=Object.keys(out).some(id=>Number(out[id].green||0)>Number(prior[id]?.green||0));
+    if(increased && before?.day===b.day){
+      const hist=await get(env,'nexo-v1/games/blitz-double/latest.json',{items:[]});
+      const white=(hist.items||[]).find(r=>Number(r.seq)===b.seq && (r.color==='white'||Number(r.number)===0));
+      const fresh=white&&Math.abs(Math.floor(Date.now()/1000)-Number(white.minute_epoch||0))<=180;
+      if(fresh){
+        const q=await get(env,ROOT+'capture-queue.json',[]);
+        const id=String(b.day)+'-'+b.seq;
+        if(!q.some(x=>x.id===id))await put(env,ROOT+'capture-queue.json',[...q,{id,seq:b.seq,at:Date.now()}].slice(-25));
+      }
+    }
+  }
+  await put(env,ROOT+'capture-score-snapshot.json',{day:b.day,scores:out});
+  return j({ok:true,updated:Object.keys(out).length})
  }
  return fail('Rota nao encontrada',404)
 }
