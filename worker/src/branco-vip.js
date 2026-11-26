@@ -113,6 +113,17 @@ export async function brancoVipAdmin(req,env,url){
   }catch{return fail('Nao foi possivel consultar Telegram agora',502)}
  }
 
+ // NEXO_BRANCO_PUXAR_V6: admin commands, authenticated by routeAdmin.
+ if(p==='/api/adm/branco-vip/pull'&&req.method==='POST'){
+  const current=await get(env,ROOT+'pull-request-v6.json',{revision:0});
+  const desired={revision:(Number(current.revision)||0)+1,requestedAt:Date.now()};
+  await put(env,ROOT+'pull-request-v6.json',desired);
+  return j({ok:true,revision:desired.revision,notice:'Consulta solicitada. O Termux ja consulta o bot a cada ciclo. Mensagens antigas consumidas nao podem ser restauradas.'});
+ }
+ if(p==='/api/adm/branco-vip/pull'&&req.method==='GET'){
+  const [desired,report]=await Promise.all([get(env,ROOT+'pull-request-v6.json',{revision:0}),get(env,ROOT+'pull-report-v6.json',null)]);
+  return j({ok:true,requested:desired,report,mediaCount:media.length});
+ }
  if(p==='/api/adm/branco-vip/groups'&&req.method==='POST'){
   const b=await req.json().catch(()=>null);if(!Array.isArray(b?.selected))return fail('Lista invalida');const ids=new Set(b.selected.map(String));
   if([...ids].some(id=>!groups.some(g=>g.id===id&&g.admin)))return fail('Grupo nao autorizado',409);
@@ -127,6 +138,13 @@ export async function brancoVipSync(req,env,url,tokenOK){
  if(!tokenOK(req,env))return fail('Nao autorizado',401);
  if(!env.R2)return fail('R2 indisponivel',503);
  const cfg=normalizeCfg(await get(env,KEY.cfg,defaults())),groups=await get(env,KEY.groups,[]),owner=await get(env,KEY.owner,null),media=await get(env,KEY.media,[]);
+ // NEXO_BRANCO_PUXAR_V6: ingest token required by brancoVipSync.
+ if(p==='/api/branco-vip/pull-report'&&req.method==='POST'){
+  const x=await req.json().catch(()=>null);
+  if(!x||!['consultando','erro','capturado'].includes(x.status))return fail('Estado invalido',400);
+  const report={status:x.status,detail:String(x.detail||'').slice(0,95),captured:Math.max(0,Number(x.captured)||0),at:Math.floor(Date.now()/1000)};
+  await put(env,ROOT+'pull-report-v6.json',report);return j({ok:true});
+ }
  if(p==='/api/branco-vip/sync'&&req.method==='GET'){
   let token=null;try{token=await openToken(env)}catch(e){return fail('Chave de criptografia indisponivel',503)}
   return j({ok:true,config:cfg,groups,media,ownerId:String(owner?.id||''),botToken:token});
