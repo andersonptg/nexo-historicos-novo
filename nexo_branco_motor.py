@@ -53,7 +53,8 @@ def connect():
   attention INTEGER DEFAULT 0,entered INTEGER DEFAULT 0,entered_at INTEGER DEFAULT 0,settled TEXT DEFAULT '',created INTEGER);
  CREATE TABLE IF NOT EXISTS delivery(event TEXT,chat TEXT,state TEXT,updated INTEGER,PRIMARY KEY(event,chat));
  CREATE TABLE IF NOT EXISTS scores(day TEXT,strategy TEXT,entries INTEGER DEFAULT 0,green INTEGER DEFAULT 0,red INTEGER DEFAULT 0,PRIMARY KEY(day,strategy));
- CREATE TABLE IF NOT EXISTS attention_messages(window_id TEXT,chat TEXT,message_id INTEGER,PRIMARY KEY(window_id,chat));''')
+ CREATE TABLE IF NOT EXISTS attention_messages(window_id TEXT,chat TEXT,message_id INTEGER,PRIMARY KEY(window_id,chat));
+  CREATE TABLE IF NOT EXISTS white_hits(window_id TEXT,seq INTEGER,minute_epoch INTEGER,observed_at INTEGER,PRIMARY KEY(window_id,seq));''')
  return db
 
 def meta(db,key,default='0'):
@@ -95,23 +96,23 @@ def targets(history):
  return ans
 
 
-def interpolate(template,window):
- target=dt.datetime.fromtimestamp(window['target'],TZ)
+def interpolate(template,window,white=None):
+ target=dt.datetime.fromtimestamp(int(window['target']),TZ)
  before=target-dt.timedelta(minutes=1);after=target+dt.timedelta(minutes=1)
+ actual=dt.datetime.fromtimestamp(int(white['minute_epoch']),TZ) if white else None
  table={'hora':target.strftime('%H'),'minuto':target.strftime('%M'),'numero':f"{window['ref']:02d}",
  'janela':before.strftime('%H:%M')+' até '+after.strftime('%H:%M'),
- 'estrategia':{'branco-r1':'Pedra 4','branco-r2':'Pedra 11','branco-r3':'Branco + vizinhos','branco-r4':'Branco minuto 0','branco-r5':'Devedora apos 4','branco-r6':'Devedora antes do 11'}.get(window['strategy'],'Branco')}
+ 'estrategia':{'branco-r1':'Pedra 4','branco-r2':'Pedra 11','branco-r3':'Branco + vizinhos','branco-r4':'Branco minuto 0','branco-r5':'Devedora apos 4','branco-r6':'Devedora antes do 11'}.get(window['strategy'],'Branco'),
+ 'hora_branco':actual.strftime('%H:%M') if actual else '--:--'}
  import re
- return re.sub(r'\{(hora|minuto|numero|janela|estrategia)\}',lambda m:table[m.group(1)],template or '')
+ return re.sub(r'\{(hora|minuto|numero|janela|estrategia|hora_branco)\}',lambda m:table[m.group(1)],template or '')
 
+
+# NEXO_BRANCO_TEMPO_V9 — entrada antecipada e GREEN por pedra, sem sinais retroativos.
 def entry_message(window, sent_at=None):
- """Horario atual primeiro, protecao obrigatoria +4 depois.
- Exemplo: padrao finalizado 17:25 -> BLITZ PRO BRANCO / 17:25 / 29.
- """
- current=dt.datetime.fromtimestamp(int(sent_at if sent_at is not None else stamp()),TZ)
- principal=minute(window['target'])
- protecao=principal+dt.timedelta(minutes=4)
- return 'BLITZ PRO BRANCO\n     ▫️'+current.strftime('%H:%M')+'▫️'+protecao.strftime('%M')
+ """Formato com minuto previsto calculado na confirmacao do padrao."""
+ target=minute(window['target']);protect=target+dt.timedelta(minutes=4)
+ return 'BLITZ DOUBLE BRANCO PRO\n        ▫️'+target.strftime('%H:%M')+'▫️'+protect.strftime('%M')
 
 def inside_white_window(confirmed_minute,target_epoch):
  """Accept target minute and one minute on either side, including hour rollover."""
@@ -135,39 +136,50 @@ def erase_attention(db,cfg,w):
   with db:db.execute('DELETE FROM attention_messages WHERE window_id=? AND chat=?',(w['id'],row['chat']))
 
 # NEXO_BIBLIOTECA_CENTRAL_V7: text OR media; GREEN timestamp from the actual white round.
-def signal(db,cfg,w,event,white_time=None):
+def signal(db,cfg,w,event,white=None):
+ """Um unico formato por evento; cada pedra branca tem chave exclusiva.
+ Incerto nunca e reenviado automaticamente, para evitar duplicidade.
+ """
  delivered=0
  bot=cfg.get('botToken');tm=cfg['config'].get('templates',{}).get(event,{})
  chats=recipients(cfg)
- # Immediate custom debtor stone message, without invented target minute.
- if event=='entry' and w['strategy'] in ('branco-r5','branco-r6'):
-  houses=max(1,min(30,int(cfg['config'].get('houses4' if w['strategy']=='branco-r5' else 'houses11',4))))
-  text='Pedra '+str(int(w['ref']))+' puxa o próximo branco em até '+str(houses)+' casas 🏡 ⚪'
- elif event=='entry':text=entry_message(w)
- else:text=interpolate(tm.get('text',''),w)
- if event=='green' and white_time is not None:text=text.replace('{hora_branco}',slot(white_time))
- if tm.get('type','text')!='text':text=''
+ mode=tm.get('type','text')
+ if mode not in ('text','sticker','gif'):mode='text'
+ if mode=='text':
+  if event=='entry' and w['strategy'] in ('branco-r5','branco-r6'):
+   houses=max(1,min(30,int(cfg['config'].get('houses4' if w['strategy']=='branco-r5' else 'houses11',4))))
+   message='Pedra '+str(int(w['ref']))+' puxa o próximo branco em até '+str(houses)+' casas 🏡 ⚪'
+  elif event=='entry':message=entry_message(w)
+  elif event=='green':message=interpolate(tm.get('text') or 'GREEN ✅✅✅✅ {hora_branco}',w,white)
+  else:message=interpolate(tm.get('text',''),w,white)
+ else:message=''
+ media=None
+ if mode in ('sticker','gif'):
+  media=next((x for x in cfg.get('media',[]) if x.get('id')==tm.get('assetId') and x.get('kind')==mode),None)
+  if not media or not media.get('fileId'):
+   log('AVISO: evento '+event+' configurado como '+mode+' mas sem midia validada para o Branco')
+   return 0
  if event=='entry':erase_attention(db,cfg,w)
+ unique=':seq:'+str(white['seq']) if white is not None and event=='green' else ''
+ key=w['id']+':'+event+unique
  for chat in chats:
-  key=w['id']+':'+event
   if db.execute('SELECT 1 FROM delivery WHERE event=? AND chat=?',(key,chat)).fetchone():continue
   with db:db.execute('INSERT INTO delivery VALUES(?,?,?,?)',(key,chat,'pending',stamp()))
   try:
-   if text:
-    result=tg(bot,'sendMessage',{'chat_id':chat,'text':text,'disable_web_page_preview':True})
+   if mode=='text':
+    if not message:raise RuntimeError('Texto do evento vazio')
+    result=tg(bot,'sendMessage',{'chat_id':chat,'text':message,'disable_web_page_preview':True})
     if event=='attention' and result.get('message_id'):
      with db:db.execute('INSERT OR REPLACE INTO attention_messages(window_id,chat,message_id) VALUES (?,?,?)',(w['id'],chat,int(result['message_id'])))
-   if tm.get('type') in ('sticker','gif') and tm.get('assetId'):
-    media=next((x for x in cfg.get('media',[]) if x['id']==tm['assetId']),None)
-    if media:
-     kind=tm['type'];tg(bot,'sendSticker' if kind=='sticker' else 'sendAnimation',{'chat_id':chat,kind if kind=='sticker' else 'animation':media['fileId']})
+   else:
+    field='sticker' if mode=='sticker' else 'animation'
+    tg(bot,'sendSticker' if mode=='sticker' else 'sendAnimation',{'chat_id':chat,field:media['fileId']})
    with db:db.execute('UPDATE delivery SET state=?,updated=? WHERE event=? AND chat=?',('sent',stamp(),key,chat))
    delivered+=1
   except Exception as e:
    with db:db.execute('UPDATE delivery SET state=?,updated=? WHERE event=? AND chat=?',('uncertain',stamp(),key,chat))
    log('Entrega incerta '+event+' '+str(e)[:115])
  return delivered
-
 
 def store_window(db,strategy,target,ref,seq,kind='main'):
  # If window start already passed, do not generate old entries from delayed collection.
@@ -177,67 +189,60 @@ def store_window(db,strategy,target,ref,seq,kind='main'):
  with db:db.execute('INSERT OR IGNORE INTO windows(id,strategy,target,ref,origin,kind,created) VALUES(?,?,?,?,?,?,?)',(id,strategy,target,ref,seq,kind,stamp()))
 
 def process_new(db,cfg):
- """Uma janela de minuto e uma de devedora em paralelo, sem fila de sinais.
-
- O padrao confirmado e o gatilho. A entrada principal e no minuto atual
- e a protecao obrigatoria e 4 minutos depois. Os resultados anteriores ao
- envio nao contam como previsao acertada.
+ """Dispara entrada no fechamento do padrao, usando minuto ALVO calculado.
+ Uma janela por vez: nunca enfileira sinal sobreposto nem retroativo.
  """
  current=int(meta(db,'seq','0'));items=source_rows(current)
  if not items:return
  if current==0:
-  with db:
-   setmeta(db,'seq',max(x['seq'] for x in items));setmeta(db,'history','[]')
+  with db:setmeta(db,'seq',max(x['seq'] for x in items));setmeta(db,'history','[]')
   log('Baseline: rodadas antigas ignoradas');return
  if len(items)>4 or items[0]['seq']>current+3 or stamp()-int(items[-1]['first_seen'])>100:
-  with db:
-   setmeta(db,'seq',max(x['seq'] for x in items));setmeta(db,'history','[]')
+  with db:setmeta(db,'seq',max(x['seq'] for x in items));setmeta(db,'history','[]')
   log('Descontinuidade: rodadas antigas ignoradas, sem sinais');return
  recent=json.loads(meta(db,'history','[]'))
  enabled={s['id'] for s in cfg['config'].get('strategies',[]) if s.get('enabled')}
  for r in items:
   recent.append(r);recent=recent[-8:]
   settle(db,cfg,now=stamp())
-  rows=db.execute("SELECT kind FROM windows WHERE settled='' AND kind IN ('main','debt')").fetchall()
-  busy={'minute':any(x['kind']=='main' for x in rows),'debt':any(x['kind']=='debt' for x in rows)}
-  if cfg['config'].get('enabled'):
+  busy=bool(db.execute("SELECT 1 FROM windows WHERE settled='' AND kind IN ('main','debt') LIMIT 1").fetchone())
+  if cfg['config'].get('enabled') and not busy:
    candidates=targets(recent)
-   candidates.sort(key=lambda x:(0 if x[0] in ('branco-r5','branco-r6') else 1,0 if x[0] in ('branco-r4','branco-r5') else 1))
-   for strategy,_computed_target,ref in candidates:
+   candidates.sort(key=lambda x:(0 if x[0] in ('branco-r4','branco-r5') else 1,x[0]))
+   for strategy,computed,ref in candidates:
     if strategy not in enabled:continue
-    lane='debt' if strategy in ('branco-r5','branco-r6') else 'minute'
-    if busy[lane]:continue
     now=stamp()
-    # Descarta padroes processados com atraso, sem enviar entrada retroativa.
     if now-int(r['first_seen'])>85:continue
-    if lane=='debt':
-     if strategy=='branco-r5' and int(r['number'])==0:continue
-     wid=f'{strategy}:seq:{r["seq"]}';kind='debt';target=now
-    else:
-     # Minuto principal = minuto em que o padrao terminou, NAO a antiga
-     # soma que gerava 39. Ex.: 17:25 -> 17:24/25/26, protecao 28/29/30.
-     target=epoch(minute(now));kind='main';wid=f'{strategy}:seq:{r["seq"]}:main'
+    lane='debt' if strategy in ('branco-r5','branco-r6') else 'main'
+    if lane=='debt' and strategy=='branco-r5' and int(r['number'])==0:continue
+    # Ao chegar a pedra seguinte a do branco, usar o calculo do padrao.
+    target=int(computed) if lane=='main' else now
+    if lane=='main' and not (now<target-60 and target-now<=86400):
+     log('Padrao '+strategy+' ignorado: alvo ja passou ou janela ja comecou')
+     continue
+    wid=f'{strategy}:seq:{r["seq"]}:{lane}'
     with db:
      db.execute('INSERT OR IGNORE INTO windows(id,strategy,target,ref,origin,kind,created) VALUES(?,?,?,?,?,?,?)',
-                (wid,strategy,int(target),int(ref),int(r['seq']),kind,now))
+                (wid,strategy,target,int(ref),int(r['seq']),lane,now))
     wrow=db.execute('SELECT * FROM windows WHERE id=? AND settled=?',(wid,'')).fetchone()
     if wrow is None:continue
     w=dict(wrow)
     sent=signal(db,cfg,w,'entry')
+    # '2' e entrega incerta. Nao presumir que houve postagem.
     with db:
      db.execute('UPDATE windows SET entered=?,entered_at=? WHERE id=?',(1 if sent else 2,now,wid))
      if sent:
       day=dt.datetime.fromtimestamp(now,TZ).strftime('%Y-%m-%d')
       db.execute('INSERT INTO scores(day,strategy,entries) VALUES (?,?,1) ON CONFLICT(day,strategy) DO UPDATE SET entries=entries+1',(day,strategy))
-    busy[lane]=True
-    log('Padrao '+strategy+' enviado: '+('confirmado' if sent else 'entrega incerta')+' | categoria '+lane+' bloqueada')
+    log('Padrao '+strategy+' confirmado na rodada '+str(r['seq'])+' | alvo '+slot(target)+' | '+('entrada enviada' if sent else 'entrega incerta')+' | janela exclusiva')
+    break
   with db:
    setmeta(db,'seq',r['seq']);setmeta(db,'history',json.dumps(recent,separators=(',',':')))
 
 def settle(db,cfg,now=None,sync_only=False):
- """Resolve cada categoria de forma independente usando rodadas confirmadas.
- Minuto: principal +/-1min, protecao obrigatoria +4min +/-1min.
- Devedora: as N proximas rodadas confirmadas apos o gatilho.
+ """Mantem a janela principal e a protecao ate o ultimo giro.
+ Um GREEN por pedra branca confirmada (seq), sem duplicacoes.
+ RED somente quando as duas janelas terminarem e NENHUM branco tiver ocorrido.
  """
  now=int(now if now is not None else stamp())
  if not cfg['config'].get('enabled'):return
@@ -245,7 +250,7 @@ def settle(db,cfg,now=None,sync_only=False):
  for w in rows:
   target=int(w['target']);kind=w['kind'];strategy=w['strategy'];result=None
   if int(w['entered'])==2:
-   # Entrega incerta: jamais presumir sucesso nem criar RED.
+   # Entrega incerta: nao contar GREEN/RED de sinal nao confirmado.
    if now-int(w['created'])>86400:
     with db:db.execute("UPDATE windows SET settled='unconfirmed-delivery' WHERE id=?",(w['id'],))
    continue
@@ -255,34 +260,58 @@ def settle(db,cfg,now=None,sync_only=False):
    houses=max(1,min(30,int(cfg['config'].get(field,4))))
    with closing(sqlite3.connect('file:'+str(ORIGINAL)+'?mode=ro',uri=True,timeout=8)) as src:
     src.row_factory=sqlite3.Row
-    readings=[dict(x) for x in src.execute('SELECT seq,number,first_seen FROM rounds WHERE game_id=? AND seq>? ORDER BY seq LIMIT ?',('blitz-double',int(w['origin']),houses))]
-   if any(int(x['number'])==0 for x in readings):result='green'
+    readings=[dict(x) for x in src.execute('SELECT seq,number,first_seen,minute_epoch FROM rounds WHERE game_id=? AND seq>? ORDER BY seq LIMIT ?',('blitz-double',int(w['origin']),houses))]
+   white=next((x for x in readings if int(x['number'])==0),None)
+   if white:result='green'
    elif len(readings)>=houses:result='red'
    elif now-int(w['created'])>3600:result='incomplete'
+   if result in ('green','red'):
+    signal(db,cfg,w,result,white=white)
   else:
-   start=target-60;end=target+120
+   before=target-60;end=target+120
    protect_start=target+3*60;protect_end=target+6*60
-   intervals=((start,end),(protect_start,protect_end))
+   intervals=((before,end),(protect_start,protect_end))
    readings=[];counts=[]
    with closing(sqlite3.connect('file:'+str(ORIGINAL)+'?mode=ro',uri=True,timeout=8)) as src:
     src.row_factory=sqlite3.Row
     for lo,hi in intervals:
-     rr=[dict(x) for x in src.execute('SELECT seq,minute_epoch,number,first_seen FROM rounds WHERE game_id=? AND minute_epoch>=? AND minute_epoch<? ORDER BY seq LIMIT 30',('blitz-double',lo,hi))]
+     rr=[dict(x) for x in src.execute('SELECT seq,minute_epoch,number,first_seen FROM rounds WHERE game_id=? AND minute_epoch>=? AND minute_epoch<? ORDER BY seq LIMIT 500',('blitz-double',lo,hi))]
      counts.append(len(rr));readings.extend(rr)
-   if any(int(x['number'])==0 and int(x['first_seen'])>=int(w['entered_at']) for x in readings):result='green'
-   elif now>=protect_end and all(n>=6 for n in counts):result='red'
+   unique={int(x['seq']):x for x in readings}
+   valid=[x for x in sorted(unique.values(),key=lambda x:x['seq']) if int(x['number'])==0 and int(x['first_seen'])>=int(w['entered_at']) and int(x['seq'])>int(w['origin'])]
+   # Grave cada observacao ANTES do envio; reinicios nao repetem figurinhas.
+   for white in valid:
+    with db:
+     inserted=db.execute('INSERT OR IGNORE INTO white_hits(window_id,seq,minute_epoch,observed_at) VALUES(?,?,?,?)',(w['id'],int(white['seq']),int(white['minute_epoch']),stamp())).rowcount
+    if not inserted:continue
+    delivered=signal(db,cfg,w,'green',white=white)
+    day=dt.datetime.fromtimestamp(int(w['entered_at']),TZ).strftime('%Y-%m-%d')
+    with db:db.execute('UPDATE scores SET green=green+1 WHERE day=? AND strategy=?',(day,strategy))
+    log('GREEN branco seq '+str(white['seq'])+' | horario '+slot(white['minute_epoch'])+' | envios confirmados '+str(delivered))
+   def latest_round_at_or_after(limit):
+    with closing(sqlite3.connect('file:'+str(ORIGINAL)+'?mode=ro',uri=True,timeout=8)) as check:
+     last=check.execute('SELECT MAX(minute_epoch) FROM rounds WHERE game_id=?',('blitz-double',)).fetchone()[0]
+    return last is not None and int(last)>=int(limit)
+   if now<protect_end:continue
+   hits=db.execute('SELECT COUNT(*) FROM white_hits WHERE window_id=?',(w['id'],)).fetchone()[0]
+   if hits:
+    result='green'
+   elif all(n>=1 for n in counts) and latest_round_at_or_after(protect_end):
+    # RED quando ha rodadas em ambas as janelas e a fonte ja passou do ultimo minuto.
+    signal(db,cfg,w,'red');result='red'
    elif now>=protect_end+180:result='incomplete'
+   else:continue
   if result is None:continue
-  if result in ('green','red'):
-   white_time=next((int(r.get('minute_epoch') or r.get('first_seen') or 0) for r in readings if int(r.get('number',-1))==0 and int(r.get('first_seen',0))>=int(w['entered_at'])),None) if result=='green' else None
-   signal(db,cfg,w,result,white_time=white_time)
   erase_attention(db,cfg,w)
   with db:
    db.execute('UPDATE windows SET settled=? WHERE id=?',(result,w['id']))
-   if result in ('green','red'):
+   if result=='red':
     day=dt.datetime.fromtimestamp(int(w['entered_at']),TZ).strftime('%Y-%m-%d')
-    db.execute(f'UPDATE scores SET {result}={result}+1 WHERE day=? AND strategy=?',(day,w['strategy']))
-  log('Sinal '+w['id']+' finalizado: '+result+' | categoria liberada')
+    db.execute('UPDATE scores SET red=red+1 WHERE day=? AND strategy=?',(day,strategy))
+   if result=='green' and kind=='debt':
+    day=dt.datetime.fromtimestamp(int(w['entered_at']),TZ).strftime('%Y-%m-%d')
+    db.execute('UPDATE scores SET green=green+1 WHERE day=? AND strategy=?',(day,strategy))
+  log('Sinal '+w['id']+' finalizado: '+result+' | proxima estrategia liberada')
 
 def score_snapshot(db):
  day=dt.datetime.now(TZ).strftime('%Y-%m-%d')
