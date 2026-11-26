@@ -1307,7 +1307,38 @@ e('on').onclick=()=>set(true);e('off').onclick=()=>set(false);refresh();setInter
    return json({ok:true,groups:next,webhookActive:!!info.url,ourWebhook:info.url===new URL(req.url).origin+'/api/telegram/webhook',notice:'O Telegram so envia grupos atraves de eventos recentes ou comando /nexo_grupo.'});
   }
   if(path==='/api/adm/webhook/register'&&req.method==='POST')return registerWebhook(req,env);
+  // NEXO_BLITZ_RECOVERY_V2: transferencia segura somente do BLITZ DOUBLE.
+  if(path==='/api/adm/blitz-live-check'&&req.method==='GET'){
+    const d=await getDoc(env,'nexo-v3/local-control/desired-v5.json',null);
+    const h=await getDoc(env,'nexo-v3/local-control/heartbeat-v5.json',null);
+    const st=await settings();
+    const latest=await recentR2(env,'blitz-double');
+    const head=(latest.items||[])[0]||null;
+    const age=head?.minute_epoch?now()-Number(head.minute_epoch):null;
+    const owner=await getDoc(env,K.owner,null);
+    const gs=await groups();
+    const a=(await strategies()).filter(s=>s.enabled&&!s.archived&&s.gameId==='blitz-double');
+    const localStopped=d?.enabled===false&&h?.motor===false&&now()-Number(h.at||0)<60;
+    return json({ok:true,game:'blitz-double',remoteEnabled:st.botEnabled===true,
+      localDesired:d?.enabled??null,localMotor:h?.motor??null,heartbeatAge:h?.at?now()-Number(h.at):null,
+      localStopped,feedAgeSeconds:age,feedFresh:age!==null&&age>=-180&&age<=180,
+      lastSeq:head?.seq??null,privateVerified:!!owner?.id,
+      selectedGroups:gs.filter(g=>g.selected&&g.admin).length,activeStrategies:a.length,
+      ready:localStopped&&age!==null&&age>=-180&&age<=180&&a.length>0&&await hasBot(env)&&
+         (!!owner?.id||gs.some(g=>g.selected&&g.admin))});
+  }
   if(path==='/api/adm/telegram/activate'&&req.method==='POST'){
+   // NEXO_BLITZ_RECOVERY_V2: previne Cloudflare + Termux simultaneos e dados obsoletos.
+   const localDesired=await getDoc(env,'nexo-v3/local-control/desired-v5.json',null);
+   const heartbeat=await getDoc(env,'nexo-v3/local-control/heartbeat-v5.json',null);
+   if(localDesired?.enabled!==false||heartbeat?.motor!==false||now()-Number(heartbeat?.at||0)>=60)
+     return err('Motor Termux nao confirmou PARADO. Desligue Cores em /controle-termux e aguarde confirmacao recente.',409);
+   const last=await recentR2(env,'blitz-double');
+   const recent=(last.items||[])[0];
+   const age=recent?.minute_epoch?now()-Number(recent.minute_epoch):Infinity;
+   if(!Number.isFinite(age)||age>180||age< -180)
+     return err('Fonte do Blitz Double sem rodada recente na API principal. Verifique o sincronizador Termux -> /api/ingest antes de ativar.',409);
+
    const b=await req.json();if(b.confirm!==true)return err('Confirme explicitamente a ativacao.');
    const all=await groups(),selected=all.filter(g=>g.selected&&g.admin);
    const owner=await getDoc(env,K.owner,null);

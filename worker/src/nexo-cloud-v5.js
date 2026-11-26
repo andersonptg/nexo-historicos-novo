@@ -3,7 +3,7 @@ import {selectDueGames} from './nexo-cloud-v69-scheduler.js';
 // Source snapshots are observational data, not guaranteed live/complete.
 import cloudCatalog from '../../catalog-cloud.json' with {type:'json'};
 import {parseFortuneV65} from './nexo-fortune-v65.js';
-const GAMES=cloudCatalog.games.filter(g=>g.id==='blitz-double'); // NEXO_BLITZ_DOUBLE_SO_V1
+const GAMES=cloudCatalog.games;
 const GAME_BY_ID=new Map(GAMES.map(g=>[g.id,g]));
 const ROOT='nexo-cloud-v5/';
 const HEADER={'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'};
@@ -291,10 +291,16 @@ export class NexoCloudCollector {
   }
  }
  async alarm(){
+  // NEXO_BLITZ_RECOVERY_CLOUD_PAUSE
+  if(this.env.NEXO_CLOUD_AUTOSTART==='0'){
+   const cfg=await this.config();
+   if(cfg.running){await this.ctx.storage.put('config',{...cfg,running:false,manualPause:true});await this.publish({...cfg,running:false,manualPause:true},await this.ctx.storage.get('statuses')||{});}
+   return;
+  }
   const conf=await this.config();if(!conf.running)return;
   try{
    const states=await this.ctx.storage.get('statuses')||{};
-   const due=selectDueGames(GAMES,states,Date.now(),conf.batch||5);
+   const due=selectDueGames(GAMES.filter(g=>g.id==='blitz-double'),states,Date.now(),1); // NEXO_BLITZ_TESTES_V3
     // Consultas paralelas limitadas; nenhuma chamada ao Telegram.
     await Promise.all(due.map(({g})=>this.runOne(g,states)));
     await this.ctx.storage.put('statuses',states);
