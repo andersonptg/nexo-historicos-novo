@@ -55,6 +55,7 @@ def connect():
  CREATE TABLE IF NOT EXISTS scores(day TEXT,strategy TEXT,entries INTEGER DEFAULT 0,green INTEGER DEFAULT 0,red INTEGER DEFAULT 0,PRIMARY KEY(day,strategy));
  CREATE TABLE IF NOT EXISTS attention_messages(window_id TEXT,chat TEXT,message_id INTEGER,PRIMARY KEY(window_id,chat));
   CREATE TABLE IF NOT EXISTS white_hits(window_id TEXT,seq INTEGER,minute_epoch INTEGER,observed_at INTEGER,PRIMARY KEY(window_id,seq));''')
+ db.execute('CREATE TABLE IF NOT EXISTS protection_only_windows(window_id TEXT PRIMARY KEY)')
  return db
 
 def meta(db,key,default='0'):
@@ -109,9 +110,12 @@ def interpolate(template,window,white=None):
 
 
 # NEXO_BRANCO_TEMPO_V9 — entrada antecipada e GREEN por pedra, sem sinais retroativos.
+# NEXO_BRANCO_V10_PROTECAO
 def entry_message(window, sent_at=None):
- """Formato com minuto previsto calculado na confirmacao do padrao."""
+ """Envio antecipado; quando a principal passou, anuncia SOMENTE protecao."""
  target=minute(window['target']);protect=target+dt.timedelta(minutes=4)
+ if window.get('protection_only'):
+  return 'BLITZ DOUBLE BRANCO PRO\n        ▫️PROTEÇÃO '+protect.strftime('%H:%M')
  return 'BLITZ DOUBLE BRANCO PRO\n        ▫️'+target.strftime('%H:%M')+'▫️'+protect.strftime('%M')
 
 def inside_white_window(confirmed_minute,target_epoch):
@@ -217,16 +221,27 @@ def process_new(db,cfg):
     if lane=='debt' and strategy=='branco-r5' and int(r['number'])==0:continue
     # Ao chegar a pedra seguinte a do branco, usar o calculo do padrao.
     target=int(computed) if lane=='main' else now
-    if lane=='main' and not (now<target-60 and target-now<=86400):
-     log('Padrao '+strategy+' ignorado: alvo ja passou ou janela ja comecou')
-     continue
+    protection_only=False
+    if lane=='main':
+     if target-now>86400:continue
+     if now<target-60:
+      protection_only=False
+     elif now<target+120:
+      # Inicio da protecao = alvo +3 min. Exigir 60s de antecedencia.
+      protection_only=True
+     else:
+      log('Padrao '+strategy+' descartado: principal e protecao sem antecedencia segura')
+      continue
     wid=f'{strategy}:seq:{r["seq"]}:{lane}'
     with db:
      db.execute('INSERT OR IGNORE INTO windows(id,strategy,target,ref,origin,kind,created) VALUES(?,?,?,?,?,?,?)',
                 (wid,strategy,target,int(ref),int(r['seq']),lane,now))
+    if lane=='main' and protection_only:
+     with db:db.execute('INSERT OR IGNORE INTO protection_only_windows(window_id) VALUES (?)',(wid,))
     wrow=db.execute('SELECT * FROM windows WHERE id=? AND settled=?',(wid,'')).fetchone()
     if wrow is None:continue
     w=dict(wrow)
+    if lane=='main':w['protection_only']=protection_only
     sent=signal(db,cfg,w,'entry')
     # '2' e entrega incerta. Nao presumir que houve postagem.
     with db:
@@ -234,7 +249,7 @@ def process_new(db,cfg):
      if sent:
       day=dt.datetime.fromtimestamp(now,TZ).strftime('%Y-%m-%d')
       db.execute('INSERT INTO scores(day,strategy,entries) VALUES (?,?,1) ON CONFLICT(day,strategy) DO UPDATE SET entries=entries+1',(day,strategy))
-    log('Padrao '+strategy+' confirmado na rodada '+str(r['seq'])+' | alvo '+slot(target)+' | '+('entrada enviada' if sent else 'entrega incerta')+' | janela exclusiva')
+    log('Padrao '+strategy+' confirmado na rodada '+str(r['seq'])+' | '+('SOMENTE PROTECAO ' if protection_only else 'PRINCIPAL E PROTECAO ')+slot(target)+' | '+('entrada enviada' if sent else 'entrega incerta')+' | janela exclusiva')
     break
   with db:
    setmeta(db,'seq',r['seq']);setmeta(db,'history',json.dumps(recent,separators=(',',':')))
@@ -268,9 +283,10 @@ def settle(db,cfg,now=None,sync_only=False):
    if result in ('green','red'):
     signal(db,cfg,w,result,white=white)
   else:
+   protection_only=bool(db.execute('SELECT 1 FROM protection_only_windows WHERE window_id=?',(w['id'],)).fetchone())
    before=target-60;end=target+120
    protect_start=target+3*60;protect_end=target+6*60
-   intervals=((before,end),(protect_start,protect_end))
+   intervals=((protect_start,protect_end),) if protection_only else ((before,end),(protect_start,protect_end))
    readings=[];counts=[]
    with closing(sqlite3.connect('file:'+str(ORIGINAL)+'?mode=ro',uri=True,timeout=8)) as src:
     src.row_factory=sqlite3.Row
