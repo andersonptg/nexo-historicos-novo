@@ -7,6 +7,7 @@ import {crashAdmin} from './crash-v2.js';
 import {cloudAdmin} from './nexo-cloud-v5.js';
 import {crashV3Admin} from './crash-v3.js';
 import {fortuneAdmin} from './nexo-fortune-v71-server.js';
+import {captureAdmin,queueCapture,drainCaptureQueue} from './nexo-colors-capture-v2.js';
 const ROOT='nexo-v3/';
 const K={settings:ROOT+'admin/settings.json',strategies:ROOT+'admin/strategies.json',groups:ROOT+'telegram/groups.json',media:ROOT+'media/catalog.json',bot:ROOT+'telegram/bot-encrypted.json',owner:ROOT+'telegram/owner.json',pair:ROOT+'telegram/pair.json'};
 const activeGame=env=>env?.NEXO_ACTIVE_GAME==='blitz-double'?'blitz-double':'brabet-double';
@@ -737,6 +738,8 @@ async function fireEvent(env,settings,strategy,r,type,step,deadlineAtMs=0,global
  const v26EventSavedAt=Date.now(); // NEXO V26.4 TELEMETRIA
  if(type==='attention'&&settings.botEnabled)await beginAttention(env,evt);
  await dispatch(env,settings,evt);
+ // NEXO_COLORS_CAPTURE_V2: apenas fila de registros encerrados; nenhuma captura nesta execução.
+ if(settings.botEnabled&&evt.gameId==='blitz-double'&&['win_black','win_red','win_white','red'].includes(evt.type)){try{await queueCapture(env,evt);}catch(e){console.warn('Fila Cores: falha isolada');}}
  console.log('NEXO V26.4 EVENTO',JSON.stringify({type,seq:r.seq,totalMs:Date.now()-v26FireStart,preDespachoMs:v26EventSavedAt-v26FireStart,despachoMs:Date.now()-v26EventSavedAt}));
 }
 async function simulate(s,rows){const state={recent:[],active:null};const score=scoreDefault(dayBR());const events=[];
@@ -1100,6 +1103,7 @@ export async function routeAdmin(req,env,url){
  if(path==='/api/adm/me')return json({ok:await authenticated(req,env),configured:hasPassword(env)});
  if(path==='/api/adm/local-control-panel'&&req.method==='GET')return Response.redirect(new URL('/controle-termux',req.url),302); // NEXO_TERMO_CONTROL_PUBLIC_SHELL
  if(!await authenticated(req,env))return err('Entre com a senha de administrador.',401);
+ if(path.startsWith('/api/adm/colors-capture')){const cap=await captureAdmin(req,env,path,()=>recentR2(env,'blitz-double'));if(cap)return cap;}
  if(path==='/api/adm/nexo-pro-public'&&req.method==='POST'){
   const c=await req.json().catch(()=>null);
   if(!c||typeof c.enabled!=='boolean'||typeof c.name!=='string'||typeof c.url!=='string')return err('Parametros invalidos',400);
@@ -1688,4 +1692,9 @@ export async function scheduledAdmin(env){
    if(env.R2.delete)await env.R2.delete(x.key);
   }catch(e){row.attempts++;row.lastError=String(e.message||e).slice(0,140);row.updatedAt=now();await putDoc(env,x.key,row);await putDoc(env,v11BlockKey(group.id),{eventId:row.evt.id,chatId:String(group.id),stage:'cron-pending',updatedAt:now()});}
  }
+}
+
+export async function scheduledColorsCapture(env){
+ const st=await getDoc(env,K.settings,settingsDefault);if(!st.botEnabled||!await hasBot(env))return;
+ await drainCaptureQueue(env,{groups:()=>getDoc(env,K.groups,[]),sent:async (chat,evt)=>!!await getDoc(env,sentKey(evt.id+'_'+String(chat).replace('-','m')),null),send:form=>tg(env,'sendPhoto',form)});
 }

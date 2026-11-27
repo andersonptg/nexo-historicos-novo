@@ -6,6 +6,7 @@ import {fortunePublic} from './nexo-fortune-v71-server.js';
 import {cloudPublic,cloudHeartbeat} from './nexo-cloud-v5.js';
 export {NexoCloudCollector} from './nexo-cloud-v5.js';
 import {routeAdmin,processNewRounds,resetAfterCatchup,scheduledAdmin} from './adm.js';
+import {scheduledColorsCapture} from './adm.js';
 import {processWhiteRounds,resetWhiteAfterCatchup,whiteHasActiveForecast,whiteShouldBlockLegacy,scheduledWhite} from './white.js';
 
 // V2 preserva o prefixo EXCLUSIVO nexo-v1/. Nenhum objeto V30 e alterado.
@@ -369,6 +370,7 @@ export default {
   }catch(err){console.error('NEXO V1 erro:',String(err?.message||err).slice(0,150));return out({error:'Erro interno; consulte logs do Worker'},500)}
  },
  async scheduled(event,env,ctx){
+   ctx.waitUntil(scheduledColorsCapture(env).catch(()=>console.warn('Captura Cores: falha isolada no cron')));
    ctx.waitUntil(cloudHeartbeat(env).catch(err=>console.warn('Cloud V5 kick:',String(err?.message||err).slice(0,90))));
    if(env.NEXO_COORDINATOR){const id=env.NEXO_COORDINATOR.idFromName(env.NEXO_ACTIVE_GAME==='blitz-double'?'nexo-blitz-double-v11':'nexo-brabet-double-v11');ctx.waitUntil(env.NEXO_COORDINATOR.get(id).fetch('https://nexo.internal/v11/cron',{method:'POST'}));}
    else ctx.waitUntil(Promise.allSettled(V17_WHITE_PAUSED?[scheduledAdmin(env)]:[scheduledAdmin(env),scheduledWhite(env)]));
