@@ -1,3 +1,4 @@
+import {enabled as cloudMainEnabled,planCloudRows} from './nexo-cloud-main-history.js';
 import {effectiveLocalControl} from './nexo-local-retired.js';
 import catalog from '../../catalog.json' with {type:'json'};
 // NEXO_BRANCO_VIP_V1
@@ -51,7 +52,7 @@ function tokenOK(request,env){
 }
 // V11 - chamadas internas serializadas pelo Durable Object SQLite (plano Free compatível).
 // A autenticação pública continua no Worker; o DO recebe somente requisições internas.
-async function v11Ingest(request,env,trusted=false,queueSignalJob=null,queuedMaxSeq=0){
+async function v11Ingest(request,env,trusted=false,queueSignalJob=null,queuedMaxSeq=0,originMotor='termux'){
  if(!trusted&&!tokenOK(request,env))return out({error:'Credencial ausente ou invalida'},401);
  if(!env.R2)return out({error:'Binding R2 indisponivel'},503);
  let textBody;
@@ -79,7 +80,7 @@ async function v11Ingest(request,env,trusted=false,queueSignalJob=null,queuedMax
    return jsonPut(env.R2,b+`days/${day}.json`,{game_id:game.id,day,items:combined,updated_at:stamp});
   });
   writes.push(jsonPut(env.R2,latestKey,{game_id:game.id,items:latest,updated_at:stamp}));
-  writes.push(jsonPut(env.R2,b+'status.json',{game_id:game.id,last_ingest:stamp,last_heartbeat:stamp,last_result:latest[0]?.minute_epoch||null,received:rows.length,motor:'termux',source:game.source}));
+  writes.push(jsonPut(env.R2,b+'status.json',{game_id:game.id,last_ingest:stamp,last_heartbeat:stamp,last_result:latest[0]?.minute_epoch||null,received:rows.length,motor:originMotor,source:game.source}));
   await Promise.all(writes);
  // Por seguranca, um lote antigo nao dispara sinais mesmo sem flag catchup.
  // V12: nunca transformar reconexao/atraso em uma enxurrada de sinais.
@@ -226,6 +227,27 @@ export class NexoCoordinator {
  fetch(request){
   const run=this.serial.then(async()=>{
    const path=new URL(request.url).pathname;
+   if(path==='/v11/cloud-main-history'){
+    if(!cloudMainEnabled(this.env)||this.env.NEXO_ACTIVE_GAME!=='blitz-double'||request.method!=='POST')return out({error:'Integracao cloud indisponivel'},403);
+    const storage=this.state.storage,key='nexo-cloud-main-v1-pending';
+    try{
+     const source=await request.json();
+     const complete=async plan=>{
+      const queued=Number(await storage.get('nexo-v18-queued-max')||0);
+      const response=await v11Ingest(new Request('https://nexo.internal/v11/ingest',{method:'POST',body:JSON.stringify({game_id:'blitz-double',items:plan.rows,catchup:plan.catchup})}),this.env,true,job=>this.v18_1Enqueue(job),queued,'cloudflare');
+      if(!response.ok)throw Error('Gravacao principal HTTP '+response.status);
+      await storage.put('nexo-cloud-main-v1-initialized',true);
+      await storage.delete(key);
+     };
+     const pending=await storage.get(key);
+     if(pending){await complete({...pending,catchup:true});}
+     const [latest,owner]=await Promise.all([jsonGet(this.env.R2,base('blitz-double')+'latest.json'),jsonGet(this.env.R2,'nexo-v3/runtime/game-owner/blitz-double.json')]);
+     const minimum=Math.max(Number(await storage.get('nexo-v18-queued-max')||0),Number(owner?.lastSeq||0));
+     const plan=await planCloudRows(latest?.items||[],source,now(),minimum,!await storage.get('nexo-cloud-main-v1-initialized'));
+     if(plan.rows.length){await storage.put(key,plan);await complete(plan);}
+     return out({ok:true,added:plan.rows.length,gap:plan.gap,catchup:plan.catchup});
+    }catch(e){return out({ok:false,error:String(e?.message||e).slice(0,150)},409);}
+   }
    if(path==='/v11/ingest'){
       const queued=Number(await this.state.storage.get('nexo-v18-queued-max')||0);
       return v11Ingest(request,this.env,true,job=>this.v18_1Enqueue(job),queued);
@@ -311,10 +333,11 @@ export default {
     const p=await env.R2?.get('nexo-v3/admin/settings.json');let prefs={};if(p){try{prefs=await p.json()}catch{}}
     return out({showNumbers:prefs.showNumbers!==false});
    }
-   if(path==='/api/health')return out({ok:true,version:'2.0.0',storage:!!env.R2,motor:'termux'});
+   if(path==='/api/health')return out({ok:true,version:'2.0.0',storage:!!env.R2,motor:cloudMainEnabled(env)?'cloudflare':'termux'});
    if(path==='/api/catalog')return out({games:gameList(env).map(({id,platform,game,kind,source,enabled,precision})=>({id,platform,game,kind,source,enabled,precision}))});
     if(path==='/api/ingest'&&request.method==='POST'){
      if(!tokenOK(request,env))return out({error:'Credencial ausente ou invalida'},401);
+      if(cloudMainEnabled(env)&&env.NEXO_ACTIVE_GAME==='blitz-double')return out({error:'Historico principal utiliza coleta Cloudflare exclusiva'},409);
      if(env.NEXO_COORDINATOR){
       const id=env.NEXO_COORDINATOR.idFromName(env.NEXO_ACTIVE_GAME==='blitz-double'?'nexo-blitz-double-v11':'nexo-brabet-double-v11');
       const stub=env.NEXO_COORDINATOR.get(id);
@@ -329,6 +352,7 @@ export default {
      let body;try{body=await request.json()}catch{return out({error:'JSON invalido'},400)}
      const game=gameById(body?.game_id,env);
      if(!game)return out({error:'Jogo invalido'},400);
+     if(cloudMainEnabled(env)&&game.id==='blitz-double')return out({error:'Heartbeat legado nao altera status da nuvem'},409);
      const key=base(game.id)+'status.json';
      const old=await jsonGet(env.R2,key)||{};
      await jsonPut(env.R2,key,{...old,game_id:game.id,last_heartbeat:now(),motor:'termux',source:game.source});

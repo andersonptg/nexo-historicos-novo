@@ -1,3 +1,4 @@
+import {enabled as cloudMainEnabled} from './nexo-cloud-main-history.js';
 import {selectDueGames} from './nexo-cloud-v69-scheduler.js';
 // NEXO Cloud V5 - independent research collector, no Telegram dispatch.
 // Source snapshots are observational data, not guaranteed live/complete.
@@ -167,7 +168,7 @@ async function persistSnapshot(env,game,parsed){
  await putR2(env,key,{game_id:game.id,items:joined,updated_at:Date.now(),gaps,precision:'minute',source:'historicosblaze.com',observed_not_official_seq:true});
  return {added:added.length,total:joined.length,latest:joined[0].minute_epoch,gap:!!gap};
 }
-async function collectGame(env,game){
+async function collectGame(env,game,mirror=false){
  if(!game.eligible||!game.source_url)throw Error('SEM_ADAPTADOR: jogo catalogado, coleta ainda não homologada');
  const u=new URL(game.source_url);
  if(u.protocol!=='https:'||u.hostname!=='historicosblaze.com'||!u.pathname.startsWith('/results/'))throw Error('Fonte nao autorizada');
@@ -177,7 +178,15 @@ async function collectGame(env,game){
  const body=await res.text();if(body.length>1800000)throw Error('FONTE_GRANDE_DEMAIS');
  const parsed=sourceRows(body,game);
  if(Date.now()/1000-parsed[0].minute_epoch>900)throw Error('FONTE_DESATUALIZADA');
- return persistSnapshot(env,game,parsed);
+ const result=await persistSnapshot(env,game,parsed);
+ if(mirror&&cloudMainEnabled(env)&&game.id==='blitz-double'){
+  if(!env.NEXO_COORDINATOR)throw Error('Coordenador principal indisponivel');
+  const id=env.NEXO_COORDINATOR.idFromName('nexo-blitz-double-v11');
+  const r=await env.NEXO_COORDINATOR.get(id).fetch('https://nexo.internal/v11/cloud-main-history',{method:'POST',body:JSON.stringify(parsed)});
+  const j=await r.json();if(!r.ok||!j.ok)throw Error('INTEGRACAO_R2: '+String(j.error||r.status).slice(0,110));
+  result.main_added=j.added;
+ }
+ return result;
 }
 const statusEmpty=g=>({id:g.id,status:g.eligible?'aguardando_validacao':'sem_adaptador',last_attempt:null,last_success:null,last_epoch:null,added:0,last_error:null});
 function publicGames(statuses={}){return GAMES.map(g=>({id:g.id,platform:g.platform,game:g.game,kind:g.kind,eligible:g.eligible,precision:g.precision,source:g.source,status:statuses[g.id]?.status||statusEmpty(g).status,last_success:statuses[g.id]?.last_success||null}));}
@@ -272,11 +281,11 @@ export class NexoCloudCollector {
   }
   return json({ok:false,error:'Rota interna invalida'},404);
  }
- async runOne(g,statuses){
+ async runOne(g,statuses,mirror=false){
   const now=Date.now();const prior=statuses[g.id]||statusEmpty(g);
   if(!g.eligible){statuses[g.id]={...prior,status:'sem_adaptador',last_attempt:now};return {ok:false};}
   try{
-   const result=await collectGame(this.env,g);
+   const result=await collectGame(this.env,g,mirror);
    const freshness=Number(result.latest)>0?Math.max(0,Math.floor(Date.now()/1000)-Number(result.latest)):null;
     statuses[g.id]={...prior,status:freshness!==null&&freshness>150?'atrasado':'atualizado',
      last_attempt:now,last_success:Date.now(),last_epoch:result.latest,
@@ -302,7 +311,7 @@ export class NexoCloudCollector {
    const states=await this.ctx.storage.get('statuses')||{};
    const due=selectDueGames(GAMES.filter(g=>g.id==='blitz-double'),states,Date.now(),1); // NEXO_BLITZ_TESTES_V3
     // Consultas paralelas limitadas; nenhuma chamada ao Telegram.
-    await Promise.all(due.map(({g})=>this.runOne(g,states)));
+    await Promise.all(due.map(({g})=>this.runOne(g,states,true)));
     await this.ctx.storage.put('statuses',states);
     // O painel de status publica no R2 no maximo a cada 15 s, salvo novos registros.
     const stamp=Date.now(),last=Number(await this.ctx.storage.get('nexo-v69-overview-at')||0);

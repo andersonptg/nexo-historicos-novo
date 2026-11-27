@@ -1,0 +1,16 @@
+import test from 'node:test';import assert from 'node:assert/strict';import {planCloudRows,enabled} from '../worker/src/nexo-cloud-main-history.js';
+const now=Math.floor(Date.now()/1000), m=Math.floor(now/60)*60;
+const make=(n,t)=>({number:n,color:n===0?'white':n<=7?'red':'black',minute_epoch:t});
+const old=Array.from({length:12},(_,i)=>({...make((i*3+2)%15,m-60-Math.floor(i/2)*60),id:(i+1).toString(16).padStart(32,'0'),seq:100-i}));
+const recent=[make(8,m),make(8,m),...old];
+test('flag exige aposentadoria explicita',()=>{assert.equal(enabled({NEXO_CLOUD_MAIN_BRIDGE:'1'}),false);assert.equal(enabled({NEXO_CLOUD_MAIN_BRIDGE:'1',NEXO_CORES_LOCAL_RETIRED:'1'}),true)});
+test('duas rodadas identicas no minuto ficam separadas, IDs deterministas, primeiro lote catchup',async()=>{const p=await planCloudRows(old,recent,now,100,true);assert.deepEqual(p.rows.map(x=>x.seq),[101,102]);assert.equal(new Set(p.rows.map(x=>x.id)).size,2);assert.equal(p.catchup,true);assert.deepEqual(p,await planCloudRows(old,recent,now,100,true));});
+test('repeticao nao duplica',async()=>{const p=await planCloudRows(old,recent,now,100,true);const newer=[...p.rows].reverse().concat(old);assert.deepEqual((await planCloudRows(newer,recent,now,102,false)).rows,[])});
+test('uma rodada nova usa cursor principal e ordem fixa',async()=>{const p=await planCloudRows(old,[make(7,m),...old],now,100,false);assert.equal(p.rows[0].seq,101);assert.equal(p.catchup,false);});
+test('lote grande sempre catchup',async()=>{const p=await planCloudRows(old,[make(1,m),make(2,m),make(3,m),make(4,m),...old],now,100,false);assert.equal(p.catchup,true)});
+test('lacuna inequivoca nao renumera antigos',async()=>{const gap=Array.from({length:8},(_,i)=>make(i,m));const p=await planCloudRows(old,gap,now,100,false);assert.equal(p.gap,true);assert.equal(p.catchup,true);assert.equal(p.rows[0].seq,101)});
+test('janela parcial conflitante recusada',async()=>{const bad=Array.from({length:8},(_,i)=>make(14,m-60-Math.floor(i/2)*60));await assert.rejects(planCloudRows(old,bad,now,100,false),/sobreposicao/)});
+test('ordem e cor invalida recusadas',async()=>{await assert.rejects(planCloudRows(old,[{...recent[0],color:'red'},...recent.slice(1)],now),/invalida/)});
+test('cursor principal nunca retrocede',async()=>{const p=await planCloudRows(old,recent,now,120,true);assert.deepEqual(p.rows.map(x=>x.seq),[121,122]);});
+test('sobreposicao ambigua recusada',async()=>{const flat=Array.from({length:12},(_,i)=>({...make(1,m),id:(i+1).toString(16).padStart(32,'0'),seq:100-i}));await assert.rejects(planCloudRows(flat,[make(1,m),...flat],now,100),/ambigua/)});
+test('fonte antiga recusada',async()=>{const stale=old.map(r=>({...r,minute_epoch:r.minute_epoch-600}));await assert.rejects(planCloudRows(old,stale,now),/recente/)});

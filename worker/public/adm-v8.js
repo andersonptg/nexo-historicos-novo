@@ -74,7 +74,7 @@
     })),btn('⏸ Desligar envios','v8-btn v8-stop',()=>withLock(async()=>{
       await api('telegram/deactivate',{method:'POST'});await refresh(true);say('Envios do Telegram desligados.');
     })));
-    control.append(toggle,el('p','v8-warning','A biblioteca e a coleta do Termux continuam funcionando quando os sinais estão desligados.'));
+    control.append(toggle,el('p','v8-warning','A biblioteca e a coleta na nuvem são independentes do controle de envio.'));
     shell.append(control);
     const library=el('section','v8-card');library.append(el('h2','','4 · Stickers e GIFs automáticos'),el('p','v8-sub','Envie um sticker ou GIF no privado do bot verificado. A biblioteca identifica arquivos repetidos e deixa as mídias disponíveis nas mensagens globais.'));
     const row=el('div','v8-actions');row.append(btn('↻ Atualizar biblioteca','v8-btn v8-soft',()=>withLock(async()=>{
