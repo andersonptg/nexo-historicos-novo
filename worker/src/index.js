@@ -231,8 +231,11 @@ export class NexoCoordinator {
     if(!cloudMainEnabled(this.env)||this.env.NEXO_ACTIVE_GAME!=='blitz-double'||request.method!=='POST')return out({error:'Integracao cloud indisponivel'},403);
     const storage=this.state.storage,key='nexo-cloud-main-v1-pending';
     try{
-     const source=await request.json();
+     const payload=await request.json();
+     const source=Array.isArray(payload)?payload:payload?.rows;
+     const certified=!Array.isArray(payload)&&payload?.certified===true;
      const complete=async plan=>{
+      if(plan.gapInfo)await jsonPut(this.env.R2,'nexo-v1/games/blitz-double/recovery-gaps/'+plan.gapInfo.after_seq+'.json',plan.gapInfo);
       const queued=Number(await storage.get('nexo-v18-queued-max')||0);
       const response=await v11Ingest(new Request('https://nexo.internal/v11/ingest',{method:'POST',body:JSON.stringify({game_id:'blitz-double',items:plan.rows,catchup:plan.catchup})}),this.env,true,job=>this.v18_1Enqueue(job),queued,'cloudflare');
       if(!response.ok)throw Error('Gravacao principal HTTP '+response.status);
@@ -243,7 +246,7 @@ export class NexoCoordinator {
      if(pending){await complete({...pending,catchup:true});}
      const [latest,owner]=await Promise.all([jsonGet(this.env.R2,base('blitz-double')+'latest.json'),jsonGet(this.env.R2,'nexo-v3/runtime/game-owner/blitz-double.json')]);
      const minimum=Math.max(Number(await storage.get('nexo-v18-queued-max')||0),Number(owner?.lastSeq||0));
-     const plan=await planCloudRows(latest?.items||[],source,now(),minimum,!await storage.get('nexo-cloud-main-v1-initialized'));
+     const plan=await planCloudRows(latest?.items||[],source,now(),minimum,!await storage.get('nexo-cloud-main-v1-initialized'),certified);
      if(plan.rows.length){await storage.put(key,plan);await complete(plan);}
      return out({ok:true,added:plan.rows.length,gap:plan.gap,catchup:plan.catchup});
     }catch(e){return out({ok:false,error:String(e?.message||e).slice(0,150)},409);}

@@ -1,3 +1,4 @@
+import {validWindow,headMatch,recoveryPrefix} from './nexo-cloud-recovery-v2.js';
 import {enabled as cloudMainEnabled} from './nexo-cloud-main-history.js';
 import {selectDueGames} from './nexo-cloud-v69-scheduler.js';
 // NEXO Cloud V5 - independent research collector, no Telegram dispatch.
@@ -143,11 +144,15 @@ async function persistSnapshot(env,game,parsed){
   if(legacy){const existing=await legacy.json();if(Array.isArray(existing.items)&&existing.items.length){prev={items:existing.items.map(x=>({...x})),gaps:existing.gaps||[],updated_at:existing.updated_at||0};}}
  }
  const old=prev.items;
- let added=[],gap=null;
+ let added=[],gap=null,certified=false;
+ const recoveryKey='recovery/blitz-double-v2.json';
+ const blitz=game.id==='blitz-double';
+ if(blitz&&!validWindow(parsed,Math.floor(Date.now()/1000)))throw Error('JANELA_BLITZ_INVALIDA_OU_ANTIGA');
  if(!old.length){added=parsed;}
  else{
-  const match=firstOverlap(old,parsed,game);
-  if(match){added=parsed.slice(0,match.index);}
+  const index=blitz?headMatch(old,parsed):null;
+  const match=blitz?(index===null?null:{index}):firstOverlap(old,parsed,game);
+  if(match){added=parsed.slice(0,match.index);certified=blitz;}
   else{
    const oldestNew=parsed.at(-1).minute_epoch;
    const latestOld=Math.max(...old.slice(0,300).map(x=>Number(x.minute_epoch)||0));
@@ -156,17 +161,25 @@ async function persistSnapshot(env,game,parsed){
    if(oldestNew>latestOld&&latestNew>=now-600&&latestNew<=now+120){
     gap={after_seq:Math.max(0,...old.map(x=>Number(x.seq)||0)),previous_latest_minute:latestOld,resumed_oldest_minute:oldestNew,observed_epoch:now};
     added=parsed;
+   }else if(blitz){
+    const prior=await getR2(env,recoveryKey,null);
+    const recovered=recoveryPrefix(old,parsed,prior,now);
+    if(!recovered){await putR2(env,recoveryKey,{at:now,seq:old[0].seq,cutoff:old[0].minute_epoch,rows:parsed});throw Error('SEM_SOBREPOSICAO: aguardando segunda janela compativel; dados antigos preservados');}
+    // Save the full prior snapshot before rolling-window retention can remove rows.
+    await putR2(env,'recovery/archive-blitz-double-'+old[0].seq+'.json',prev);
+    added=recovered;certified=true;
+    gap={after_seq:Math.max(0,...old.map(x=>Number(x.seq)||0)),previous_latest_minute:latestOld,resumed_oldest_minute:added.at(-1).minute_epoch,observed_epoch:now,reason:'divergencia_confirmada_duas_coletas',precision:'minute'};
    }else throw Error('SEM_SOBREPOSICAO: dados antigos preservados; verificar lacuna');
   }
  }
- if(!added.length)return {added:0,total:old.length,latest:old[0]?.minute_epoch||null};
+ if(!added.length)return {added:0,total:old.length,latest:old[0]?.minute_epoch||null,certified};
  const highest=Math.max(0,...old.map(x=>Number(x.seq)||0));
  // parsed are new-to-old, store ascending seq. Never claim official sequence IDs.
  const newer=added.map((x,i)=>({...x,seq:highest+added.length-i,first_seen:Math.floor(Date.now()/1000)}));
  const joined=[...newer,...old].slice(0,MAX_HISTORY);
  const gaps=[...(prev.gaps||[]),...(gap?[gap]:[])].slice(-50);
  await putR2(env,key,{game_id:game.id,items:joined,updated_at:Date.now(),gaps,precision:'minute',source:'historicosblaze.com',observed_not_official_seq:true});
- return {added:added.length,total:joined.length,latest:joined[0].minute_epoch,gap:!!gap};
+ return {added:added.length,total:joined.length,latest:joined[0].minute_epoch,gap:!!gap,certified};
 }
 async function collectGame(env,game,mirror=false){
  if(!game.eligible||!game.source_url)throw Error('SEM_ADAPTADOR: jogo catalogado, coleta ainda não homologada');
@@ -182,7 +195,7 @@ async function collectGame(env,game,mirror=false){
  if(mirror&&cloudMainEnabled(env)&&game.id==='blitz-double'){
   if(!env.NEXO_COORDINATOR)throw Error('Coordenador principal indisponivel');
   const id=env.NEXO_COORDINATOR.idFromName('nexo-blitz-double-v11');
-  const r=await env.NEXO_COORDINATOR.get(id).fetch('https://nexo.internal/v11/cloud-main-history',{method:'POST',body:JSON.stringify(parsed)});
+  const r=await env.NEXO_COORDINATOR.get(id).fetch('https://nexo.internal/v11/cloud-main-history',{method:'POST',body:JSON.stringify({rows:parsed,certified:result.certified===true})});
   const j=await r.json();if(!r.ok||!j.ok)throw Error('INTEGRACAO_R2: '+String(j.error||r.status).slice(0,110));
   result.main_added=j.added;
  }

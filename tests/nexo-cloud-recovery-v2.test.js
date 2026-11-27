@@ -1,0 +1,17 @@
+import test from 'node:test';import assert from 'node:assert/strict';import {validWindow,headMatch,recoveryPrefix,strictlyNewer} from '../worker/src/nexo-cloud-recovery-v2.js';import {planCloudRows} from '../worker/src/nexo-cloud-main-history.js';
+const m=1795749600,now=m+30;
+const row=(n,t)=>({number:n,minute_epoch:t,color:n===0?'white':n<8?'red':'black'});
+const seq=(n,start,offset=0)=>Array.from({length:n},(_,i)=>row((i*7+offset)%15,start-Math.floor(i/2)*60));
+const old=seq(20,m-900,4).map((r,i)=>({...r,number:14,color:'black',seq:200-i,id:(i+1).toString(16).padStart(32,'0')}));
+const priorRows=seq(50,m-120,2);const current=[...seq(4,m,5),...priorRows];
+const prior={at:now-120,seq:old[0].seq,cutoff:old[0].minute_epoch,rows:priorRows};
+test('janela recente valida, duas pedras no minuto',()=>assert.equal(validWindow(current,now),true));
+test('ordem errada e dia falso recusados',()=>{assert.equal(validWindow([...current].reverse(),now),false);assert.equal(validWindow([...current.slice(0,8),row(1,m-86400)],now),false)});
+test('confirma oito pedras da coleta anterior',()=>assert.equal(headMatch(priorRows,current),4));
+test('recupera somente minutos posteriores ao ultimo salvo',()=>{const r=recoveryPrefix(old,current,prior,now);assert.ok(r.length>=8);assert.ok(r.every(x=>x.minute_epoch>old[0].minute_epoch));assert.deepEqual(r,strictlyNewer(current,old[0].minute_epoch))});
+test('sem segunda coleta ou sem avanco nao recupera',()=>{assert.equal(recoveryPrefix(old,current,null,now),null);assert.equal(recoveryPrefix(old,priorRows,prior,now),null);assert.equal(recoveryPrefix(old,current,{...prior,at:now-5},now),null)});
+test('cursor alterado invalida prova anterior',()=>assert.equal(recoveryPrefix([{...old[0],seq:201},...old.slice(1)],current,prior,now),null));
+test('coleta anterior sem correspondencia nao recupera',()=>assert.equal(recoveryPrefix(old,current,{...prior,rows:seq(50,m-120,3)},now),null));
+test('historico principal recusa conflito sem certificacao',async()=>{await assert.rejects(planCloudRows(old,current,now,200,false,false),/sobreposicao/)});
+test('historico principal recupera lacuna certificada como catchup',async()=>{const p=await planCloudRows(old,current,now,200,false,true);assert.equal(p.gap,true);assert.equal(p.catchup,true);assert.equal(p.rows[0].seq,201);assert.ok(p.rows.every(r=>r.minute_epoch>old[0].minute_epoch));assert.equal(p.gapInfo.previous_latest_minute,old[0].minute_epoch);const saved=[...p.rows].reverse().concat(old);const again=await planCloudRows(saved,current,now,200,false,true);assert.equal(again.rows.length,0)});
+test('sem oito novos registros nao forca recuperacao',async()=>{const late=old.map((r,i)=>({...r,minute_epoch:m-60-Math.floor(i/2)*60}));await assert.rejects(planCloudRows(late,current,now,200,false,true),/sobreposicao/)});
