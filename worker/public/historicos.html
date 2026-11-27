@@ -15,6 +15,13 @@
 <link rel="stylesheet" href="/nexo-pro-v14.css?v=14.0.0">
 <link rel="stylesheet" href="/nexo-pro-v14-2.css?v=14.2.0">
 <link rel="stylesheet" href="/nexo-pro-v15.css?v=15.0.0">
+<style id="nexo-nav-restauro-v1">
+#nexo-nav-restauro-link{position:fixed!important;right:14px!important;bottom:calc(18px + env(safe-area-inset-bottom,0px))!important;z-index:110!important;display:inline-flex!important;visibility:visible!important;opacity:1!important;pointer-events:auto!important;align-items:center;justify-content:center;gap:7px;box-sizing:border-box;min-height:44px;min-width:100px;padding:11px 17px;border:1px solid #49d7bf;border-radius:30px;background:#12333c;color:#d4fff5!important;text-decoration:none!important;font:750 14px system-ui,sans-serif;box-shadow:0 4px 18px #0008,0 0 12px #38d2b42e;}
+#nexo-nav-restauro-link:focus-visible{outline:3px solid white;outline-offset:3px}
+#nexo-nav-restauro-link.nexo-nav-back{bottom:calc(88px + env(safe-area-inset-bottom,0px))!important}
+html body.n67 .n12-float-nav[href="/adm.html"]{display:none!important}
+@media(max-width:420px){#nexo-nav-restauro-link{right:10px!important;padding:10px 14px}}
+</style>
 </head>
 <body class="n67">
 <div id="n67-splash" class="n67-splash" role="status" aria-label="Abrindo NEXO Históricos">
@@ -90,5 +97,6 @@
 <script defer src="/nexo-v12-historico.js?v=12.0.1"></script>
 <script defer src="/nexo-pro.js?v=14.2.0"></script>
 <script defer src="/nexo-pro-v15.js?v=15.0.0"></script>
+<a id="nexo-nav-restauro-link" href="/adm" aria-label="Abrir painel administrativo">⚙ ADM</a>
 </body>
 </html>
