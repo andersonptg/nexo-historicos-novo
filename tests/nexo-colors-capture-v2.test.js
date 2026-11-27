@@ -9,3 +9,32 @@ test('entrega incerta não é repetida',async()=>{const {env,docs}=fake();docs.s
 
 test('fila separada: nenhum browser ou envio no evento, apenas no cron',async()=>{const {env,docs,count}=fake();docs.set(cfg,JSON.stringify({enabled:true,previewAt:1,enabledSince:t()-1}));let calls=0;const opts={groups:async()=>[{id:'-12345',selected:true,admin:true}],sent:async()=>true,send:async f=>{calls++;assert.equal(f.has('caption'),false);return {message_id:8}}};assert.equal(await queueCapture(env,evt),true);assert.equal(await queueCapture(env,evt),false);assert.equal(count(),0);assert.equal(calls,0);await drainCaptureQueue(env,opts);await drainCaptureQueue(env,opts);assert.equal(count(),1);assert.equal(calls,1);});
 test('não captura entrada nem evento antigo e respeita desativação',async()=>{const {env,docs,count}=fake();docs.set(cfg,JSON.stringify({enabled:true,previewAt:1,enabledSince:t()-1}));assert.equal(await queueCapture(env,{...evt,type:'entry_black'}),false);assert.equal(await queueCapture(env,{...evt,at:t()-181}),false);assert.equal(await queueCapture(env,evt),true);docs.set(cfg,JSON.stringify({enabled:false,previewAt:1}));await drainCaptureQueue(env,{groups:async()=>{throw Error('não deveria enviar')}});assert.equal(count(),0);});
+
+import {confirmedEntryText} from '../worker/src/nexo-colors-capture-v2.js';
+test('cita apenas o texto original confirmado do mesmo ciclo e chat',async()=>{
+ const e={...evt,strategyId:'st1',entryRoundId:'entry1'};
+ const stage=(id,chat)=>({eventId:id,chatId:chat,confirmed:{text:{messageId:42}}});
+ assert.equal(await confirmedEntryText(e,'-12345',async(id,chat)=>id==='st1_entry1_entry_black'?stage(id,chat):null),42);
+ assert.equal(await confirmedEntryText(e,'-12345',async(id)=>stage(id,'-999')),null);
+ assert.equal(await confirmedEntryText(e,'-12345',async(id,chat)=>stage(id,chat)),null);
+ assert.equal(await confirmedEntryText(evt,'-12345',async()=>{throw Error('no lookup')}),null);
+});
+test('opção salva sem alterar ativação e mantém compatibilidade com clientes antigos',async()=>{
+ const {env,docs}=fake();docs.set(cfg,JSON.stringify({enabled:true,previewAt:1,enabledSince:t()-10}));
+ const path='/api/adm/colors-capture';const req=b=>new Request('https://test'+path,{method:'PUT',body:JSON.stringify(b)});
+ let r=await captureAdmin(req({enabled:true,includeRed:false,replyToEntry:true}),env,path);
+ const a=(await r.json()).config;assert.equal(a.replyToEntry,true);assert.equal(a.enabled,true);assert.equal(a.previewAt,1);
+ r=await captureAdmin(req({enabled:true,includeRed:false}),env,path);assert.equal((await r.json()).config.replyToEntry,true);
+ r=await captureAdmin(req({enabled:true,includeRed:false,replyToEntry:false}),env,path);assert.equal((await r.json()).config.replyToEntry,false);
+});
+test('fila conserva vínculo, usa ID por grupo, não coloca legenda, não duplica',async()=>{
+ const {env,docs}=fake();docs.set(cfg,JSON.stringify({enabled:true,previewAt:1,replyToEntry:true}));
+ const e={...evt,strategyId:'st1',entryRoundId:'entry1'};const calls=[];
+ const opts={groups:async()=>[{id:'-12345',selected:true,admin:true},{id:'-54321',selected:true,admin:true}],sent:async()=>true,reply:async(chat,r)=>{assert.equal(r.entryRoundId,'entry1');assert.equal(r.strategyId,'st1');return chat==='-12345'?42:84;},send:async f=>{calls.push([f.get('chat_id'),JSON.parse(f.get('reply_parameters'))]);assert.equal(f.has('caption'),false);return {message_id:8}}};
+ assert.equal(await queueCapture(env,e),true);await drainCaptureQueue(env,opts);await drainCaptureQueue(env,opts);
+ assert.equal(calls.length,2);assert.deepEqual(Object.fromEntries(calls),{'-12345':{message_id:42,allow_sending_without_reply:true},'-54321':{message_id:84,allow_sending_without_reply:true}});
+});
+test('não cita mensagem errada se vínculo faltar; opção desligada preserva envio',async()=>{
+ for(const enabled of [true,false]){const {env,docs}=fake();docs.set(cfg,JSON.stringify({enabled:true,previewAt:1,replyToEntry:enabled}));let n=0;
+ await captureResult(env,evt,{groups:async()=>[{id:'-12345',selected:true,admin:true}],sent:async()=>true,reply:async()=>{if(!enabled)throw Error('lookup indevido');return null;},send:async f=>{n++;assert.equal(f.has('reply_parameters'),false);return {message_id:8}}});assert.equal(n,1);}
+});
