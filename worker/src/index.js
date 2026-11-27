@@ -1,3 +1,4 @@
+import {effectiveLocalControl} from './nexo-local-retired.js';
 import catalog from '../../catalog.json' with {type:'json'};
 // NEXO_BRANCO_VIP_V1
 import {brancoVipSync} from './branco-vip.js';
@@ -255,7 +256,7 @@ export default {
      if(!tokenOK(request,env))return out({ok:false,error:'Nao autorizado'},401);
      if(!env.R2)return out({ok:false,error:'R2 indisponivel'},503);
      const key='nexo-v3/local-control/desired-v5.json';
-     const desired=await jsonGet(env.R2,key);
+     const desired=effectiveLocalControl(env,await jsonGet(env.R2,key));
      const remote=await jsonGet(env.R2,'nexo-v3/admin/settings.json');
      if(request.method==='POST'){
        let body;try{body=await request.json()}catch{return out({ok:false,error:'JSON invalido'},400)}
@@ -264,7 +265,7 @@ export default {
        await jsonPut(env.R2,'nexo-v3/local-control/heartbeat-v5.json',{
          at:now(),motor:body.motor,collector:body.collector,revision:body.revision});
      }
-     return out({ok:true,desired:desired?.enabled ?? null,configured:!!desired,
+     return out({ok:true,desired:desired?.enabled ?? null,configured:!!desired,retired:desired?.retired===true,
        revision:desired?.revision||0,remoteBotEnabled:remote?.botEnabled===true});
    }
 

@@ -1,3 +1,4 @@
+import {localRetired,effectiveLocalControl,localControlSafety} from './nexo-local-retired.js';
 // NEXO V3 ADM. Isolated from the V2 history archive and ingestion authentication.
 // NEXO V13 BRANCO POR MINUTO
 import {routeWhiteAdmin} from './white.js';
@@ -1178,16 +1179,21 @@ export async function routeAdmin(req,env,url){
   try{
 // NEXO_REMOTE_CONTROL_V5 - use within routeAdmin authenticated try{} block.
   if(path==='/api/adm/local-control' && req.method==='GET'){
-    const current=await getDoc(env,'nexo-v3/local-control/desired-v5.json',null);
+    const current=effectiveLocalControl(env,await getDoc(env,'nexo-v3/local-control/desired-v5.json',null));
     const heartbeat=await getDoc(env,'nexo-v3/local-control/heartbeat-v5.json',null);
     const remote=await settings();
-    return json({ok:true,desired:current?.enabled ?? null,configured:!!current,
+    return json({ok:true,desired:current?.enabled ?? null,configured:!!current,retired:localRetired(env),
       revision:current?.revision||0,heartbeat:heartbeat||null,
       remoteBotEnabled:remote.botEnabled===true});
   }
   if(path==='/api/adm/local-control' && req.method==='POST'){
     const b=await req.json().catch(()=>null);
     if(!b || typeof b.enabled!=='boolean')return err('enabled deve ser booleano',400);
+    if(localRetired(env)){
+     if(b.enabled)return err('Controle local das Cores aposentado nesta publicação.',409);
+     const effective=effectiveLocalControl(env,await getDoc(env,'nexo-v3/local-control/desired-v5.json',null));
+     return json({ok:true,...effective,notice:'Controle local aposentado; não requer confirmação periódica.'});
+    }
     const remote=await settings();
     if(b.enabled && remote.botEnabled===true)return err('Envio remoto Cloudflare ainda habilitado; desligue antes de ligar Termux',409);
     const key='nexo-v3/local-control/desired-v5.json';
@@ -1429,26 +1435,27 @@ e('on').onclick=()=>set(true);e('off').onclick=()=>set(false);refresh();setInter
     const owner=await getDoc(env,K.owner,null);
     const gs=await groups();
     const a=(await strategies()).filter(s=>s.enabled&&!s.archived&&s.gameId==='blitz-double');
-    const localStopped=d?.enabled===false&&h?.motor===false&&now()-Number(h.at||0)<60;
+    const localState=localControlSafety(env,d,h,now());
+    const localStopped=localState.stopped;
     return json({ok:true,game:'blitz-double',remoteEnabled:st.botEnabled===true,
-      localDesired:d?.enabled??null,localMotor:h?.motor??null,heartbeatAge:h?.at?now()-Number(h.at):null,
+      localDesired:effectiveLocalControl(env,d)?.enabled??null,localMotor:h?.motor??null,heartbeatAge:h?.at?now()-Number(h.at):null,localRetired:localState.retired,localSafe:localState.safe,
       localStopped,feedAgeSeconds:age,feedFresh:age!==null&&age>=-180&&age<=180,
       lastSeq:head?.seq??null,privateVerified:!!owner?.id,
       selectedGroups:gs.filter(g=>g.selected&&g.admin).length,activeStrategies:a.length,
-      ready:localStopped&&age!==null&&age>=-180&&age<=180&&a.length>0&&await hasBot(env)&&
+      ready:localState.safe&&age!==null&&age>=-180&&age<=180&&a.length>0&&await hasBot(env)&&
          (!!owner?.id||gs.some(g=>g.selected&&g.admin))});
   }
   if(path==='/api/adm/telegram/activate'&&req.method==='POST'){
    // NEXO_BLITZ_RECOVERY_V2: previne Cloudflare + Termux simultaneos e dados obsoletos.
    const localDesired=await getDoc(env,'nexo-v3/local-control/desired-v5.json',null);
    const heartbeat=await getDoc(env,'nexo-v3/local-control/heartbeat-v5.json',null);
-   if(localDesired?.enabled!==false||heartbeat?.motor!==false||now()-Number(heartbeat?.at||0)>=60)
-     return err('Motor Termux nao confirmou PARADO. Desligue Cores em /controle-termux e aguarde confirmacao recente.',409);
+   const localState=localControlSafety(env,localDesired,heartbeat,now());
+   if(!localState.safe)return err(localState.retired?'Conflito: o serviço legado informou atividade recente. Encerre-o antes de continuar.':'Controle local sem confirmação de parada.',409);
    const last=await recentR2(env,'blitz-double');
    const recent=(last.items||[])[0];
    const age=recent?.minute_epoch?now()-Number(recent.minute_epoch):Infinity;
    if(!Number.isFinite(age)||age>180||age< -180)
-     return err('Fonte do Blitz Double sem rodada recente na API principal. Verifique o sincronizador Termux -> /api/ingest antes de ativar.',409);
+     return err('API principal do Blitz Double sem rodada recente. Verifique a integração da coleta com o histórico principal antes de continuar.',409);
 
    const b=await req.json();if(b.confirm!==true)return err('Confirme explicitamente a ativacao.');
    const all=await groups(),selected=all.filter(g=>g.selected&&g.admin);

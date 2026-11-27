@@ -45,7 +45,8 @@
   ],
   "vars": {
     "NEXO_ACTIVE_GAME": "blitz-double",
-    "NEXO_CLOUD_AUTOSTART": "1"
+    "NEXO_CLOUD_AUTOSTART": "1",
+    "NEXO_CORES_LOCAL_RETIRED": "1"
   },
   "browser": {
     "binding": "NEXO_COLORS_BROWSER"
