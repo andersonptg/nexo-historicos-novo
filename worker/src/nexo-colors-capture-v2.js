@@ -6,20 +6,7 @@ const QUEUE=ROOT+'queue-v2/';
 const MAX_AGE=180;
 const STATUS=ROOT+'status-v2.json';
 const fresh=()=>Math.floor(Date.now()/1000);
-const defaults={enabled:false,includeRed:false,previewAt:0,replyToEntry:false};
-// NEXO_CAPTURA_RESPOSTA_V3: only the original, confirmed text in the same chat.
-export async function confirmedEntryText(evt,chat,readStage){
- if(typeof evt.entryRoundId!=='string'||!/^[a-zA-Z0-9_-]{1,90}$/.test(evt.entryRoundId)||typeof evt.strategyId!=='string'||!evt.strategyId)return null;
- const matches=[];
- for(const type of ['entry_black','entry_red','entry_white']){
-  const id=evt.strategyId+'_'+evt.entryRoundId+'_'+type;
-  const stage=await readStage(id,chat);
-  const m=stage?.confirmed?.text?.messageId;
-  if(stage?.eventId===id&&String(stage.chatId)===String(chat)&&Number.isSafeInteger(m)&&m>0)matches.push(m);
- }
- return matches.length===1?matches[0]:null;
-}
-
+const defaults={enabled:false,includeRed:false,previewAt:0};
 const get=async(env,key,fallback=null)=>{const o=await env.R2.get(key);return o?o.json():fallback;};
 const put=(env,key,value)=>env.R2.put(key,JSON.stringify(value),{httpMetadata:{contentType:'application/json'}});
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -59,13 +46,13 @@ export async function captureAdmin(req,env,path,latest){
  }
  if(req.method==='GET')return json({ok:true,config,available,status:await get(env,STATUS)});
  if(req.method==='PUT'&&path==='/api/adm/colors-capture'){
-  const b=await req.json().catch(()=>null);if(!b||typeof b.enabled!=='boolean'||typeof b.includeRed!=='boolean'||(b.replyToEntry!==undefined&&typeof b.replyToEntry!=='boolean'))return json({ok:false,error:'Configuração inválida'},400);
+  const b=await req.json().catch(()=>null);if(!b||typeof b.enabled!=='boolean'||typeof b.includeRed!=='boolean')return json({ok:false,error:'Configuração inválida'},400);
   if(b.enabled&&(!available||!config.previewAt))return json({ok:false,error:'Gere uma prévia válida antes de ativar.'},409);
-  const next={...config,enabled:b.enabled,includeRed:b.includeRed,replyToEntry:b.replyToEntry??config.replyToEntry,updatedAt:fresh(),enabledSince:b.enabled?(config.enabled?config.enabledSince||fresh():fresh()):0};await put(env,CONFIG,next);return json({ok:true,config:next,available,status:await get(env,STATUS)});
+  const next={...config,enabled:b.enabled,includeRed:b.includeRed,updatedAt:fresh(),enabledSince:b.enabled?(config.enabled?config.enabledSince||fresh():fresh()):0};await put(env,CONFIG,next);return json({ok:true,config:next,available,status:await get(env,STATUS)});
  }
  return json({ok:false,error:'Método inválido'},405);
 }
-export async function captureResult(env,evt,{groups,sent,send,reply}){
+export async function captureResult(env,evt,{groups,sent,send}){
  // Only post-settlement records; no new signals, no links, no new recipients.
  if(evt.gameId!=='blitz-double'||!['win_black','win_red','win_white','red'].includes(evt.type)||!valid(evt)||!Number.isSafeInteger(evt.at)||fresh()-evt.at>MAX_AGE||fresh()<evt.at-5)return;
  const cfg={...defaults,...await get(env,CONFIG,{})};if(!cfg.enabled||!cfg.previewAt||evt.at<(cfg.enabledSince||0)||(evt.type==='red'&&!cfg.includeRed))return;
@@ -84,11 +71,9 @@ export async function captureResult(env,evt,{groups,sent,send,reply}){
  catch(e){await put(env,STATUS,{seq:evt.seq,state:'capture_failed',at:fresh(),detail:String(e.message).slice(0,150)});return;}
  const results=await Promise.all(pending.map(async chat=>{
   if(fresh()-evt.at>MAX_AGE||!(await get(env,CONFIG,{})).enabled)return 'skipped';
-  let replyId=null;
-  if(cfg.replyToEntry===true&&typeof reply==='function'){try{const id=await reply(chat,evt);if(Number.isSafeInteger(id)&&id>0)replyId=id;}catch{}}
   const key=stem+'/'+chat+'.json';const row={seq:evt.seq,state:'inflight',at:fresh()};
   const lock=await env.R2.put(key,JSON.stringify(row),{onlyIf:{etagDoesNotMatch:'*'},httpMetadata:{contentType:'application/json'}});if(!lock)return 'duplicate';
-  try{const form=new FormData();form.append('chat_id',chat);if(replyId!==null)form.append('reply_parameters',JSON.stringify({message_id:replyId,allow_sending_without_reply:true}));form.append('photo',new Blob([bytes],{type:'image/png'}),'nexo-rodada-'+evt.seq+'.png');const result=await send(form);if(!Number.isInteger(result?.message_id))throw Error('Entrega não confirmada');await put(env,key,{...row,state:'sent',messageId:result.message_id});return 'sent';}
+  try{const form=new FormData();form.append('chat_id',chat);form.append('photo',new Blob([bytes],{type:'image/png'}),'nexo-rodada-'+evt.seq+'.png');const result=await send(form);if(!Number.isInteger(result?.message_id))throw Error('Entrega não confirmada');await put(env,key,{...row,state:'sent',messageId:result.message_id});return 'sent';}
   catch{await put(env,key,{...row,state:'uncertain'});return 'uncertain';}
  }));
  await put(env,STATUS,{seq:evt.seq,state:results.includes('uncertain')?'uncertain':results.includes('sent')?'sent':'skipped',sent:results.filter(x=>x==='sent').length,at:fresh()});
@@ -100,7 +85,7 @@ export async function queueCapture(env,evt){
  const cfg={...defaults,...await get(env,CONFIG,{})};
  if(!cfg.enabled||!cfg.previewAt||evt.at<(cfg.enabledSince||0)||(evt.type==='red'&&!cfg.includeRed))return false;
  const key=QUEUE+String(evt.seq).padStart(16,'0')+'-'+evt.roundId+'.json';
- const record={id:evt.id,strategyId:evt.strategyId||null,entryRoundId:evt.entryRoundId||null,gameId:evt.gameId,seq:evt.seq,number:evt.number,color:evt.color,minute_epoch:evt.minute_epoch,roundId:evt.roundId,type:evt.type,at:evt.at};
+ const record={id:evt.id,gameId:evt.gameId,seq:evt.seq,number:evt.number,color:evt.color,minute_epoch:evt.minute_epoch,roundId:evt.roundId,type:evt.type,at:evt.at};
  return !!await env.R2.put(key,JSON.stringify(record),{onlyIf:{etagDoesNotMatch:'*'},httpMetadata:{contentType:'application/json'}});
 }
 // Independent scheduled invocation. Bounded work; no automatic resend after an uncertain delivery.

@@ -7,7 +7,7 @@ import {crashAdmin} from './crash-v2.js';
 import {cloudAdmin} from './nexo-cloud-v5.js';
 import {crashV3Admin} from './crash-v3.js';
 import {fortuneAdmin} from './nexo-fortune-v71-server.js';
-import {captureAdmin,queueCapture,drainCaptureQueue,confirmedEntryText} from './nexo-colors-capture-v2.js';
+import {captureAdmin,queueCapture,drainCaptureQueue} from './nexo-colors-capture-v2.js';
 const ROOT='nexo-v3/';
 const K={settings:ROOT+'admin/settings.json',strategies:ROOT+'admin/strategies.json',groups:ROOT+'telegram/groups.json',media:ROOT+'media/catalog.json',bot:ROOT+'telegram/bot-encrypted.json',owner:ROOT+'telegram/owner.json',pair:ROOT+'telegram/pair.json'};
 const activeGame=env=>env?.NEXO_ACTIVE_GAME==='blitz-double'?'blitz-double':'brabet-double';
@@ -709,7 +709,7 @@ async function dispatch(env,config,evt,{privateOnly=false}={}){
  }));
 }
 
-async function fireEvent(env,settings,strategy,r,type,step,deadlineAtMs=0,globalCache=null,numberLookup=null,entryRoundId=null){
+async function fireEvent(env,settings,strategy,r,type,step,deadlineAtMs=0,globalCache=null,numberLookup=null){
  const v26FireStart=Date.now(); // NEXO V26.4 TELEMETRIA
  // O estado/placar continua correto, mas notificacoes velhas nao serao enviadas.
  if(deadlineAtMs&&Date.now()>=deadlineAtMs){console.warn('V22: evento vencido nao enviado',type,r.seq);return;}
@@ -739,7 +739,7 @@ async function fireEvent(env,settings,strategy,r,type,step,deadlineAtMs=0,global
  if(type==='attention'&&settings.botEnabled)await beginAttention(env,evt);
  await dispatch(env,settings,evt);
  // NEXO_COLORS_CAPTURE_V2: apenas fila de registros encerrados; nenhuma captura nesta execução.
- if(settings.botEnabled&&evt.gameId==='blitz-double'&&['win_black','win_red','win_white','red'].includes(evt.type)){try{await queueCapture(env,{...evt,entryRoundId});}catch(e){console.warn('Fila Cores: falha isolada');}}
+ if(settings.botEnabled&&evt.gameId==='blitz-double'&&['win_black','win_red','win_white','red'].includes(evt.type)){try{await queueCapture(env,evt);}catch(e){console.warn('Fila Cores: falha isolada');}}
  console.log('NEXO V26.4 EVENTO',JSON.stringify({type,seq:r.seq,totalMs:Date.now()-v26FireStart,preDespachoMs:v26EventSavedAt-v26FireStart,despachoMs:Date.now()-v26EventSavedAt}));
 }
 async function simulate(s,rows){const state={recent:[],active:null};const score=scoreDefault(dayBR());const events=[];
@@ -878,7 +878,7 @@ async function v24ProcessMany(env,game,records,deadlineAtMs,strategies,snapshot,
     else if(a.step<s.maxGale){a.step++;type='gale'+a.step;(await scoreFor(s))[type]++}
     else{type='red';(await scoreFor(s)).red++}
     scoreDirty.add(s.id);runtimeDirty.add(s.id);
-    events.push({s,r,type,step:a.step,entryRoundId:a.roundId});
+    events.push({s,r,type,step:a.step});
     if(['red','win_white','win_red','win_black'].includes(type)){st.active=null;ownerId=null;closedInThisRound=true;}
    }else if(!ownerId&&!closedInThisRound&&full&&(!preferred||preferred.id===s.id)){
     st.active={step:0,roundId:r.id};ownerId=s.id;
@@ -901,7 +901,7 @@ async function v24ProcessMany(env,game,records,deadlineAtMs,strategies,snapshot,
   if(diagnostics)diagnostics.analysisMs=(diagnostics.analysisMs||0)+Date.now()-analysisStarted;
   refreshed.clear();
   const deliveryStarted=Date.now();
-  for(const e of events)await fireEvent(env,settings,e.s,e.r,e.type,e.step,deadlineAtMs,global,strategyNumbers,e.entryRoundId);
+  for(const e of events)await fireEvent(env,settings,e.s,e.r,e.type,e.step,deadlineAtMs,global,strategyNumbers);
   if(diagnostics)diagnostics.deliveryMs=(diagnostics.deliveryMs||0)+Date.now()-deliveryStarted;
   await putDoc(env,v11GameKey(game.id),{ownerId,lastSeq:r.seq,updatedAt:now()});
   analysisStarted=Date.now();
@@ -961,7 +961,7 @@ export async function processNewRounds(env,game,records,deadlineAtMs=0,diagnosti
     else if(r.color===s.target){type=s.target==='red'?'win_red':'win_black';score.green++}
     else if(a.step<s.maxGale){a.step++;type='gale'+a.step;score[type]++}
     else{type='red';score.red++}
-    actions.push({type,step:a.step,entryRoundId:a.roundId});
+    actions.push({type,step:a.step});
     if(['red','win_white','win_red','win_black'].includes(type)){
      state.active=null;ownerId=null;closedInThisRound=true;
     }
@@ -976,7 +976,7 @@ export async function processNewRounds(env,game,records,deadlineAtMs=0,diagnosti
     // Operações de R2 independentes: confirmar ambas antes de emitir eventos.
     score.updatedAt=now();
     await Promise.all([putDoc(env,runtimeKey(s.id),state),putDoc(env,scoreKey(s.id),score)]);
-   for(const action of actions)await fireEvent(env,settings,s,r,action.type,action.step,deadlineAtMs,global,null,action.entryRoundId);
+   for(const action of actions)await fireEvent(env,settings,s,r,action.type,action.step,deadlineAtMs,global);
   }
   await putDoc(env,v11GameKey(game.id),{ownerId,lastSeq:r.seq,updatedAt:now()});
  }
@@ -1696,5 +1696,5 @@ export async function scheduledAdmin(env){
 
 export async function scheduledColorsCapture(env){
  const st=await getDoc(env,K.settings,settingsDefault);if(!st.botEnabled||!await hasBot(env))return;
- await drainCaptureQueue(env,{groups:()=>getDoc(env,K.groups,[]),sent:async (chat,evt)=>!!await getDoc(env,sentKey(evt.id+'_'+String(chat).replace('-','m')),null),reply:(chat,evt)=>confirmedEntryText(evt,chat,(id,c)=>getDoc(env,v11StageKey({id},c),null)),send:form=>tg(env,'sendPhoto',form)});
+ await drainCaptureQueue(env,{groups:()=>getDoc(env,K.groups,[]),sent:async (chat,evt)=>!!await getDoc(env,sentKey(evt.id+'_'+String(chat).replace('-','m')),null),send:form=>tg(env,'sendPhoto',form)});
 }
